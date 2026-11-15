@@ -3,7 +3,6 @@ Run directly inside Blender via execute_blender_code or from a script.
 """
 import bpy
 import bmesh
-from mathutils import Vector
 
 def audit_object(obj: bpy.types.Object) -> dict:
     if obj.type != 'MESH':
@@ -16,7 +15,6 @@ def audit_object(obj: bpy.types.Object) -> dict:
     tri_count = sum(len(f.verts) - 2 for f in bm.faces)
     face_count = len(bm.faces)
     vert_count = len(bm.verts)
-    edge_count = len(bm.edges)
 
     quads = sum(1 for f in bm.faces if len(f.verts) == 4)
     tris = sum(1 for f in bm.faces if len(f.verts) == 3)

@@ -7,7 +7,7 @@ import json
 import threading
 import time
 from collections import OrderedDict
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 
 from mcp import types as mcp_types
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -456,8 +455,9 @@ class SharpMcpApplication:
                 f"Execute an MVP-first micro-step build loop for '{game_concept}' ({genre}):\n"
                 "1. INTAKE & PLAN: Call `sharp_route_task` (`detail='summary'`), run `sharp_game_plan(action='intake_questions')`, "
                 "and once answered call `sharp_game_plan(action='create', granularity='micro', title=..., genre=...)`.\n"
-                "2. STEP & DELEGATE: Call `sharp_game_plan(action='next_step')` (S0 -> S1 -> S2.1 -> S2.2 -> S2.3 -> S4.1 stay locked until MVP passes; "
-                "S3/S5/S6 unlock afterward). Use `subagent_brief` to delegate Art/3D/Micro-Code/Vision QA to sub-agents.\n"
+                "2. STEP & DELEGATE: Call `sharp_game_plan(action='next_step')`: MVP steps run strictly sequentially "
+                "(S0.1 -> S1.1 -> S2.1 -> S2.2 -> S2.3 -> S4.1); post-MVP stages S3/S5/S6/S7 stay locked until MVP is complete. "
+                "Use `subagent_brief` to delegate Art/3D/Micro-Code/Vision QA to sub-agents.\n"
                 "3. BUILD & ART: Execute the recommended Sharp tool + `sharp_art_studio` / `sharp_ai_studio` (custom 2D kits, fonts, 2D/3D VFX) "
                 "and `sharp_world_assembly_and_optimization(action='audit_overlaps')` for collision-free placement.\n"
                 "4. MULTIMODAL & CRITICAL AUDIT: Run `sharp_media_qa` (playtest/animation video, soundtest audio, Vision GUI QA) + "

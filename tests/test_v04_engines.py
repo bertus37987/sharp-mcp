@@ -9,13 +9,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import io
 import json
 import math
 import os
-import struct
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -80,7 +79,24 @@ def _write_test_wav(path: Path, samples: np.ndarray, sample_rate: int = 22050) -
 
 
 def _write_test_avi(path: Path, *, mode: str = "moving", num_frames: int = 10) -> Path:
-    import cv2
+    try:
+        import cv2
+    except ImportError:
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            raise unittest.SkipTest("Video fixtures require OpenCV or ffmpeg") from None
+        with tempfile.TemporaryDirectory(prefix="sharp_video_frames_") as td:
+            for i in range(num_frames):
+                frame = Image.new("RGB", (320, 180), (0, 0, 0) if mode == "black" else (40, 80, 120))
+                if mode != "black":
+                    x = 20 + i * 12 if mode == "moving" else 80
+                    ImageDraw.Draw(frame).rectangle((x, 50, x + 48, 120), fill=(255, 220, 45))
+                frame.save(Path(td) / f"{i:03d}.png")
+            subprocess.run(
+                [ffmpeg, "-y", "-loglevel", "error", "-framerate", "10", "-i", str(Path(td) / "%03d.png"), "-c:v", "mjpeg", str(path)],
+                check=True, capture_output=True,
+            )
+        return path
 
     w, h = 320, 180
     fourcc = cv2.VideoWriter_fourcc(*"MJPG")

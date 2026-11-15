@@ -21,7 +21,7 @@ const VENV_PY_ALT_REL = IS_WINDOWS
   : path.join("bin", "python3");
 
 const DEPS_PROBE_CODE =
-  "import sys; assert sys.version_info >= (3, 11); import mcp, aiohttp, PIL, numpy; print(sys.executable)";
+  "import sys; assert sys.version_info >= (3, 11); from mcp.server.fastmcp import FastMCP; import aiohttp, PIL, numpy; print(sys.executable)";
 
 function isExecutable(filePath) {
   if (!filePath) return false;
@@ -139,7 +139,7 @@ function detectLaunchStrategy(rawArgs) {
     }
     return {
       mode: "SHARP_PYTHON_INVALID",
-      error: `SHARP_PYTHON='${envPython}' is missing Python >=3.11 or required packages (mcp, aiohttp, Pillow, numpy).`,
+      error: `SHARP_PYTHON='${envPython}' requires Python >=3.11 and compatible packages (mcp>=1.7.0,<2, aiohttp, Pillow, numpy).`,
       needsBootstrap: false,
     };
   }

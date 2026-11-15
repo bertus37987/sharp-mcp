@@ -20,7 +20,7 @@ import math
 import statistics
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 DEFAULT_R15_PARENTS: Dict[str, Optional[str]] = {

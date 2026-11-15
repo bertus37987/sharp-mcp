@@ -11,6 +11,10 @@ import os
 import shutil
 import sys
 import tempfile
+
+if sys.version_info < (3, 11):
+    raise SystemExit("Sharp requires Python 3.11 or newer.")
+
 import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -222,6 +226,12 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     }
     py_ok = sys.version_info >= (3, 11)
     deps_ok = all(req_modules.values())
+    server_import_error = None
+    try:
+        importlib.import_module("sharp_mcp.mcp_server")
+    except Exception as exc:
+        server_import_error = f"{type(exc).__name__}: {exc}. Sharp requires mcp>=1.7.0,<2."
+    server_importable = server_import_error is None
 
     plugin_status = get_plugin_install_status()
     blender_status = detect_blender_installation()
@@ -240,7 +250,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         for tool in ("node", "uv", "uvx", "rojo", "lune", "selene", "stylua", "wally", "rokit")
     }
 
-    overall_ok = py_ok and deps_ok
+    overall_ok = py_ok and deps_ok and server_importable
     if args.strict:
         overall_ok = overall_ok and plugin_status.get("up_to_date", False) and blender_status.get("installed", False)
 
@@ -254,6 +264,8 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             "ok_3_11_plus": py_ok,
             "dependencies": req_modules,
             "all_dependencies_present": deps_ok,
+            "server_importable": server_importable,
+            "server_import_error": server_import_error,
         },
         "launcher": {
             "package_root": str(pkg_root),
@@ -279,6 +291,8 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         f"  AI Keys:       gemini={gem_stat.get('configured')} ({gem_stat.get('source')}) | openrouter={or_stat.get('configured')} ({or_stat.get('source')})",
         "  Clients:",
     ]
+    if server_import_error:
+        lines.insert(2, f"  Server import: FAIL | {server_import_error}")
     for cname, cstat in payload["clients"].items():
         lines.append(f"    - {cname}: registered={cstat.get('registered')}")
     _emit_output(payload, as_json=args.json, summary_lines=lines)
