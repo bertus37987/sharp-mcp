@@ -64,7 +64,7 @@ function VfxPresetAndHighlightPool.CreateEmitterPreset(
 	elseif presetKind == "ExplosionFlipbook" then
 		pe.Texture = "rbxasset://textures/particles/explosion01_implosion_main.dds"
 		pcall(function()
-			pe.FlipbookLayout = Enum.ParticleFlipbookLayout.FourByFour
+			pe.FlipbookLayout = Enum.ParticleFlipbookLayout.Grid4x4
 			pe.FlipbookMode = Enum.ParticleFlipbookMode.OneShot
 		end)
 		pe.LightEmission = 0.75

@@ -935,15 +935,15 @@ class ProjectLibraryManager:
         entries_lines: List[str] = []
         for k in sorted(assets.keys()):
             a = assets[k]
-            rid = json.dumps(a.get("roblox_asset_id") or "")
-            cat = json.dumps(a.get("category") or "misc")
-            name = json.dumps(a.get("name") or k)
-            local_p = json.dumps(a.get("local_path") or "")
+            rid = json.dumps(a.get("roblox_asset_id") or "", ensure_ascii=False)
+            cat = json.dumps(a.get("category") or "misc", ensure_ascii=False)
+            name = json.dumps(a.get("name") or k, ensure_ascii=False)
+            local_p = json.dumps(a.get("local_path") or "", ensure_ascii=False)
             entries_lines.append(
-                f"\t[{json.dumps(k)}] = {{ Name = {name}, Category = {cat}, AssetId = {rid}, LocalPath = {local_p}, Version = {int(a.get('version', 1))} }},"
+                f"\t[{json.dumps(k, ensure_ascii=False)}] = {{ Name = {name}, Category = {cat}, AssetId = {rid}, LocalPath = {local_p}, Version = {int(a.get('version', 1))} }},"
             )
 
-        systems_json = json.dumps(list(sorted(state.get("systems", {}).keys())))
+        systems_luau = "{ " + ", ".join(json.dumps(key, ensure_ascii=False) for key in sorted(state.get("systems", {}))) + " }"
         ver_str = f"v{int(state.get('current_version', 0)):04d}"
 
         return (
@@ -958,9 +958,9 @@ class ProjectLibraryManager:
             "\tVersion: number,\n"
             "}\n\n"
             "local SharpAssetRegistry = {}\n\n"
-            f"SharpAssetRegistry.ProjectId = {json.dumps(self.project_id)}\n"
+            f"SharpAssetRegistry.ProjectId = {json.dumps(self.project_id, ensure_ascii=False)}\n"
             f"SharpAssetRegistry.Version = {json.dumps(ver_str)}\n"
-            f"SharpAssetRegistry.Systems = {systems_json}\n\n"
+            f"SharpAssetRegistry.Systems = {systems_luau}\n\n"
             "SharpAssetRegistry.Assets = {\n"
             + ("\n".join(entries_lines) + "\n" if entries_lines else "")
             + "} :: { [string]: RegisteredAsset }\n\n"
@@ -1003,7 +1003,7 @@ local ok, err = pcall(function()
         mod.Name = "SharpAssetRegistry"
         mod.Parent = sharedFolder
     end
-    (mod :: ModuleScript).Source = {json.dumps(luau_src)}
+    (mod :: ModuleScript).Source = {json.dumps(luau_src, ensure_ascii=False)}
 
     local libFolder = ServerStorage:FindFirstChild("_SharpProjectLibrary")
     if not libFolder then
@@ -1019,8 +1019,8 @@ local ok, err = pcall(function()
         planDoc.Name = "GAME_PLAN"
         planDoc.Parent = libFolder
     end
-    (planDoc :: StringValue).Value = {json.dumps(md_src)}
-    libFolder:SetAttribute("ProjectId", {json.dumps(self.project_id)})
+    (planDoc :: StringValue).Value = {json.dumps(md_src, ensure_ascii=False)}
+    libFolder:SetAttribute("ProjectId", {json.dumps(self.project_id, ensure_ascii=False)})
     libFolder:SetAttribute("Version", {json.dumps(ver_tag)})
 end)
 

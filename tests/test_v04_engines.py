@@ -14,6 +14,7 @@ import io
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -41,6 +42,7 @@ from sharp_mcp.credentials_store import (
     set_credentials,
 )
 from sharp_mcp.domain_engines.art_creation_engine import ArtCreationEngine
+from sharp_mcp.domain_engines.attachment_engine import AttachmentEngine
 from sharp_mcp.domain_engines.critical_audit_engine import CriticalAuditEngine
 from sharp_mcp.domain_engines.design_engine import DesignEngine
 from sharp_mcp.domain_engines.game_planner import GamePlanner, MICRO_MVP_REQUIRED_STEPS, MICRO_STEP_EXECUTION_ORDER
@@ -48,8 +50,14 @@ from sharp_mcp.domain_engines.gameplay_systems_engine import GameplaySystemsEngi
 from sharp_mcp.domain_engines.gui_engine import GuiDomainEngine
 from sharp_mcp.domain_engines.luau_audit_engine import LuauAuditSnapshotEngine
 from sharp_mcp.domain_engines.multimodal_qa_engine import MultimodalQAEngine
+from sharp_mcp.domain_engines.rig_anim_engine import RigAnimationEngine
+from sharp_mcp.domain_engines.terrain_env_engine import TerrainEnvironmentEngine
 from sharp_mcp.project_library import ProjectLibraryManager
 from sharp_mcp.skill_router import resolve_default_archive_dir, resolve_default_skills_dir
+
+
+def _luau_compiler() -> str | None:
+    return os.environ.get("LUAU_COMPILE") or shutil.which("luau-compile")
 
 
 class _FakeHttpResponse:
@@ -494,7 +502,7 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
                 eng.compile_world_assembly_optimize_luau(max_iterations=iterations)
 
     def test_world_assembly_actions_compile(self) -> None:
-        compiler = os.environ.get("LUAU_COMPILE") or shutil.which("luau-compile")
+        compiler = _luau_compiler()
         if not compiler:
             self.skipTest("luau-compile is not installed (set LUAU_COMPILE or add it to PATH)")
         eng = GameplaySystemsEngine(resolve_default_skills_dir(), resolve_default_archive_dir())
@@ -505,6 +513,65 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
                     source.write_text(eng.compile_world_assembly_optimize_luau(action=action), encoding="utf-8")
                     result = subprocess.run([compiler, "--null", str(source)], capture_output=True, text=True, check=False)
                     self.assertEqual(result.returncode, 0, f"{action}:\n{result.stdout}\n{result.stderr}")
+
+    def test_plugin_skills_and_generated_luau_compile(self) -> None:
+        compiler = _luau_compiler()
+        if not compiler:
+            self.skipTest("luau-compile is not installed (set LUAU_COMPILE or add it to PATH)")
+        skills = SERVER_ROOT / "sharp_mcp" / "bundled_skills"
+        sources = {str(p.relative_to(SERVER_ROOT)): p.read_text(encoding="utf-8") for p in (
+            *sorted((SERVER_ROOT / "studio_plugin" / "src").glob("*.luau")), *sorted(skills.rglob("*.luau")),
+        )}
+        with tempfile.TemporaryDirectory(prefix="sharp_corpus_compile_") as td:
+            root = Path(td)
+            gameplay = GameplaySystemsEngine(skills)
+            for name in ("combat_and_controller", "audio_vfx_cutscene", "data_economy_monetization", "ai_and_gameplay", "playtest_scenario"):
+                sources[name] = getattr(gameplay, f"compile_{name}_luau")()
+            audit = LuauAuditSnapshotEngine(skills)
+            sources["scaffold"] = audit.compile_scaffold_luau()
+            sources["inventory"] = audit.compile_script_inventory_luau()
+            sources["critical"] = CriticalAuditEngine(luau_audit_engine=audit).compile_live_audit_luau()
+            sources["snapshot"] = audit.compile_snapshot_and_undo_luau()
+            sources["audit"] = audit.compile_audit_all_luau()
+            sources["gui"] = GuiDomainEngine(skills).compile_gui_build_luau()
+            terrain = TerrainEnvironmentEngine(skills)
+            sources["terrain"] = terrain.compile_terrain_build_luau([0, 0, 0], [64, 64, 64])
+            sources["environment"] = terrain.compile_environment_apply_luau()
+            sources["attach"] = AttachmentEngine(skills).compile_attach_luau()
+            sources["verify"] = AttachmentEngine(skills).compile_verify_luau()
+            rig = RigAnimationEngine(skills)
+            sources["probe"] = rig.compile_probe_rig_luau()
+            sources["playback"] = rig.compile_playback_test_luau()
+            for anim_format in ("KeyframeSequence", "CurveAnimation"):
+                sources[anim_format] = rig.compile_animation_from_clips_luau(
+                    {"clips": {"Walk": rig.generate_procedural_preset("walk")}}, anim_format=anim_format,
+                )
+            design = DesignEngine()
+            ds = design.generate_design_system("Corpus")
+            for module_mode in (True, False):
+                sources[f"theme_{module_mode}"] = design.compile_theme_luau(ds, module_mode=module_mode)
+            art = ArtCreationEngine(design_engine=design, gui_engine=GuiDomainEngine(skills))
+            sources["bitmap_font"] = art.create_custom_font_kit(output_dir=str(root / "art"))["luau_source"]
+            vfx = art.create_custom_vfx(output_dir=str(root / "art"))
+            for key in ("ui_2d_vfx", "world_3d_vfx"):
+                sources[key] = vfx[key]["luau_source"]
+            library = ProjectLibraryManager(project_dir=root / "project", project_id="corpus")
+            sources["registry_empty"] = library.luau_registry_path.read_text(encoding="utf-8")
+            sources["registry_populated"] = library._build_luau_registry_source(
+                {"systems": {"combat": {}}}, {"assets": {"weapon": {"name": "Épée"}}},
+            )
+            sources["library_sync"] = library.compile_studio_sync_luau()
+            for name, source in list(sources.items()):
+                embedded = [match[1] for match in re.findall(r"\[(=*)\[(.*?)\]\1\]", source, re.S) if "--!strict" in match[1]]
+                embedded += [json.loads(match) for match in re.findall(r'\.Source\s*=\s*("(?:\\.|[^"\\])*")', source)]
+                for index, snippet in enumerate(embedded):
+                    sources[f"{name}/embedded_{index}"] = snippet
+            for index, (name, source) in enumerate(sources.items()):
+                with self.subTest(source=name):
+                    path = root / f"{index}.luau"
+                    path.write_text(source, encoding="utf-8")
+                    result = subprocess.run([compiler, "--null", str(path)], capture_output=True, text=True, check=False)
+                    self.assertEqual(result.returncode, 0, f"{name}:\n{result.stdout}\n{result.stderr}")
 
     def test_intake_questions_micro_step_progression_and_subagent_brief(self) -> None:
         with tempfile.TemporaryDirectory(prefix="sharp_micro_plan_") as td:

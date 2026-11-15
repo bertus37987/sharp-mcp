@@ -231,7 +231,7 @@ return HttpService:JSONEncode(combined)
         ]
         return f"""local HttpService = game:GetService("HttpService")
 
-local TARGET_SERVICES = {json.dumps(target_roots)}
+local TARGET_SERVICES = {{ {", ".join(json.dumps(root, ensure_ascii=False) for root in target_roots)} }}
 local MAX_SCRIPTS = {max(1, int(max_scripts))}
 local MAX_SOURCE_CHARS = {max(256, int(max_source_chars))}
 
