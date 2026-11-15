@@ -1483,12 +1483,26 @@ class SharpMcpApplication:
             max_count: int = 24,
             seed: int = 42,
             tolerance_studs: float = 0.15,
+            float_tolerance_studs: float = 0.5,
+            max_iterations: int = 8,
             execute_in_studio: bool = True,
             studio_id: Optional[str] = None,
             invoke_upstream_studiomcp_if_plugin_offline: bool = False,
             expected_place_id: Optional[int] = None,
             expected_session_nonce: Optional[str] = None,
         ) -> Any:
+            """Audit or iteratively fix OBB overlaps and floating anchored top-level assets.
+
+            Floating checks ignore models containing unanchored parts and assets with
+            SharpAllowFloating=true. Repairs never move SharpLocked assets.
+            Grounding requires a raycast hit; voids remain unresolved.
+            float_tolerance_studs is clamped to 0..512 and max_iterations to 1..64.
+            Pass the returned result as world_stats to sharp_critical_audit(mode="static"
+            or "gate"): overlapCount/floatingCount reflect the final re-audit, also
+            available as remainingOverlapCount/remainingFloatingCount after repairs.
+            allClean is false when locked assets, voids, or iteration limits prevent repair.
+            fixedCount counts movement operations, including grounding.
+            """
             self.router.ensure_skill_context(["roblox-world-assembly-and-optimization"])
             norm_act = (action or "install").strip().lower()
             luau = self.gameplay_engine.compile_world_assembly_optimize_luau(
@@ -1500,6 +1514,8 @@ class SharpMcpApplication:
                 max_count=max_count,
                 seed=seed,
                 tolerance_studs=tolerance_studs,
+                float_tolerance_studs=float_tolerance_studs,
+                max_iterations=max_iterations,
             )
             dispatch_kind = "read" if norm_act == "audit_overlaps" else "write"
             exec_res = await self._dispatch_studio_job(

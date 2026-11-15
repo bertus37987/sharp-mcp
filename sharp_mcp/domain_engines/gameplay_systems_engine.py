@@ -26,6 +26,7 @@ Embeds all 15 `--!strict` Luau scripts across the 5 new gameplay & world product
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -840,7 +841,13 @@ return HttpService:JSONEncode({{
         max_count: int = 24,
         seed: int = 42,
         tolerance_studs: float = 0.15,
+        float_tolerance_studs: float = 0.5,
+        max_iterations: int = 8,
     ) -> str:
+        if not math.isfinite(float_tolerance_studs):
+            raise ValueError("float_tolerance_studs must be finite")
+        float_tolerance_studs = max(0.0, min(float(float_tolerance_studs), 512.0))
+        max_iterations = max(1, min(int(max_iterations), 64))
         scat_src = self._read_skill_script("roblox-world-assembly-and-optimization", "poisson_surface_scatter.luau")
         sock_src = self._read_skill_script("roblox-world-assembly-and-optimization", "modular_socket_assembler.luau")
         opt_src = self._read_skill_script("roblox-world-assembly-and-optimization", "scene_budget_optimizer.luau")
@@ -862,8 +869,22 @@ local MIN_SPACING = {float(min_spacing_studs)}
 local MAX_COUNT = {int(max_count)}
 local SEED = {int(seed)}
 local OVERLAP_TOLERANCE = {float(tolerance_studs)}
+local FLOAT_TOLERANCE = {float_tolerance_studs}
+local MAX_ITERATIONS = {max_iterations}
 
-local function _collectTopAssets(): {{ {{ name: string, inst: Instance, cf: CFrame, half: Vector3, isModel: boolean }} }}
+local function _isAnchored(inst: Instance): boolean
+	if inst:IsA("BasePart") then return inst.Anchored end
+	local hasParts = false
+	for _, part in ipairs(inst:GetDescendants()) do
+		if part:IsA("BasePart") then
+			hasParts = true
+			if not part.Anchored then return false end
+		end
+	end
+	return hasParts
+end
+
+local function _collectTopAssets()
 	local assets = {{}}
 	for _, child in ipairs(Workspace:GetChildren()) do
 		if child:IsA("Terrain") or child:IsA("Camera") then
@@ -940,9 +961,8 @@ local function _auditWorkspaceOverlaps(tol: number)
 					b = B.name,
 					penetrationStuds = math.round(pen * 1000) / 1000,
 					axis = {{ math.round(axis.X * 1000) / 1000, math.round(axis.Y * 1000) / 1000, math.round(axis.Z * 1000) / 1000 }},
-					_aInst = A.inst,
-					_bInst = B.inst,
-					_pushVec = Vector3.new(axis.X, 0, axis.Z),
+					_a = A,
+					_b = B,
 				}})
 			end
 		end
@@ -950,27 +970,72 @@ local function _auditWorkspaceOverlaps(tol: number)
 	return assets, overlaps
 end
 
+local function _verticalRadius(asset): number
+	local cf, half = asset.cf, asset.half
+	return math.abs(cf.RightVector.Y) * half.X + math.abs(cf.UpVector.Y) * half.Y + math.abs(cf.LookVector.Y) * half.Z
+end
+
+local function _auditFloatingAssets(assets)
+	local floating = {{}}
+	for _, asset in ipairs(assets) do
+		if not _isAnchored(asset.inst) or asset.inst:GetAttribute("SharpAllowFloating") == true then
+			continue
+		end
+		local bottom = asset.cf.Position.Y - _verticalRadius(asset)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = {{ asset.inst }}
+		params.RespectCanCollide = true
+		local origin = Vector3.new(asset.cf.Position.X, bottom + 3, asset.cf.Position.Z)
+		local hit = Workspace:Raycast(origin, Vector3.new(0, -512, 0), params)
+		local gap = if hit then math.max(0, bottom - hit.Position.Y) else nil
+		if not hit or (gap and gap > FLOAT_TOLERANCE) then
+			table.insert(floating, {{
+				name = asset.name,
+				gapStuds = gap,
+				groundHit = if hit then hit.Instance:GetFullName() else nil,
+				_asset = asset,
+			}})
+		end
+	end
+	return floating
+end
+
+local function _worldResult(action, assets, rawOverlaps, rawFloating)
+	local overlaps, floating = {{}}, {{}}
+	for _, ov in ipairs(rawOverlaps) do
+		table.insert(overlaps, {{ a = ov.a, b = ov.b, penetrationStuds = ov.penetrationStuds, axis = ov.axis }})
+	end
+	for _, entry in ipairs(rawFloating) do
+		table.insert(floating, {{ name = entry.name, gapStuds = entry.gapStuds, groundHit = entry.groundHit }})
+	end
+	return {{
+		action = action,
+		assetsChecked = #assets,
+		overlapCount = #overlaps,
+		overlaps = overlaps,
+		floatingCount = #floating,
+		floating = floating,
+		allClean = (#overlaps == 0 and #floating == 0),
+	}}
+end
+
+local function _translateAsset(asset, shift: Vector3)
+	local inst = asset.inst
+	if inst:IsA("Model") then
+		inst:PivotTo(inst:GetPivot() + shift)
+	elseif inst:IsA("BasePart") then
+		inst.CFrame = inst.CFrame + shift
+	end
+	asset.cf = asset.cf + shift
+end
+
 if ACTION == "audit_overlaps" then
 	local assets, rawOverlaps = _auditWorkspaceOverlaps(OVERLAP_TOLERANCE)
-	local cleanOverlaps = {{}}
-	for _, ov in ipairs(rawOverlaps) do
-		table.insert(cleanOverlaps, {{
-			a = ov.a,
-			b = ov.b,
-			penetrationStuds = ov.penetrationStuds,
-			axis = ov.axis,
-		}})
-	end
 	return HttpService:JSONEncode({{
 		ok = true,
 		recordingStatus = "None",
-		result = {{
-			action = "audit_overlaps",
-			assetsChecked = #assets,
-			overlapCount = #cleanOverlaps,
-			overlaps = cleanOverlaps,
-			allClean = (#cleanOverlaps == 0),
-		}},
+		result = _worldResult(ACTION, assets, rawOverlaps, _auditFloatingAssets(assets)),
 	}})
 end
 
@@ -995,20 +1060,62 @@ local ok, resOrErr = xpcall(function()
 	local sharedFolder = repRoot:FindFirstChild("Shared") or repRoot
 
 	if ACTION == "fix_overlaps" then
-		local assets, rawOverlaps = _auditWorkspaceOverlaps(OVERLAP_TOLERANCE)
-		local fixed = {{}}
-		for _, ov in ipairs(rawOverlaps) do
-			local dirXZ = if ov._pushVec.Magnitude > 1e-3 then ov._pushVec.Unit else Vector3.new(1, 0, 0)
-			local shift = dirXZ * (ov.penetrationStuds + 0.25)
-			local inst = ov._bInst
-			if inst:IsA("Model") then
-				(inst :: Model):PivotTo((inst :: Model):GetPivot() + shift)
-			elseif inst:IsA("BasePart") then
-				(inst :: BasePart).CFrame = (inst :: BasePart).CFrame + shift
+		local moves, grounded = {{}}, {{}}
+		local iterations = 0
+		for iteration = 1, MAX_ITERATIONS do
+			local assets, rawOverlaps = _auditWorkspaceOverlaps(OVERLAP_TOLERANCE)
+			if #rawOverlaps == 0 and #_auditFloatingAssets(assets) == 0 then break end
+			iterations = iteration
+			local moved = {{}}
+			local changed = false
+			for _, ov in ipairs(rawOverlaps) do
+				local A, B = ov._a, ov._b
+				local canA = A.inst:GetAttribute("SharpLocked") ~= true
+				local canB = B.inst:GetAttribute("SharpLocked") ~= true
+				if not canA and not canB then continue end
+				local volumeA = A.half.X * A.half.Y * A.half.Z
+				local volumeB = B.half.X * B.half.Y * B.half.Z
+				local target = if canA and (not canB or volumeA < volumeB) then A else B
+				if moved[target.inst] then continue end
+				local hit, penetration, axis = _obbOverlap(A.cf, A.half, B.cf, B.half, OVERLAP_TOLERANCE)
+				if not hit then continue end
+				local away = if target == B then axis else -axis
+				local shift = away * (penetration + 0.25)
+				if math.abs(away.Y) > 0.9 then
+					local other = if target == A then B else A
+					local top = other.cf.Position.Y + _verticalRadius(other)
+					local bottom = target.cf.Position.Y - _verticalRadius(target)
+					shift = Vector3.new(0, math.max(penetration, top - bottom) + 0.25, 0)
+				end
+				_translateAsset(target, shift)
+				moved[target.inst] = true
+				changed = true
+				table.insert(moves, {{ a = ov.a, b = ov.b, name = target.name, shiftedStuds = shift.Magnitude }})
 			end
-			table.insert(fixed, {{ a = ov.a, b = ov.b, shiftedStuds = math.round(shift.Magnitude * 1000) / 1000 }})
+			for _, entry in ipairs(_auditFloatingAssets(assets)) do
+				if moved[entry._asset.inst] then continue end
+				local current = _auditFloatingAssets({{ entry._asset }})[1]
+				if not current then continue end
+				entry = current
+				if entry.groundHit and entry.gapStuds and entry._asset.inst:GetAttribute("SharpLocked") ~= true then
+					_translateAsset(entry._asset, Vector3.new(0, -entry.gapStuds, 0))
+					moved[entry._asset.inst] = true
+					changed = true
+					table.insert(grounded, {{ name = entry.name, gapStuds = entry.gapStuds, groundHit = entry.groundHit }})
+				end
+			end
+			if not changed then break end
 		end
-		return {{ action = "fix_overlaps", assetsChecked = #assets, fixedCount = #fixed, fixed = fixed }}
+		local assets, rawOverlaps = _auditWorkspaceOverlaps(OVERLAP_TOLERANCE)
+		local result = _worldResult(ACTION, assets, rawOverlaps, _auditFloatingAssets(assets))
+		result.fixedCount = #moves + #grounded
+		result.iterations = iterations
+		result.moves = moves
+		result.fixed = moves
+		result.grounded = grounded
+		result.remainingOverlapCount = result.overlapCount
+		result.remainingFloatingCount = result.floatingCount
+		return result
 	end
 
 	if ACTION == "cleanup" then
