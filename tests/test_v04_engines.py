@@ -435,7 +435,14 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
             "for _, offset in ipairs(footprintSamples) do", "Vector3.zero",
             "Vector3.new(-0.95, 0, -0.95)", "Vector3.new(-0.95, 0, 0.95)",
             "Vector3.new(0.95, 0, -0.95)", "Vector3.new(0.95, 0, 0.95)",
-            "asset.cf:PointToWorldSpace", "-asset.half.Y", "offset.X * asset.half.X", "offset.Z * asset.half.Z",
+            "local axes = { asset.cf.RightVector, asset.cf.UpVector, asset.cf.LookVector }",
+            "local halfSizes = { asset.half.X, asset.half.Y, asset.half.Z }", "local faceAxis = 1",
+            "for i = 2, 3 do", "math.abs(axes[i].Y) > math.abs(axes[faceAxis].Y) then faceAxis = i",
+            "local normal = axes[faceAxis]", "if normal.Y > 0 then normal = -normal end",
+            "asset.cf.Position + normal * halfSizes[faceAxis]",
+            "faceAxis % 3 + 1, (faceAxis + 1) % 3 + 1",
+            "local tangentU = axes[uAxis] * halfSizes[uAxis]", "local tangentV = axes[vAxis] * halfSizes[vAxis]",
+            "local sample = faceCenter + tangentU * offset.X + tangentV * offset.Z",
             "local top = asset.cf.Position.Y + _verticalRadius(asset)",
             "Vector3.new(sample.X, top, sample.Z)", "Vector3.new(0, sample.Y - 512 - origin.Y, 0)",
             "Workspace:Raycast(origin, direction, params)", "gap == nil or sampleGap < gap",
@@ -461,6 +468,7 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
             self.assertIn(fragment, fix_luau)
         self.assertNotIn("math.max(0, bottom - hit.Position.Y)", fix_luau)
         self.assertNotIn("local sampleGap = bottom - hit.Position.Y", fix_luau)
+        self.assertNotIn("offset.X * asset.half.X, -asset.half.Y, offset.Z * asset.half.Z", fix_luau)
         self.assertNotIn("bottom + 3", fix_luau)
         self.assertNotIn("Workspace:Raycast(origin, Vector3.new(0, -512, 0), params)", fix_luau)
         self.assertNotIn("local shift = away *", fix_luau)

@@ -986,6 +986,18 @@ local function _auditFloatingAssets(assets)
 		if not _isAnchored(asset.inst) or asset.inst:GetAttribute("SharpAllowFloating") == true then
 			continue
 		end
+		local axes = {{ asset.cf.RightVector, asset.cf.UpVector, asset.cf.LookVector }}
+		local halfSizes = {{ asset.half.X, asset.half.Y, asset.half.Z }}
+		local faceAxis = 1
+		for i = 2, 3 do
+			if math.abs(axes[i].Y) > math.abs(axes[faceAxis].Y) then faceAxis = i end
+		end
+		local normal = axes[faceAxis]
+		if normal.Y > 0 then normal = -normal end
+		local faceCenter = asset.cf.Position + normal * halfSizes[faceAxis]
+		local uAxis, vAxis = faceAxis % 3 + 1, (faceAxis + 1) % 3 + 1
+		local tangentU = axes[uAxis] * halfSizes[uAxis]
+		local tangentV = axes[vAxis] * halfSizes[vAxis]
 		local top = asset.cf.Position.Y + _verticalRadius(asset)
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
@@ -994,7 +1006,7 @@ local function _auditFloatingAssets(assets)
 		local nearestHit: RaycastResult? = nil
 		local gap: number? = nil
 		for _, offset in ipairs(footprintSamples) do
-			local sample = asset.cf:PointToWorldSpace(Vector3.new(offset.X * asset.half.X, -asset.half.Y, offset.Z * asset.half.Z))
+			local sample = faceCenter + tangentU * offset.X + tangentV * offset.Z
 			local origin = Vector3.new(sample.X, top, sample.Z)
 			local direction = Vector3.new(0, sample.Y - 512 - origin.Y, 0)
 			local hit = Workspace:Raycast(origin, direction, params)
