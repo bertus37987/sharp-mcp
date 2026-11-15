@@ -15,6 +15,22 @@ from sharp_mcp.blender_installer import (
 )
 
 
+def _hex_to_linear_rgba(hex_color: Optional[str], default_rgba=(0.14, 0.62, 0.96, 1.0)) -> tuple[float, float, float, float]:
+    """Convert `#RRGGBB` hex string into linearized RGBA 4-tuple for Principled BSDF."""
+    raw = (hex_color or "").strip().lstrip("#")
+    if len(raw) != 6:
+        return tuple(float(v) for v in default_rgba)
+    try:
+        vals = [int(raw[i : i + 2], 16) / 255.0 for i in (0, 2, 4)]
+    except ValueError:
+        return tuple(float(v) for v in default_rgba)
+
+    def _lin(c: float) -> float:
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    return (round(_lin(vals[0]), 5), round(_lin(vals[1]), 5), round(_lin(vals[2]), 5), 1.0)
+
+
 def _strip_future_and_main(src: str) -> str:
     """Strip module-top __future__ imports and __main__ blocks for clean single-script bundling."""
     lines: List[str] = []
@@ -473,6 +489,7 @@ _run_sharp_asset_pipeline()
         target_rig_height_studs: float = 5.0,
         export_fbx: bool = True,
         export_glb: bool = True,
+        accent_hex: Optional[str] = None,
         *,
         execute: bool = False,
         auto_install: bool = False,
@@ -733,6 +750,11 @@ _run_sharp_asset_pipeline()
         fbx_file = out_dir / f"{safe_prop}.fbx"
         glb_file = out_dir / f"{safe_prop}.glb"
         src_mesh_arg = json.dumps(str(Path(source_mesh_path).resolve())) if source_mesh_path else "None"
+        resolved_accent = (accent_hex or "").strip() if accent_hex else ""
+        if not resolved_accent and project_library is not None and hasattr(project_library, "get_design_system"):
+            ds = project_library.get_design_system() or {}
+            resolved_accent = str(((ds.get("palette") or {}).get("accent")) or "")
+        accent_rgba_tuple = _hex_to_linear_rgba(resolved_accent or "#38BDF8")
 
         compiled_py = f'''# ==============================================================================
 # Sharp MCP Compiled Blender 5.2+ Prop/Armor Socket & Export Pipeline
@@ -767,9 +789,18 @@ def _sharp_ensure_uv_and_material(obj, mat_name: str, rgba=(0.55, 0.58, 0.64, 1.
         uv_layer = mesh.uv_layers.new(name="UVMap")
         uv_data = uv_layer.data
         for poly in mesh.polygons:
+            nrm = poly.normal
+            ax, ay, az = abs(float(nrm.x)), abs(float(nrm.y)), abs(float(nrm.z))
             for loop_idx in poly.loop_indices:
                 v_co = mesh.vertices[mesh.loops[loop_idx].vertex_index].co
-                uv_data[loop_idx].uv = (0.5 + 0.25 * float(v_co.x), 0.5 + 0.25 * float(v_co.z))
+                # Triplanar-aligned box UV projection avoids stretched polar UVs
+                if az >= ax and az >= ay:
+                    u_v = (0.5 + 0.25 * float(v_co.x), 0.5 + 0.25 * float(v_co.y))
+                elif ay >= ax:
+                    u_v = (0.5 + 0.25 * float(v_co.x), 0.5 + 0.25 * float(v_co.z))
+                else:
+                    u_v = (0.5 + 0.25 * float(v_co.y), 0.5 + 0.25 * float(v_co.z))
+                uv_data[loop_idx].uv = u_v
 
     mat = bpy.data.materials.get(mat_name) or bpy.data.materials.new(name=mat_name)
     mat.use_nodes = True
@@ -790,6 +821,59 @@ def _sharp_ensure_uv_and_material(obj, mat_name: str, rgba=(0.55, 0.58, 0.64, 1.
         mesh.materials[0] = mat
     else:
         mesh.materials.append(mat)
+    return mat
+
+
+def _sharp_ensure_multi_materials(obj, prop_name: str, accent_rgba=(0.14, 0.62, 0.96, 1.0)):
+    mesh = obj.data
+    if not mesh.uv_layers:
+        uv_layer = mesh.uv_layers.new(name="UVMap")
+        uv_data = uv_layer.data
+        for poly in mesh.polygons:
+            nrm = poly.normal
+            ax, ay, az = abs(float(nrm.x)), abs(float(nrm.y)), abs(float(nrm.z))
+            for loop_idx in poly.loop_indices:
+                v_co = mesh.vertices[mesh.loops[loop_idx].vertex_index].co
+                if az >= ax and az >= ay:
+                    uv_data[loop_idx].uv = (0.5 + 0.25 * float(v_co.x), 0.5 + 0.25 * float(v_co.y))
+                elif ay >= ax:
+                    uv_data[loop_idx].uv = (0.5 + 0.25 * float(v_co.x), 0.5 + 0.25 * float(v_co.z))
+                else:
+                    uv_data[loop_idx].uv = (0.5 + 0.25 * float(v_co.y), 0.5 + 0.25 * float(v_co.z))
+
+    specs = [
+        ("PrimaryMetal", (0.42, 0.48, 0.56, 1.0), 0.86, 0.28, 0.0),
+        ("TrimAccent", (0.82, 0.62, 0.16, 1.0), 0.92, 0.22, 0.0),
+        ("LeatherGrip", (0.12, 0.075, 0.05, 1.0), 0.05, 0.68, 0.0),
+        ("CoreEmblem", tuple(accent_rgba), 0.18, 0.16, 0.45),
+    ]
+    mesh.materials.clear()
+    for tag, rgba, met, rough, emit_str in specs:
+        mat_name = "M_" + prop_name + "_" + tag
+        mat = bpy.data.materials.get(mat_name) or bpy.data.materials.new(name=mat_name)
+        mat.use_nodes = True
+        bsdf = None
+        for node in mat.node_tree.nodes:
+            if node.type == "BSDF_PRINCIPLED":
+                bsdf = node
+                break
+        if bsdf is None:
+            bsdf = mat.node_tree.nodes.new(type="ShaderNodeBsdfPrincipled")
+        bsdf.inputs["Base Color"].default_value = tuple(rgba)
+        if "Metallic" in bsdf.inputs:
+            bsdf.inputs["Metallic"].default_value = float(met)
+        if "Roughness" in bsdf.inputs:
+            bsdf.inputs["Roughness"].default_value = float(rough)
+        if emit_str > 0.0:
+            if "Emission Color" in bsdf.inputs:
+                bsdf.inputs["Emission Color"].default_value = tuple(rgba)
+            if "Emission Strength" in bsdf.inputs:
+                bsdf.inputs["Emission Strength"].default_value = float(emit_str)
+        mesh.materials.append(mat)
+    max_idx = max(0, len(mesh.materials) - 1)
+    for poly in mesh.polygons:
+        if poly.material_index < 0 or poly.material_index > max_idx:
+            poly.material_index = 0
 
 
 def _sharp_import_prop_mesh(source_path_str: str, prop_name: str):
@@ -828,20 +912,103 @@ def _sharp_import_prop_mesh(source_path_str: str, prop_name: str):
         primary = bpy.context.view_layer.objects.active
     primary.name = prop_name
     primary.data.name = prop_name + "_Mesh"
+    if not primary.data.materials:
+        _sharp_ensure_uv_and_material(primary, "M_" + prop_name + "_Mat")
     return primary
 
 
-def _sharp_add_box(bm, size_xyz, center_xyz=(0.0, 0.0, 0.0)):
-    sx, sy, sz = [float(v) for v in size_xyz]
-    cx, cy, cz = [float(v) for v in center_xyz]
-    ret = bmesh.ops.create_cube(bm, size=1.0)
-    verts = ret["verts"]
-    bmesh.ops.scale(bm, vec=(sx, sy, sz), verts=verts)
-    bmesh.ops.translate(bm, vec=(cx, cy, cz), verts=verts)
-    return verts
+def _sharp_merge_sub_bm(bm, sub_bm, mat_idx: int = 0, rot_deg=(0.0, 0.0, 0.0), loc=(0.0, 0.0, 0.0)):
+    sub_bm.verts.index_update()
+    rot_mat = Euler(
+        (math.radians(float(rot_deg[0])), math.radians(float(rot_deg[1])), math.radians(float(rot_deg[2]))),
+        "XYZ",
+    ).to_matrix()
+    offset = Vector((float(loc[0]), float(loc[1]), float(loc[2])))
+    vmap = [bm.verts.new((rot_mat @ v.co) + offset) for v in sub_bm.verts]
+    for f in sub_bm.faces:
+        try:
+            nf = bm.faces.new([vmap[v.index] for v in f.verts])
+            nf.material_index = int(mat_idx)
+        except ValueError:
+            pass
+    sub_bm.free()
 
 
-def _sharp_build_procedural_prop(prop_kind: str, prop_name: str):
+def _sharp_add_box(bm, size_xyz, center_xyz=(0.0, 0.0, 0.0), rot_deg=(0.0, 0.0, 0.0), bevel_ratio: float = 0.08, mat_idx: int = 0):
+    sx, sy, sz = [max(1e-4, float(v)) for v in size_xyz]
+    sub = bmesh.new()
+    bmesh.ops.create_cube(sub, size=1.0)
+    bmesh.ops.scale(sub, vec=(sx, sy, sz), verts=sub.verts)
+    if bevel_ratio > 0.0:
+        bev = min(sx, sy, sz) * min(0.32, float(bevel_ratio))
+        if bev > 1e-4:
+            bmesh.ops.bevel(sub, geom=list(sub.edges), offset=bev, segments=1, affect="EDGES", clamp_overlap=True)
+    _sharp_merge_sub_bm(bm, sub, mat_idx=mat_idx, rot_deg=rot_deg, loc=center_xyz)
+
+
+def _sharp_add_cylinder(bm, r1: float, r2: float, depth: float, segs: int = 12, loc=(0.0, 0.0, 0.0), rot_deg=(0.0, 0.0, 0.0), mat_idx: int = 0):
+    sub = bmesh.new()
+    bmesh.ops.create_cone(
+        sub,
+        cap_ends=True,
+        cap_tris=False,
+        segments=max(4, int(segs)),
+        radius1=max(1e-4, float(r1)),
+        radius2=max(1e-4, float(r2)),
+        depth=max(1e-4, float(depth)),
+    )
+    _sharp_merge_sub_bm(bm, sub, mat_idx=mat_idx, rot_deg=rot_deg, loc=loc)
+
+
+def _sharp_add_sphere(bm, radius: float, scale_xyz=(1.0, 1.0, 1.0), segs: int = 12, rings: int = 6, loc=(0.0, 0.0, 0.0), rot_deg=(0.0, 0.0, 0.0), mat_idx: int = 0):
+    sub = bmesh.new()
+    bmesh.ops.create_uvsphere(sub, u_segments=max(6, int(segs)), v_segments=max(4, int(rings)), radius=max(1e-4, float(radius)))
+    bmesh.ops.scale(sub, vec=(float(scale_xyz[0]), float(scale_xyz[1]), float(scale_xyz[2])), verts=sub.verts)
+    _sharp_merge_sub_bm(bm, sub, mat_idx=mat_idx, rot_deg=rot_deg, loc=loc)
+
+
+def _sharp_add_tapered_blade(bm, width: float, thickness: float, length: float, tip_len: float, loc=(0.0, 0.0, 0.0), rot_deg=(0.0, 0.0, 0.0), mat_idx: int = 0):
+    sub = bmesh.new()
+    hw = max(0.01, float(width) * 0.5)
+    ht = max(0.008, float(thickness) * 0.5)
+    sh_z = max(0.05, float(length) - float(tip_len))
+    v0 = sub.verts.new((-hw, 0.0, 0.0))
+    v1 = sub.verts.new((0.0, -ht, 0.0))
+    v2 = sub.verts.new((hw, 0.0, 0.0))
+    v3 = sub.verts.new((0.0, ht, 0.0))
+    s0 = sub.verts.new((-hw * 0.72, 0.0, sh_z))
+    s1 = sub.verts.new((0.0, -ht * 0.78, sh_z))
+    s2 = sub.verts.new((hw * 0.72, 0.0, sh_z))
+    s3 = sub.verts.new((0.0, ht * 0.78, sh_z))
+    apex = sub.verts.new((0.0, 0.0, float(length)))
+    sub.faces.new([v3, v2, v1, v0])
+    for a0, a1, b1, b0 in ((v0, v1, s1, s0), (v1, v2, s2, s1), (v2, v3, s3, s2), (v3, v0, s0, s3)):
+        sub.faces.new([a0, a1, b1, b0])
+    for t0, t1 in ((s0, s1), (s1, s2), (s2, s3), (s3, s0)):
+        sub.faces.new([t0, t1, apex])
+    _sharp_merge_sub_bm(bm, sub, mat_idx=mat_idx, rot_deg=rot_deg, loc=loc)
+
+
+def _sharp_add_faceted_gem(bm, rx: float, ry: float, rz: float, loc=(0.0, 0.0, 0.0), rot_deg=(0.0, 0.0, 0.0), mat_idx: int = 3):
+    sub = bmesh.new()
+    bmesh.ops.create_icosphere(sub, subdivisions=1, radius=1.0)
+    bmesh.ops.scale(sub, vec=(float(rx), float(ry), float(rz)), verts=sub.verts)
+    _sharp_merge_sub_bm(bm, sub, mat_idx=mat_idx, rot_deg=rot_deg, loc=loc)
+
+
+def _sharp_add_curved_shell(bm, width: float, height: float, curve_depth: float, thickness: float, segs: int = 5, taper_bottom: float = 0.65, loc=(0.0, 0.0, 0.0), rot_deg=(0.0, 0.0, 0.0), mat_idx: int = 0):
+    half_segs = max(1, int(segs) // 2)
+    seg_w = float(width) / max(1, int(segs))
+    for idx in range(-half_segs, half_segs + 1):
+        u = float(idx) / max(1, half_segs)
+        px = idx * (seg_w * 0.92)
+        py = -float(curve_depth) * (1.0 - u * u * 0.85)
+        yaw = u * 26.0
+        h_local = float(height) * (1.0 - abs(u) * (1.0 - float(taper_bottom)) * 0.35)
+        _sharp_add_box(bm, (seg_w * 1.05, thickness, h_local), (loc[0] + px, loc[1] + py, loc[2]), (rot_deg[0], rot_deg[1], rot_deg[2] + yaw), bevel_ratio=0.14, mat_idx=mat_idx)
+
+
+def _sharp_build_procedural_prop(prop_kind: str, prop_name: str, accent_rgba=(0.14, 0.62, 0.96, 1.0)):
     existing = bpy.data.objects.get(prop_name)
     if existing:
         bpy.data.objects.remove(existing, do_unlink=True)
@@ -851,50 +1018,170 @@ def _sharp_build_procedural_prop(prop_kind: str, prop_name: str):
     bm = bmesh.new()
 
     k = prop_kind.lower()
+    # Material slot conventions: 0=PrimaryMetal, 1=TrimAccent, 2=LeatherGrip, 3=CoreEmblem
     # Blender local convention before Roblox export: X=right, Y=back, Z=up
     if k == "sword":
-        # Hilt grip centered at origin, blade extending +Z
-        _sharp_add_box(bm, (0.14, 0.14, 0.80), (0.0, 0.0, 0.0))
-        _sharp_add_box(bm, (0.24, 0.24, 0.18), (0.0, 0.0, -0.46))
-        _sharp_add_box(bm, (0.85, 0.20, 0.14), (0.0, 0.0, 0.44))
-        _sharp_add_box(bm, (0.24, 0.08, 2.55), (0.0, 0.0, 1.78))
+        # Leather wrapped handle + trim rings + swept winged crossguard + diamond blade + faceted pommel gem
+        _sharp_add_cylinder(bm, 0.068, 0.062, 0.72, segs=10, loc=(0.0, 0.0, -0.02), mat_idx=2)
+        for rz in (-0.24, -0.04, 0.16):
+            _sharp_add_cylinder(bm, 0.076, 0.076, 0.04, segs=10, loc=(0.0, 0.0, rz), mat_idx=1)
+        _sharp_add_cylinder(bm, 0.11, 0.08, 0.11, segs=8, loc=(0.0, 0.0, -0.42), mat_idx=1)
+        _sharp_add_faceted_gem(bm, 0.075, 0.075, 0.09, loc=(0.0, 0.0, -0.51), mat_idx=3)
+        _sharp_add_box(bm, (0.24, 0.20, 0.16), (0.0, 0.0, 0.36), bevel_ratio=0.18, mat_idx=1)
+        _sharp_add_box(bm, (0.40, 0.13, 0.10), (-0.28, 0.0, 0.42), rot_deg=(0.0, -16.0, 0.0), bevel_ratio=0.16, mat_idx=1)
+        _sharp_add_box(bm, (0.40, 0.13, 0.10), (0.28, 0.0, 0.42), rot_deg=(0.0, 16.0, 0.0), bevel_ratio=0.16, mat_idx=1)
+        _sharp_add_faceted_gem(bm, 0.075, 0.095, 0.075, loc=(0.0, 0.0, 0.36), mat_idx=3)
+        _sharp_add_tapered_blade(bm, width=0.28, thickness=0.11, length=2.65, tip_len=0.52, loc=(0.0, 0.0, 0.44), mat_idx=0)
+        _sharp_add_box(bm, (0.055, 0.125, 1.78), (0.0, 0.0, 1.38), bevel_ratio=0.12, mat_idx=1)
     elif k == "shield":
-        _sharp_add_box(bm, (2.10, 0.18, 2.50), (0.0, 0.0, 0.0))
-        _sharp_add_box(bm, (0.55, 0.16, 0.55), (0.0, -0.14, 0.15))
+        # Arched heater shield + gold outer rim + layered boss medallion + rear handle
+        _sharp_add_curved_shell(bm, 2.05, 2.38, curve_depth=0.22, thickness=0.14, segs=5, taper_bottom=0.58, loc=(0.0, 0.0, 0.0), mat_idx=0)
+        _sharp_add_curved_shell(bm, 2.16, 0.16, curve_depth=0.24, thickness=0.19, segs=5, taper_bottom=0.95, loc=(0.0, -0.02, 1.15), mat_idx=1)
+        _sharp_add_box(bm, (0.14, 0.18, 2.05), (-0.98, 0.06, 0.02), rot_deg=(0.0, -8.0, 0.0), bevel_ratio=0.18, mat_idx=1)
+        _sharp_add_box(bm, (0.14, 0.18, 2.05), (0.98, 0.06, 0.02), rot_deg=(0.0, 8.0, 0.0), bevel_ratio=0.18, mat_idx=1)
+        _sharp_add_cylinder(bm, 0.36, 0.24, 0.14, segs=12, loc=(0.0, -0.26, 0.14), rot_deg=(90.0, 0.0, 0.0), mat_idx=1)
+        _sharp_add_faceted_gem(bm, 0.18, 0.14, 0.18, loc=(0.0, -0.34, 0.14), mat_idx=3)
+        _sharp_add_box(bm, (0.12, 0.26, 0.62), (0.0, 0.20, 0.0), bevel_ratio=0.15, mat_idx=2)
     elif k == "bow":
-        _sharp_add_box(bm, (0.14, 0.18, 1.35), (0.0, 0.0, 0.0))
-        _sharp_add_box(bm, (0.12, 0.22, 1.30), (0.0, -0.18, 1.25))
-        _sharp_add_box(bm, (0.12, 0.22, 1.30), (0.0, -0.18, -1.25))
-        _sharp_add_box(bm, (0.04, 0.04, 3.60), (0.0, -0.34, 0.0))
+        # Ergonomic leather riser + swept curved limbs + gilded tips + rune sight + bowstring
+        _sharp_add_box(bm, (0.15, 0.21, 0.95), (0.0, 0.0, 0.0), bevel_ratio=0.2, mat_idx=2)
+        _sharp_add_box(bm, (0.13, 0.20, 0.78), (0.0, -0.10, 0.78), rot_deg=(14.0, 0.0, 0.0), bevel_ratio=0.18, mat_idx=0)
+        _sharp_add_box(bm, (0.10, 0.16, 0.72), (0.0, -0.30, 1.38), rot_deg=(24.0, 0.0, 0.0), bevel_ratio=0.18, mat_idx=1)
+        _sharp_add_box(bm, (0.13, 0.20, 0.78), (0.0, -0.10, -0.78), rot_deg=(-14.0, 0.0, 0.0), bevel_ratio=0.18, mat_idx=0)
+        _sharp_add_box(bm, (0.10, 0.16, 0.72), (0.0, -0.30, -1.38), rot_deg=(-24.0, 0.0, 0.0), bevel_ratio=0.18, mat_idx=1)
+        _sharp_add_faceted_gem(bm, 0.09, 0.10, 0.12, loc=(0.0, -0.09, 0.26), mat_idx=3)
+        _sharp_add_cylinder(bm, 0.016, 0.016, 3.36, segs=6, loc=(0.0, -0.45, 0.0), mat_idx=0)
     elif k == "staff":
-        _sharp_add_box(bm, (0.16, 0.16, 4.40), (0.0, 0.0, 1.40))
-        _sharp_add_box(bm, (0.42, 0.42, 0.62), (0.0, 0.0, 3.85))
+        # Fluted staff shaft + grip leather + twin cradle horns + glowing hovering crystal orb
+        _sharp_add_cylinder(bm, 0.075, 0.095, 4.10, segs=10, loc=(0.0, 0.0, 1.15), mat_idx=2)
+        for sz in (-0.35, 0.35, 3.05, 3.22):
+            _sharp_add_cylinder(bm, 0.115, 0.115, 0.08, segs=10, loc=(0.0, 0.0, sz), mat_idx=1)
+        _sharp_add_box(bm, (0.11, 0.12, 0.64), (-0.22, 0.0, 3.55), rot_deg=(0.0, -24.0, 0.0), bevel_ratio=0.2, mat_idx=1)
+        _sharp_add_box(bm, (0.11, 0.12, 0.64), (0.22, 0.0, 3.55), rot_deg=(0.0, 24.0, 0.0), bevel_ratio=0.2, mat_idx=1)
+        _sharp_add_faceted_gem(bm, 0.24, 0.24, 0.34, loc=(0.0, 0.0, 3.74), mat_idx=3)
     elif k == "gun":
-        _sharp_add_box(bm, (0.22, 0.42, 0.65), (0.0, 0.0, -0.25))
-        _sharp_add_box(bm, (0.24, 1.95, 0.34), (0.0, -0.72, 0.16))
-        _sharp_add_box(bm, (0.14, 0.28, 0.42), (0.0, -0.85, -0.15))
-    elif k in ("backpack", "cape", "wings"):
-        dims = (1.55, 0.85, 1.85) if k == "backpack" else ((1.85, 0.18, 2.75) if k == "cape" else (4.4, 0.35, 2.4))
-        _sharp_add_box(bm, dims, (0.0, 0.0, 0.0))
+        # Tactical beveled carbine: receiver, shroud, barrel, muzzle brake, stock, grip, curved mag, optic
+        _sharp_add_box(bm, (0.24, 1.18, 0.34), (0.0, -0.35, 0.16), bevel_ratio=0.14, mat_idx=0)
+        _sharp_add_cylinder(bm, 0.068, 0.065, 1.35, segs=10, loc=(0.0, -1.10, 0.19), rot_deg=(90.0, 0.0, 0.0), mat_idx=0)
+        _sharp_add_box(bm, (0.19, 0.72, 0.24), (0.0, -1.06, 0.19), bevel_ratio=0.14, mat_idx=1)
+        _sharp_add_cylinder(bm, 0.09, 0.085, 0.18, segs=8, loc=(0.0, -1.82, 0.19), rot_deg=(90.0, 0.0, 0.0), mat_idx=1)
+        _sharp_add_box(bm, (0.20, 0.34, 0.66), (0.0, 0.02, -0.22), rot_deg=(16.0, 0.0, 0.0), bevel_ratio=0.14, mat_idx=2)
+        _sharp_add_box(bm, (0.18, 0.70, 0.26), (0.0, 0.56, 0.12), bevel_ratio=0.12, mat_idx=2)
+        _sharp_add_box(bm, (0.15, 0.28, 0.56), (0.0, -0.58, -0.22), rot_deg=(-12.0, 0.0, 0.0), bevel_ratio=0.1, mat_idx=2)
+        _sharp_add_box(bm, (0.14, 0.32, 0.14), (0.0, -0.32, 0.40), bevel_ratio=0.15, mat_idx=1)
+        _sharp_add_faceted_gem(bm, 0.06, 0.08, 0.06, loc=(0.0, -0.44, 0.40), mat_idx=3)
     elif k == "helmet":
-        bmesh.ops.create_icosphere(bm, subdivisions=2, radius=0.64)
-        bmesh.ops.scale(bm, vec=(1.0, 1.0, 0.96), verts=bm.verts)
+        # Contoured dome + sagittal crest + T-visor bar + cheek plates + ear medallions
+        _sharp_add_sphere(bm, 0.60, scale_xyz=(0.98, 1.06, 1.02), segs=14, rings=8, loc=(0.0, 0.0, 0.04), mat_idx=0)
+        _sharp_add_box(bm, (0.14, 0.84, 0.34), (0.0, -0.02, 0.56), bevel_ratio=0.18, mat_idx=3)
+        _sharp_add_curved_shell(bm, 1.12, 0.18, curve_depth=0.22, thickness=0.12, segs=5, loc=(0.0, -0.54, 0.14), mat_idx=1)
+        _sharp_add_box(bm, (0.14, 0.14, 0.58), (0.0, -0.62, -0.10), bevel_ratio=0.15, mat_idx=1)
+        _sharp_add_box(bm, (0.22, 0.46, 0.52), (-0.48, -0.28, -0.18), bevel_ratio=0.14, mat_idx=0)
+        _sharp_add_box(bm, (0.22, 0.46, 0.52), (0.48, -0.28, -0.18), bevel_ratio=0.14, mat_idx=0)
+        _sharp_add_cylinder(bm, 0.16, 0.13, 0.10, segs=10, loc=(-0.60, 0.0, -0.02), rot_deg=(0.0, 90.0, 0.0), mat_idx=1)
+        _sharp_add_cylinder(bm, 0.16, 0.13, 0.10, segs=10, loc=(0.60, 0.0, -0.02), rot_deg=(0.0, 90.0, 0.0), mat_idx=1)
     elif k == "chest":
-        _sharp_add_box(bm, (2.15, 1.22, 1.55), (0.0, 0.0, 0.0))
+        # Contoured pectoral cuirass + fauld lames + gorget trim + belt/buckle + glowing chest core
+        _sharp_add_box(bm, (2.02, 1.12, 0.92), (0.0, 0.0, 0.24), bevel_ratio=0.16, mat_idx=0)
+        _sharp_add_box(bm, (1.76, 1.02, 0.52), (0.0, 0.02, -0.44), bevel_ratio=0.14, mat_idx=0)
+        _sharp_add_box(bm, (1.38, 0.98, 0.22), (0.0, -0.02, 0.74), bevel_ratio=0.18, mat_idx=1)
+        _sharp_add_box(bm, (1.84, 1.08, 0.24), (0.0, 0.0, -0.58), bevel_ratio=0.12, mat_idx=2)
+        _sharp_add_box(bm, (0.40, 0.18, 0.30), (0.0, -0.56, -0.58), bevel_ratio=0.15, mat_idx=1)
+        _sharp_add_faceted_gem(bm, 0.22, 0.14, 0.26, loc=(0.0, -0.58, 0.28), mat_idx=3)
     elif "pauldron" in k:
-        bmesh.ops.create_icosphere(bm, subdivisions=2, radius=0.52)
-        bmesh.ops.scale(bm, vec=(1.05, 1.0, 0.90), verts=bm.verts)
-    elif "greave" in k or "boot" in k or "gauntlet" in k:
-        dims = (0.98, 0.98, 1.25) if "greave" in k else ((1.02, 1.15, 0.55) if "boot" in k else (0.85, 0.85, 0.95))
-        _sharp_add_box(bm, dims, (0.0, 0.0, 0.0))
+        # Three overlapping nested curved shoulder plates + trim ridge + emblem + strap
+        sx_sign = -1.0 if "left" in k else 1.0
+        for layer_idx, (lw, lh, off_z, tilt) in enumerate(((1.12, 0.64, 0.18, 12.0), (1.02, 0.44, -0.12, 22.0), (0.90, 0.36, -0.36, 30.0))):
+            _sharp_add_curved_shell(
+                bm,
+                lw,
+                lh,
+                curve_depth=0.22,
+                thickness=0.14,
+                segs=5,
+                loc=(sx_sign * layer_idx * 0.06, 0.0, off_z),
+                rot_deg=(0.0, sx_sign * tilt, sx_sign * -90.0),
+                mat_idx=0,
+            )
+        _sharp_add_box(bm, (0.20, 0.96, 0.18), (sx_sign * 0.04, 0.0, 0.36), bevel_ratio=0.18, mat_idx=1)
+        _sharp_add_faceted_gem(bm, 0.14, 0.14, 0.18, loc=(sx_sign * 0.42, 0.0, 0.14), mat_idx=3)
+        _sharp_add_box(bm, (0.76, 0.20, 0.16), (0.0, 0.0, -0.32), bevel_ratio=0.12, mat_idx=2)
+    elif "greave" in k:
+        # Tapered shin plate + sculpted knee cop + dual calf straps + crest gem
+        _sharp_add_curved_shell(bm, 0.92, 1.14, curve_depth=0.18, thickness=0.14, segs=5, taper_bottom=0.72, loc=(0.0, -0.05, 0.0), mat_idx=0)
+        _sharp_add_sphere(bm, 0.34, scale_xyz=(0.95, 0.65, 1.05), segs=10, rings=6, loc=(0.0, -0.46, 0.42), mat_idx=1)
+        _sharp_add_faceted_gem(bm, 0.12, 0.10, 0.16, loc=(0.0, -0.58, 0.42), mat_idx=3)
+        _sharp_add_cylinder(bm, 0.48, 0.48, 0.14, segs=10, loc=(0.0, 0.02, 0.22), mat_idx=2)
+        _sharp_add_cylinder(bm, 0.42, 0.42, 0.14, segs=10, loc=(0.0, 0.02, -0.32), mat_idx=2)
+    elif "boot" in k:
+        # Armored cuff + sabaton toe cap + tread sole + ankle buckle
+        _sharp_add_box(bm, (0.94, 0.94, 0.46), (0.0, 0.04, 0.12), bevel_ratio=0.16, mat_idx=0)
+        _sharp_add_box(bm, (0.92, 0.88, 0.34), (0.0, -0.28, -0.08), bevel_ratio=0.22, mat_idx=1)
+        _sharp_add_box(bm, (0.98, 1.22, 0.12), (0.0, -0.10, -0.26), bevel_ratio=0.12, mat_idx=2)
+        _sharp_add_box(bm, (0.98, 0.24, 0.14), (0.0, -0.12, 0.18), bevel_ratio=0.15, mat_idx=2)
+    elif "gauntlet" in k:
+        # Vambrace cuff + articulated knuckle plate + wrist strap + gem
+        _sharp_add_cylinder(bm, 0.42, 0.47, 0.84, segs=10, loc=(0.0, 0.0, 0.05), mat_idx=0)
+        _sharp_add_box(bm, (0.86, 0.34, 0.28), (0.0, -0.32, -0.24), bevel_ratio=0.18, mat_idx=1)
+        _sharp_add_cylinder(bm, 0.46, 0.46, 0.14, segs=10, loc=(0.0, 0.0, 0.22), mat_idx=2)
+        _sharp_add_faceted_gem(bm, 0.11, 0.11, 0.14, loc=(0.0, -0.46, 0.06), mat_idx=3)
+    elif k == "backpack":
+        # Chamfered pack shell + lid flap + twin side pouches + top bedroll + twin straps + buckles + beacon
+        _sharp_add_box(bm, (1.36, 0.72, 1.56), (0.0, 0.04, -0.06), bevel_ratio=0.16, mat_idx=2)
+        _sharp_add_box(bm, (1.42, 0.78, 0.36), (0.0, 0.04, 0.62), bevel_ratio=0.18, mat_idx=0)
+        _sharp_add_box(bm, (0.28, 0.46, 0.82), (-0.78, 0.02, -0.12), bevel_ratio=0.18, mat_idx=2)
+        _sharp_add_box(bm, (0.28, 0.46, 0.82), (0.78, 0.02, -0.12), bevel_ratio=0.18, mat_idx=2)
+        _sharp_add_cylinder(bm, 0.22, 0.22, 1.28, segs=10, loc=(0.0, 0.12, 0.90), rot_deg=(0.0, 90.0, 0.0), mat_idx=0)
+        _sharp_add_box(bm, (0.16, 0.14, 0.26), (-0.36, 0.42, 0.46), bevel_ratio=0.12, mat_idx=1)
+        _sharp_add_box(bm, (0.16, 0.14, 0.26), (0.36, 0.42, 0.46), bevel_ratio=0.12, mat_idx=1)
+        _sharp_add_box(bm, (0.18, 0.24, 1.32), (-0.42, -0.38, -0.02), bevel_ratio=0.12, mat_idx=2)
+        _sharp_add_box(bm, (0.18, 0.24, 1.32), (0.42, -0.38, -0.02), bevel_ratio=0.12, mat_idx=2)
+        _sharp_add_faceted_gem(bm, 0.14, 0.12, 0.16, loc=(0.0, 0.44, 0.12), mat_idx=3)
+    elif k == "cape":
+        # Flared cambered royal mantle + trim border + gilded shoulder clasps
+        _sharp_add_curved_shell(bm, 1.88, 2.55, curve_depth=0.28, thickness=0.12, segs=5, taper_bottom=0.82, loc=(0.0, 0.14, 0.0), rot_deg=(-8.0, 0.0, 0.0), mat_idx=3)
+        _sharp_add_box(bm, (1.36, 0.24, 0.22), (0.0, 0.02, 1.22), bevel_ratio=0.18, mat_idx=1)
+        _sharp_add_cylinder(bm, 0.16, 0.13, 0.10, segs=10, loc=(-0.58, -0.04, 1.18), rot_deg=(90.0, 0.0, 0.0), mat_idx=1)
+        _sharp_add_cylinder(bm, 0.16, 0.13, 0.10, segs=10, loc=(0.58, -0.04, 1.18), rot_deg=(90.0, 0.0, 0.0), mat_idx=1)
+    elif k == "wings":
+        # Dual swept wing spars + fanned tapered primary & secondary pinion blades
+        for sx_sign in (-1.0, 1.0):
+            _sharp_add_box(bm, (1.65, 0.18, 0.18), (sx_sign * 0.92, 0.12, 0.56), rot_deg=(0.0, sx_sign * 22.0, sx_sign * -14.0), bevel_ratio=0.18, mat_idx=1)
+            for idx, (fx, fz, flen, fw, tilt) in enumerate((
+                (0.58, 0.30, 1.65, 0.30, 14.0),
+                (0.98, 0.36, 1.95, 0.30, 22.0),
+                (1.38, 0.44, 2.15, 0.28, 30.0),
+                (1.76, 0.52, 1.95, 0.25, 38.0),
+                (2.08, 0.58, 1.55, 0.22, 46.0),
+            )):
+                _sharp_add_tapered_blade(
+                    bm,
+                    width=fw,
+                    thickness=0.09,
+                    length=flen,
+                    tip_len=flen * 0.28,
+                    loc=(sx_sign * fx, 0.18 + idx * 0.03, fz),
+                    rot_deg=(-102.0, sx_sign * tilt, 0.0),
+                    mat_idx=3 if idx == 4 else 0,
+                )
+    elif k == "pet":
+        # Stylized companion spirit/drone: beveled core cube + glowing visor eye + ear fins + floating halo ring
+        _sharp_add_box(bm, (0.76, 0.76, 0.72), (0.0, 0.0, 0.0), bevel_ratio=0.22, mat_idx=0)
+        _sharp_add_box(bm, (0.52, 0.16, 0.30), (0.0, -0.36, 0.04), bevel_ratio=0.16, mat_idx=2)
+        _sharp_add_faceted_gem(bm, 0.15, 0.10, 0.15, loc=(0.0, -0.43, 0.04), mat_idx=3)
+        _sharp_add_box(bm, (0.14, 0.30, 0.46), (-0.44, 0.02, 0.18), rot_deg=(0.0, -18.0, 0.0), bevel_ratio=0.18, mat_idx=1)
+        _sharp_add_box(bm, (0.14, 0.30, 0.46), (0.44, 0.02, 0.18), rot_deg=(0.0, 18.0, 0.0), bevel_ratio=0.18, mat_idx=1)
+        _sharp_add_cylinder(bm, 0.26, 0.16, 0.14, segs=10, loc=(0.0, 0.0, -0.42), mat_idx=2)
+        _sharp_add_cylinder(bm, 0.28, 0.28, 0.07, segs=12, loc=(0.0, 0.0, 0.56), mat_idx=1)
     else:
-        bmesh.ops.create_icosphere(bm, subdivisions=2, radius=0.45)
+        _sharp_add_faceted_gem(bm, 0.45, 0.45, 0.45, mat_idx=0)
 
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(mesh)
     bm.free()
+    mesh.update()
 
-    _sharp_ensure_uv_and_material(obj, f"M_{{prop_name}}_Mat")
+    _sharp_ensure_multi_materials(obj, prop_name, accent_rgba=accent_rgba)
     return obj
 
 
@@ -1081,11 +1368,13 @@ def _run_sharp_asset_attach_pipeline():
     target_size = {json.dumps(list(preset["target_size_studs"]))}
     secondary_specs = {json.dumps(preset["secondary_sockets"])}
 
+    accent_rgba = {repr(accent_rgba_tuple)}
+
     rig_obj = build_rig_from_spec({spec_arg}, create_proxies=True)
     if src_mesh:
         prop_obj = _sharp_import_prop_mesh(src_mesh, prop_name)
     else:
-        prop_obj = _sharp_build_procedural_prop(prop_kind, prop_name)
+        prop_obj = _sharp_build_procedural_prop(prop_kind, prop_name, accent_rgba=accent_rgba)
 
     _sharp_scale_and_align_prop(
         prop_obj,
@@ -1190,6 +1479,19 @@ def _run_sharp_asset_attach_pipeline():
             export_yup=True,
         )
 
+    tri_count = sum(max(1, len(p.vertices) - 2) for p in prop_obj.data.polygons)
+    vert_count = len(prop_obj.data.vertices)
+    mat_slots = [m.name for m in prop_obj.data.materials if m is not None]
+    mesh_stats = {{
+        "triangle_count": int(tri_count),
+        "vertex_count": int(vert_count),
+        "polygon_count": len(prop_obj.data.polygons),
+        "material_slots": mat_slots,
+        "material_count": len(mat_slots),
+        "uv_present": bool(prop_obj.data.uv_layers),
+        "within_roblox_10k_budget": bool(tri_count <= 10000),
+    }}
+
     sidecar_payload = {{
         "schema": "sharp.attachment_sidecar.v1",
         "prop_name": prop_name,
@@ -1204,12 +1506,13 @@ def _run_sharp_asset_attach_pipeline():
         "parent_bone": primary_limb,
         "vertex_group_count": len(prop_obj.vertex_groups),
         "max_weights_per_vertex": int(max_weights),
+        "mesh_stats": mesh_stats,
         "fbx_path": str(fbx_path) if {repr(bool(export_fbx))} else None,
         "glb_path": str(glb_path) if {repr(bool(export_glb))} else None,
         "attachments": attachments_json,
     }}
     sidecar_path.write_text(json.dumps(sidecar_payload, indent=2), encoding="utf-8")
-    print("SHARP_BLENDER_ASSET_ATTACH_OK", json.dumps({{"sidecar": str(sidecar_path), "attachment_count": len(attachments_json)}}))
+    print("SHARP_BLENDER_ASSET_ATTACH_OK", json.dumps({{"sidecar": str(sidecar_path), "attachment_count": len(attachments_json), "triangles": int(tri_count)}}))
     return sidecar_payload
 
 
@@ -1227,6 +1530,7 @@ _run_sharp_asset_attach_pipeline()
             "target_limb": resolved_limb,
             "target_limb_attachment": resolved_limb_att,
             "item_attachment": resolved_item_att,
+            "accent_hex": resolved_accent or "#38BDF8",
             "output_dir": str(out_dir),
             "sidecar_path": str(sidecar_file),
             "fbx_path": str(fbx_file) if export_fbx else None,
@@ -1249,6 +1553,7 @@ _run_sharp_asset_attach_pipeline()
             result["ok"] = bool(exec_res.get("ok"))
             if result["executed"] and sidecar_file.is_file():
                 result["sidecar"] = json.loads(sidecar_file.read_text(encoding="utf-8"))
+                result["mesh_stats"] = result["sidecar"].get("mesh_stats")
                 reg_paths = [p for p in (fbx_file, glb_file, sidecar_file) if p.is_file()]
                 result["registered_asset_keys"] = self._register_outputs_if_present(
                     project_library=project_library,

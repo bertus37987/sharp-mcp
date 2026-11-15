@@ -677,6 +677,7 @@ class AttachmentEngine:
             "prop_dimensions_studs": data.get("prop_dimensions_studs"),
             "target_limb": data.get("target_limb"),
             "target_limb_attachment": data.get("target_limb_attachment"),
+            "mesh_stats": data.get("mesh_stats"),
             "attachments": validated_atts,
             "warnings": warnings,
         }

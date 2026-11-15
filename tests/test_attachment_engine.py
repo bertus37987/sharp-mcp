@@ -22,6 +22,7 @@ from sharp_mcp.domain_engines.attachment_engine import (  # noqa: E402
     SOCKET_PRESETS,
     AttachmentEngine,
 )
+from sharp_mcp.blender_installer import detect_blender_installation  # noqa: E402
 from sharp_mcp.domain_engines.blender_engine import BlenderDomainEngine  # noqa: E402
 from sharp_mcp.domain_engines.rig_anim_engine import RigAnimationEngine  # noqa: E402
 
@@ -609,6 +610,80 @@ class TestBlenderAttachCompilerAndHygiene(unittest.TestCase):
                 )
                 self.assertEqual(ik_res["attachment_mode"], "rigid")
                 self.assertEqual(ik_res["attach_mode"], "two_hand_ik")
+
+    def test_sculpted_multi_material_prop_geometry_and_mesh_stats(self) -> None:
+        all_kinds = (
+            "sword", "bow", "shield", "staff", "gun", "backpack", "cape", "wings", "pet",
+            "helmet", "chest", "pauldron", "left_pauldron", "right_pauldron",
+            "greave", "left_greave", "right_greave", "boot", "gauntlet",
+        )
+        attach_eng = AttachmentEngine(BUNDLED_SKILLS_DIR)
+        with tempfile.TemporaryDirectory(prefix="sharp_bmesh_test_") as td:
+            for k in all_kinds:
+                res = self.blender.compile_asset_attach_bpy(
+                    prop_kind=k,
+                    prop_name=f"Hero_{k}",
+                    accent_hex="#FF3366",
+                    output_dir=td,
+                    execute=False,
+                )
+                self.assertTrue(res["ok"])
+                self.assertEqual(res["accent_hex"], "#FF3366")
+                src = res["compiled_bpy_code"]
+                compile(src, f"sculpted_{k}.py", "exec")
+                self.assertIn("_sharp_ensure_multi_materials", src)
+                self.assertIn("within_roblox_10k_budget", src)
+                self.assertIn("PrimaryMetal", src)
+                self.assertIn("CoreEmblem", src)
+
+            # Sidecar loader preserves mesh_stats cleanly
+            sample_sidecar = {
+                "schema": "sharp.attachment_sidecar.v1",
+                "prop_name": "Sunblade",
+                "prop_kind": "sword",
+                "mesh_stats": {
+                    "triangle_count": 402,
+                    "vertex_count": 225,
+                    "material_count": 4,
+                    "uv_present": True,
+                    "within_roblox_10k_budget": True,
+                },
+                "attachments": [
+                    {
+                        "name": "GripAttachment",
+                        "role": "primary",
+                        "target_limb": "RightHand",
+                        "target_limb_attachment": "RightGripAttachment",
+                        "pos": [0.0, 0.0, 0.0],
+                        "rot_deg": [0.0, 0.0, 0.0],
+                    }
+                ],
+            }
+            parsed = attach_eng.load_blender_sidecar(sample_sidecar)
+            self.assertTrue(parsed["ok"])
+            self.assertEqual(parsed["mesh_stats"]["triangle_count"], 402)
+            self.assertEqual(parsed["mesh_stats"]["material_count"], 4)
+
+            if detect_blender_installation().get("installed"):
+                live_res = self.blender.compile_asset_attach_bpy(
+                    prop_kind="sword",
+                    prop_name="StarforgeSword",
+                    accent_hex="#22D3EE",
+                    output_dir=str(Path(td) / "live_sword"),
+                    execute=True,
+                    execution_mode="headless",
+                    timeout_sec=60.0,
+                )
+                self.assertTrue(live_res["ok"] and live_res["executed"], f"Headless Blender failed: {live_res}")
+                ms = live_res.get("mesh_stats") or {}
+                self.assertGreaterEqual(int(ms.get("triangle_count", 0)), 150)
+                self.assertEqual(ms.get("material_count"), 4)
+                self.assertTrue(ms.get("uv_present"))
+                self.assertTrue(ms.get("within_roblox_10k_budget"))
+                loaded = attach_eng.load_blender_sidecar(live_res["sidecar_path"])
+                self.assertTrue(loaded["ok"])
+                self.assertEqual(loaded["warnings"], [])
+                self.assertEqual(loaded["mesh_stats"]["material_count"], 4)
 
     def test_runtime_files_and_skills_hygiene_and_mirror_parity(self) -> None:
         runtime_files = [
