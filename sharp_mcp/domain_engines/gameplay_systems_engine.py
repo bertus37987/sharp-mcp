@@ -988,11 +988,12 @@ local function _auditFloatingAssets(assets)
 		params.RespectCanCollide = true
 		local origin = Vector3.new(asset.cf.Position.X, bottom + 3, asset.cf.Position.Z)
 		local hit = Workspace:Raycast(origin, Vector3.new(0, -512, 0), params)
-		local gap = if hit then math.max(0, bottom - hit.Position.Y) else nil
-		if not hit or (gap and gap > FLOAT_TOLERANCE) then
+		local gap = if hit then bottom - hit.Position.Y else nil
+		if not hit or (gap and math.abs(gap) > FLOAT_TOLERANCE) then
 			table.insert(floating, {{
 				name = asset.name,
 				gapStuds = gap,
+				kind = if not hit then "void" elseif gap < 0 then "embedded" else "floating",
 				groundHit = if hit then hit.Instance:GetFullName() else nil,
 				_asset = asset,
 			}})
@@ -1007,7 +1008,7 @@ local function _worldResult(action, assets, rawOverlaps, rawFloating)
 		table.insert(overlaps, {{ a = ov.a, b = ov.b, penetrationStuds = ov.penetrationStuds, axis = ov.axis }})
 	end
 	for _, entry in ipairs(rawFloating) do
-		table.insert(floating, {{ name = entry.name, gapStuds = entry.gapStuds, groundHit = entry.groundHit }})
+		table.insert(floating, {{ name = entry.name, gapStuds = entry.gapStuds, groundHit = entry.groundHit, kind = entry.kind }})
 	end
 	return {{
 		action = action,
@@ -1080,12 +1081,16 @@ local ok, resOrErr = xpcall(function()
 				local hit, penetration, axis = _obbOverlap(A.cf, A.half, B.cf, B.half, OVERLAP_TOLERANCE)
 				if not hit then continue end
 				local away = if target == B then axis else -axis
-				local shift = away * (penetration + 0.25)
+				local shift: Vector3
 				if math.abs(away.Y) > 0.9 then
 					local other = if target == A then B else A
 					local top = other.cf.Position.Y + _verticalRadius(other)
 					local bottom = target.cf.Position.Y - _verticalRadius(target)
 					shift = Vector3.new(0, math.max(penetration, top - bottom) + 0.25, 0)
+				else
+					local horizontal = Vector3.new(away.X, 0, away.Z)
+					local horizontalMagnitude = horizontal.Magnitude
+					shift = horizontal / horizontalMagnitude * ((penetration + 0.25) / horizontalMagnitude)
 				end
 				_translateAsset(target, shift)
 				moved[target.inst] = true
@@ -1101,7 +1106,7 @@ local ok, resOrErr = xpcall(function()
 					_translateAsset(entry._asset, Vector3.new(0, -entry.gapStuds, 0))
 					moved[entry._asset.inst] = true
 					changed = true
-					table.insert(grounded, {{ name = entry.name, gapStuds = entry.gapStuds, groundHit = entry.groundHit }})
+					table.insert(grounded, {{ name = entry.name, gapStuds = entry.gapStuds, groundHit = entry.groundHit, kind = entry.kind }})
 				end
 			end
 			if not changed then break end
