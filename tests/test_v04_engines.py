@@ -431,7 +431,13 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
             "params.FilterDescendantsInstances = { asset.inst }", "_verticalRadius(asset)",
             "math.abs(cf.RightVector.Y)", "math.abs(cf.UpVector.Y)", "math.abs(cf.LookVector.Y)",
             "SharpAllowFloating", "not _isAnchored(asset.inst)", "floatingCount = #floating",
-            "gapStuds = gap", "hit.Instance:GetFullName()", "#overlaps == 0 and #floating == 0",
+            "gapStuds = gap", "nearestHit.Instance:GetFullName()", "#overlaps == 0 and #floating == 0",
+            "for _, offset in ipairs(footprintSamples) do", "Vector3.zero",
+            "Vector3.new(-0.95, 0, -0.95)", "Vector3.new(-0.95, 0, 0.95)",
+            "Vector3.new(0.95, 0, -0.95)", "Vector3.new(0.95, 0, 0.95)",
+            "asset.cf:PointToWorldSpace", "-asset.half.Y", "offset.X * asset.half.X", "offset.Z * asset.half.Z",
+            "Vector3.new(sample.X, bottom + 3, sample.Z)", "gap == nil or sampleGap < gap",
+            "gap = sampleGap", "nearestHit = hit", "if not nearestHit",
         ):
             self.assertIn(fragment, audit_luau)
 

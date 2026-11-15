@@ -977,6 +977,11 @@ end
 
 local function _auditFloatingAssets(assets)
 	local floating = {{}}
+	local footprintSamples = {{
+		Vector3.zero,
+		Vector3.new(-0.95, 0, -0.95), Vector3.new(-0.95, 0, 0.95),
+		Vector3.new(0.95, 0, -0.95), Vector3.new(0.95, 0, 0.95),
+	}}
 	for _, asset in ipairs(assets) do
 		if not _isAnchored(asset.inst) or asset.inst:GetAttribute("SharpAllowFloating") == true then
 			continue
@@ -986,15 +991,26 @@ local function _auditFloatingAssets(assets)
 		params.FilterType = Enum.RaycastFilterType.Exclude
 		params.FilterDescendantsInstances = {{ asset.inst }}
 		params.RespectCanCollide = true
-		local origin = Vector3.new(asset.cf.Position.X, bottom + 3, asset.cf.Position.Z)
-		local hit = Workspace:Raycast(origin, Vector3.new(0, -512, 0), params)
-		local gap = if hit then bottom - hit.Position.Y else nil
-		if not hit or (gap and math.abs(gap) > FLOAT_TOLERANCE) then
+		local nearestHit: RaycastResult? = nil
+		local gap: number? = nil
+		for _, offset in ipairs(footprintSamples) do
+			local sample = asset.cf:PointToWorldSpace(Vector3.new(offset.X * asset.half.X, -asset.half.Y, offset.Z * asset.half.Z))
+			local origin = Vector3.new(sample.X, bottom + 3, sample.Z)
+			local hit = Workspace:Raycast(origin, Vector3.new(0, -512, 0), params)
+			if hit then
+				local sampleGap = bottom - hit.Position.Y
+				if gap == nil or sampleGap < gap then
+					gap = sampleGap
+					nearestHit = hit
+				end
+			end
+		end
+		if not nearestHit or (gap and math.abs(gap) > FLOAT_TOLERANCE) then
 			table.insert(floating, {{
 				name = asset.name,
 				gapStuds = gap,
-				kind = if not hit then "void" elseif gap < 0 then "embedded" else "floating",
-				groundHit = if hit then hit.Instance:GetFullName() else nil,
+				kind = if not nearestHit then "void" elseif gap < 0 then "embedded" else "floating",
+				groundHit = if nearestHit then nearestHit.Instance:GetFullName() else nil,
 				_asset = asset,
 			}})
 		end
