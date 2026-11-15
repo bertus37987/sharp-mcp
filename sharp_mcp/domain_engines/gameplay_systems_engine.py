@@ -986,7 +986,7 @@ local function _auditFloatingAssets(assets)
 		if not _isAnchored(asset.inst) or asset.inst:GetAttribute("SharpAllowFloating") == true then
 			continue
 		end
-		local bottom = asset.cf.Position.Y - _verticalRadius(asset)
+		local top = asset.cf.Position.Y + _verticalRadius(asset)
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
 		params.FilterDescendantsInstances = {{ asset.inst }}
@@ -995,8 +995,9 @@ local function _auditFloatingAssets(assets)
 		local gap: number? = nil
 		for _, offset in ipairs(footprintSamples) do
 			local sample = asset.cf:PointToWorldSpace(Vector3.new(offset.X * asset.half.X, -asset.half.Y, offset.Z * asset.half.Z))
-			local origin = Vector3.new(sample.X, bottom + 3, sample.Z)
-			local hit = Workspace:Raycast(origin, Vector3.new(0, -512, 0), params)
+			local origin = Vector3.new(sample.X, top, sample.Z)
+			local direction = Vector3.new(0, sample.Y - 512 - origin.Y, 0)
+			local hit = Workspace:Raycast(origin, direction, params)
 			if hit then
 				local sampleGap = sample.Y - hit.Position.Y
 				if gap == nil or sampleGap < gap then

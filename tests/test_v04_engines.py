@@ -436,7 +436,9 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
             "Vector3.new(-0.95, 0, -0.95)", "Vector3.new(-0.95, 0, 0.95)",
             "Vector3.new(0.95, 0, -0.95)", "Vector3.new(0.95, 0, 0.95)",
             "asset.cf:PointToWorldSpace", "-asset.half.Y", "offset.X * asset.half.X", "offset.Z * asset.half.Z",
-            "Vector3.new(sample.X, bottom + 3, sample.Z)", "gap == nil or sampleGap < gap",
+            "local top = asset.cf.Position.Y + _verticalRadius(asset)",
+            "Vector3.new(sample.X, top, sample.Z)", "Vector3.new(0, sample.Y - 512 - origin.Y, 0)",
+            "Workspace:Raycast(origin, direction, params)", "gap == nil or sampleGap < gap",
             "gap = sampleGap", "nearestHit = hit", "if not nearestHit",
         ):
             self.assertIn(fragment, audit_luau)
@@ -459,6 +461,8 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
             self.assertIn(fragment, fix_luau)
         self.assertNotIn("math.max(0, bottom - hit.Position.Y)", fix_luau)
         self.assertNotIn("local sampleGap = bottom - hit.Position.Y", fix_luau)
+        self.assertNotIn("bottom + 3", fix_luau)
+        self.assertNotIn("Workspace:Raycast(origin, Vector3.new(0, -512, 0), params)", fix_luau)
         self.assertNotIn("local shift = away *", fix_luau)
 
         ca = CriticalAuditEngine()
