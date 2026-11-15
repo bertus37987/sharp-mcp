@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=77.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sharp-mcp"
+version = "0.4.0"
+description = "Sharp — Unified Roblox Studio & Blender Companion MCP Server with Automatic Skill Distributor, Surgical GUI Tools, Toolchain Orchestration, and Studio Bridge."
+readme = "README.md"
+license = "LicenseRef-Sharp-PreRelease-NonCommercial"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+classifiers = [
+    "Private :: Do Not Upload",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Build Tools",
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "aiohttp>=3.9.0",
+    "Pillow>=10.0.0",
+    "numpy>=1.26.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.6.0",
+]
+
+[project.scripts]
+sharp-mcp = "sharp_mcp.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sharp_mcp*", "studio_plugin*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+sharp_mcp = [
+    "bundled_skills/**/*",
+    "studio_plugin/*.rbxmx",
+    "studio_plugin/src/*.luau",
+]
+studio_plugin = [
+    "*.rbxmx",
+    "src/*.luau",
+]
+
+[tool.sharp.packaging]
+app_name = "Sharp"
+private_prerelease = true
+studio_plugin_bundle = [
+    "studio_plugin/*.rbxmx",
+    "studio_plugin/src/*.luau",
+]
+bundled_skills_dir = "sharp_mcp/bundled_skills"
+bundled_skills = [
+    "roblox-animation",
+    "roblox-gui",
+    "roblox-terrain-atmosphere",
+    "roblox-luau-coding",
+    "roblox-combat-and-controllers",
+    "roblox-audio-vfx-cutscenes",
+    "roblox-data-economy-monetization",
+    "roblox-ai-and-gameplay-systems",
+    "roblox-world-assembly-and-optimization",
+    "blender-game-assets",
+    "blender-character-rigging",
+    "blender-bake-and-materials",
+    "blender-modular-architecture",
+]

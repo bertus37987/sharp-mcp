@@ -1,0 +1,591 @@
+{
+  "version": 2,
+  "version_tag": "v0002",
+  "snapshot_id": "v0002_base02",
+  "timestamp": "2026-11-14T14:44:07Z",
+  "tool_name": "sharp_game_library",
+  "target_domain": "audio_vfx_cutscenes",
+  "action_summary": "Seeded verified Roblox SFX & VFX flipbook presets cleanly (20 assets)",
+  "parameters": {},
+  "result_summary": {
+    "total_assets": 20
+  },
+  "luau_sha256_prefix": null,
+  "luau_source": null,
+  "asset_keys_touched": [
+    "AlpineBiome_Colormap_513",
+    "AlpineBiome_Heightmap_513",
+    "CoreHudIcons_Atlas",
+    "ModalPanel_9Slice",
+    "R15_SwordSlash_Action",
+    "R15_WalkCycle_Curve",
+    "Raw_DarkFantasy_ModalPanel",
+    "Raw_Grayscale_TintButton",
+    "Raw_Icons_2x2_Sheet",
+    "Sound_Footstep_Plastic",
+    "Sound_Quest_Complete",
+    "Sound_Sword_Lunge",
+    "Sound_Sword_Slash",
+    "Sound_UI_ButtonClick",
+    "TintButton_9Slice",
+    "VFX_Explosion_Flipbook",
+    "VFX_Fire_Main",
+    "VFX_Smoke_Main",
+    "VFX_Sparkles_Main",
+    "WeaponShield_Combo_Action"
+  ],
+  "state_snapshot": {
+    "game_title": "Sharp Reference Experience",
+    "systems": {
+      "luau_coding": {
+        "status": "active",
+        "executions": 1,
+        "last_updated": "2026-11-14T13:36:59Z",
+        "last_summary": "Scaffolded clean 14-container Explorer architecture with SafeRemoteGateway",
+        "last_version": "v0001"
+      },
+      "terrain_atmosphere": {
+        "status": "active",
+        "executions": 1,
+        "last_updated": "2026-11-14T13:36:59Z",
+        "last_summary": "Registered 513x513 Alpine heightmap/colormap baseline",
+        "last_version": "v0001"
+      },
+      "gui": {
+        "status": "active",
+        "executions": 1,
+        "last_updated": "2026-11-14T13:36:59Z",
+        "last_summary": "Registered 9-slice panels, tint button, and 2x2 HUD icon atlas",
+        "last_version": "v0001"
+      },
+      "animation": {
+        "status": "active",
+        "executions": 1,
+        "last_updated": "2026-11-14T13:36:59Z",
+        "last_summary": "Registered R15 sword/walk/combo animation metadata baseline",
+        "last_version": "v0001"
+      },
+      "audio_vfx_cutscenes": {
+        "status": "active",
+        "executions": 1,
+        "last_updated": "2026-11-14T14:44:07Z",
+        "last_summary": "Seeded built-in Roblox SFX and flipbook VFX library baseline",
+        "last_version": "v0002"
+      }
+    },
+    "completed_milestones": [
+      "Core Explorer architecture, GUI 9-slice atlas, R15 animation & Alpine terrain baseline",
+      "Verified Audio & Flipbook VFX asset registry baseline (20 assets)"
+    ]
+  },
+  "manifest_snapshot": {
+    "project_id": "default_game",
+    "schema_version": 2,
+    "updated_at": "2026-11-14T14:44:07Z",
+    "assets": {
+      "Raw_DarkFantasy_ModalPanel": {
+        "key": "Raw_DarkFantasy_ModalPanel",
+        "name": "Raw_DarkFantasy_ModalPanel",
+        "category": "gui_9slice",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "roblox_panel_9slice_1794652695001.jpg",
+        "sha256": "b7c5de9e3cb4b73e6b18137926894c48e2b77a065844aed7cb78a0a65b7d559f",
+        "description": "",
+        "prompt_used": "Flat 2D orthographic dark fantasy RPG modal frame on solid #0B0E17 background",
+        "tags": [
+          "gui_9slice",
+          "gui_raw_image"
+        ],
+        "metadata": {
+          "resolution": [
+            1024,
+            1024
+          ]
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Raw_Grayscale_TintButton": {
+        "key": "Raw_Grayscale_TintButton",
+        "name": "Raw_Grayscale_TintButton",
+        "category": "gui_9slice",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "button_tint_9slice_1794652696255.jpg",
+        "sha256": "a4ef3454841e09cc5ada1c32e9083cd86749886c064c2307b05096daef16b363",
+        "description": "",
+        "prompt_used": "Flat 2D orthographic neutral white/silver grayscale pill button for ImageColor3 tinting",
+        "tags": [
+          "gui_9slice",
+          "gui_raw_image"
+        ],
+        "metadata": {
+          "resolution": [
+            1024,
+            1024
+          ]
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Raw_Icons_2x2_Sheet": {
+        "key": "Raw_Icons_2x2_Sheet",
+        "name": "Raw_Icons_2x2_Sheet",
+        "category": "gui_9slice",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "icons_2x2_sheet_1794652702333.jpg",
+        "sha256": "b02361ecaf3ec361d9d45f13d22b0f39f30012dfbae73322c960f80394cec9b8",
+        "description": "",
+        "prompt_used": "Flat 2D orthographic 2x2 game UI icon grid (coin, gem, sword, chest) on solid #0B0E17 background",
+        "tags": [
+          "gui_9slice",
+          "gui_raw_image"
+        ],
+        "metadata": {
+          "grid": [
+            2,
+            2
+          ],
+          "icons": [
+            "coin",
+            "gem",
+            "combat",
+            "chest"
+          ]
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "ModalPanel_9Slice": {
+        "key": "ModalPanel_9Slice",
+        "name": "ModalPanel_9Slice",
+        "category": "gui_9slice",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "panel_9slice.png",
+        "sha256": "94e74938e1bc9e2f2ec924b6b6816e9fb168e9f2d4f4032d458a83b12bca87cd",
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "gui_9slice"
+        ],
+        "metadata": {
+          "width": 512,
+          "height": 512,
+          "slice_center": [
+            79,
+            79,
+            433,
+            433
+          ],
+          "slice_scale": 1.0
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "TintButton_9Slice": {
+        "key": "TintButton_9Slice",
+        "name": "TintButton_9Slice",
+        "category": "gui_9slice",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "button_tint_9slice.png",
+        "sha256": "2f1efafcc15502692ea3dab7624f131e87c2e3166487472e9dba0e42d50557a9",
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "gui_9slice"
+        ],
+        "metadata": {
+          "width": 512,
+          "height": 254,
+          "slice_center": [
+            64,
+            43,
+            448,
+            211
+          ],
+          "slice_scale": 1.0,
+          "tintable_grayscale": true
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "CoreHudIcons_Atlas": {
+        "key": "CoreHudIcons_Atlas",
+        "name": "CoreHudIcons_Atlas",
+        "category": "gui_atlas",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "icons_atlas.png",
+        "sha256": "2b886006b99d74390c7548812409e98fae89cf8199b68b400960697ec0228793",
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "gui_atlas"
+        ],
+        "metadata": {
+          "atlas_size": [
+            524,
+            524
+          ],
+          "cell_size": 256,
+          "gutter": 4,
+          "sprites": {
+            "coin": {
+              "offset": [
+                4,
+                4
+              ],
+              "size": [
+                256,
+                256
+              ]
+            },
+            "gem": {
+              "offset": [
+                264,
+                4
+              ],
+              "size": [
+                256,
+                256
+              ]
+            },
+            "combat": {
+              "offset": [
+                4,
+                264
+              ],
+              "size": [
+                256,
+                256
+              ]
+            },
+            "chest": {
+              "offset": [
+                264,
+                264
+              ],
+              "size": [
+                256,
+                256
+              ]
+            }
+          }
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "R15_SwordSlash_Action": {
+        "key": "R15_SwordSlash_Action",
+        "name": "R15_SwordSlash_Action",
+        "category": "animation",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "animation"
+        ],
+        "metadata": {
+          "rig_type": "R15",
+          "priority": "Action",
+          "looped": false,
+          "duration_sec": 0.85
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "R15_WalkCycle_Curve": {
+        "key": "R15_WalkCycle_Curve",
+        "name": "R15_WalkCycle_Curve",
+        "category": "animation",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "animation"
+        ],
+        "metadata": {
+          "rig_type": "R15",
+          "priority": "Movement",
+          "looped": true,
+          "duration_sec": 1.0
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "WeaponShield_Combo_Action": {
+        "key": "WeaponShield_Combo_Action",
+        "name": "WeaponShield_Combo_Action",
+        "category": "animation",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "animation"
+        ],
+        "metadata": {
+          "rig_type": "R15+Motor6D",
+          "priority": "Action2",
+          "looped": false,
+          "duration_sec": 1.2
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "AlpineBiome_Heightmap_513": {
+        "key": "AlpineBiome_Heightmap_513",
+        "name": "AlpineBiome_Heightmap_513",
+        "category": "terrain_preset",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "terrain_map",
+          "terrain_preset"
+        ],
+        "metadata": {
+          "resolution": [
+            513,
+            513
+          ],
+          "biome": "Alpine"
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "AlpineBiome_Colormap_513": {
+        "key": "AlpineBiome_Colormap_513",
+        "name": "AlpineBiome_Colormap_513",
+        "category": "terrain_preset",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "terrain_map",
+          "terrain_preset"
+        ],
+        "metadata": {
+          "resolution": [
+            513,
+            513
+          ],
+          "biome": "Alpine"
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Sound_UI_ButtonClick": {
+        "key": "Sound_UI_ButtonClick",
+        "name": "Sound_UI_ButtonClick",
+        "category": "audio",
+        "roblox_asset_id": "rbxasset://sounds/button.wav",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "audio"
+        ],
+        "metadata": {
+          "bus": "UI",
+          "volume": 0.65,
+          "looped": false
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Sound_Sword_Slash": {
+        "key": "Sound_Sword_Slash",
+        "name": "Sound_Sword_Slash",
+        "category": "audio",
+        "roblox_asset_id": "rbxasset://sounds/swordslash.wav",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "audio"
+        ],
+        "metadata": {
+          "bus": "SFX",
+          "volume": 0.85,
+          "looped": false
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Sound_Sword_Lunge": {
+        "key": "Sound_Sword_Lunge",
+        "name": "Sound_Sword_Lunge",
+        "category": "audio",
+        "roblox_asset_id": "rbxasset://sounds/lunge.wav",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "audio"
+        ],
+        "metadata": {
+          "bus": "SFX",
+          "volume": 0.9,
+          "looped": false
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Sound_Quest_Complete": {
+        "key": "Sound_Quest_Complete",
+        "name": "Sound_Quest_Complete",
+        "category": "audio",
+        "roblox_asset_id": "rbxasset://sounds/electronicpingshort.wav",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "audio"
+        ],
+        "metadata": {
+          "bus": "UI",
+          "volume": 0.75,
+          "looped": false
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Sound_Footstep_Plastic": {
+        "key": "Sound_Footstep_Plastic",
+        "name": "Sound_Footstep_Plastic",
+        "category": "audio",
+        "roblox_asset_id": "rbxasset://sounds/action_footsteps_plastic.mp3",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "audio"
+        ],
+        "metadata": {
+          "bus": "SFX",
+          "volume": 0.5,
+          "looped": true
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "VFX_Sparkles_Main": {
+        "key": "VFX_Sparkles_Main",
+        "name": "VFX_Sparkles_Main",
+        "category": "misc",
+        "roblox_asset_id": "rbxasset://textures/particles/sparkles_main.dds",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "misc",
+          "vfx_flipbook"
+        ],
+        "metadata": {
+          "flipbook_layout": "None",
+          "rate": 0,
+          "emit_burst": 18
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "VFX_Smoke_Main": {
+        "key": "VFX_Smoke_Main",
+        "name": "VFX_Smoke_Main",
+        "category": "misc",
+        "roblox_asset_id": "rbxasset://textures/particles/smoke_main.dds",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "misc",
+          "vfx_flipbook"
+        ],
+        "metadata": {
+          "flipbook_layout": "None",
+          "rate": 0,
+          "emit_burst": 12
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "VFX_Explosion_Flipbook": {
+        "key": "VFX_Explosion_Flipbook",
+        "name": "VFX_Explosion_Flipbook",
+        "category": "misc",
+        "roblox_asset_id": "rbxasset://textures/particles/explosion01_implosion_main.dds",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "misc",
+          "vfx_flipbook"
+        ],
+        "metadata": {
+          "flipbook_layout": "FourByFour",
+          "rate": 0,
+          "emit_burst": 8
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "VFX_Fire_Main": {
+        "key": "VFX_Fire_Main",
+        "name": "VFX_Fire_Main",
+        "category": "misc",
+        "roblox_asset_id": "rbxasset://textures/particles/fire_main.dds",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "misc",
+          "vfx_flipbook"
+        ],
+        "metadata": {
+          "flipbook_layout": "None",
+          "rate": 24,
+          "emit_burst": 15
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      }
+    }
+  }
+}

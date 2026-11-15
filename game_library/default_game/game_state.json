@@ -1,0 +1,73 @@
+{
+  "project_id": "default_game",
+  "game_title": "Sharp Reference Experience",
+  "genre": "Cross-Platform Action RPG / Adventure",
+  "description": "Clean production Sharp reference baseline with 20 verified assets and portable relative paths.",
+  "current_version": 2,
+  "active_studio_place_id": 0,
+  "updated_at": "2026-11-14T14:44:07Z",
+  "systems": {
+    "luau_coding": {
+      "status": "active",
+      "executions": 1,
+      "last_updated": "2026-11-14T13:36:59Z",
+      "last_summary": "Scaffolded clean 14-container Explorer architecture with SafeRemoteGateway",
+      "last_version": "v0001"
+    },
+    "terrain_atmosphere": {
+      "status": "active",
+      "executions": 1,
+      "last_updated": "2026-11-14T13:36:59Z",
+      "last_summary": "Registered 513x513 Alpine heightmap/colormap baseline",
+      "last_version": "v0001"
+    },
+    "gui": {
+      "status": "active",
+      "executions": 1,
+      "last_updated": "2026-11-14T13:36:59Z",
+      "last_summary": "Registered 9-slice panels, tint button, and 2x2 HUD icon atlas",
+      "last_version": "v0001"
+    },
+    "animation": {
+      "status": "active",
+      "executions": 1,
+      "last_updated": "2026-11-14T13:36:59Z",
+      "last_summary": "Registered R15 sword/walk/combo animation metadata baseline",
+      "last_version": "v0001"
+    },
+    "audio_vfx_cutscenes": {
+      "status": "active",
+      "executions": 1,
+      "last_updated": "2026-11-14T14:44:07Z",
+      "last_summary": "Seeded built-in Roblox SFX and flipbook VFX library baseline",
+      "last_version": "v0002"
+    }
+  },
+  "planned_milestones": [
+    "Playtest bot combat & Shop/DataStore end-to-end verification"
+  ],
+  "completed_milestones": [
+    "Core Explorer architecture, GUI 9-slice atlas, R15 animation & Alpine terrain baseline",
+    "Verified Audio & Flipbook VFX asset registry baseline (20 assets)"
+  ],
+  "recent_actions": [
+    {
+      "version": 1,
+      "version_tag": "v0001",
+      "timestamp": "2026-11-14T13:36:59Z",
+      "tool": "sharp_game_library",
+      "domain": "library_init",
+      "summary": "Initial Sharp Game Plan & Verified Core Asset Baseline (11 assets)",
+      "snapshot_file": "versions/snapshots/v0001.json"
+    },
+    {
+      "version": 2,
+      "version_tag": "v0002",
+      "timestamp": "2026-11-14T14:44:07Z",
+      "tool": "sharp_game_library",
+      "domain": "audio_vfx_cutscenes",
+      "summary": "Seeded verified Roblox SFX & VFX flipbook presets cleanly (20 assets)",
+      "snapshot_file": "versions/snapshots/v0002.json"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "version": 1,
+    "version_tag": "v0001",
+    "timestamp": "2026-11-14T13:36:59Z",
+    "tool_name": "sharp_game_library",
+    "target_domain": "library_init",
+    "summary": "Initial Sharp Game Plan & Verified Core Asset Baseline (11 assets)",
+    "snapshot_path": "versions/snapshots/v0001.json",
+    "asset_count": 11
+  },
+  {
+    "version": 2,
+    "version_tag": "v0002",
+    "timestamp": "2026-11-14T14:44:07Z",
+    "tool_name": "sharp_game_library",
+    "target_domain": "audio_vfx_cutscenes",
+    "summary": "Seeded verified Roblox SFX & VFX flipbook presets cleanly (20 assets)",
+    "snapshot_path": "versions/snapshots/v0002.json",
+    "asset_count": 20
+  }
+]

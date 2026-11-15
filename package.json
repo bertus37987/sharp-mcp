@@ -1,0 +1,22 @@
+{
+  "name": "sharp-mcp",
+  "version": "0.4.0",
+  "description": "Sharp — Private pre-release MCP server wrapper and multi-client installer for Roblox Studio and Blender.",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "bin": {
+    "sharp-mcp": "./bin/sharp-mcp.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "bin/",
+    "pyproject.toml",
+    "LICENSE",
+    "README.md",
+    "sharp_mcp/",
+    "studio_plugin/"
+  ]
+}

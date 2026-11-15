@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.sharp-venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
+# Node / npx runtime
+node_modules/
+
+# Secrets & Credentials (NEVER commit)
+.env
+.env.*
+.sharp-mcp/
+credentials.json
+*credentials*.json
+*api_key*
+*.key
+*.pem
+
+# Local test / asset outputs
+artifacts/
+*.bak
+.DS_Store
+Thumbs.db

@@ -1,0 +1,17 @@
+SHARP PRE-RELEASE NON-COMMERCIAL EVALUATION LICENSE
+Copyright (c) 2026 Sharp Contributors. All Rights Reserved.
+
+All Rights Reserved — Non-Commercial Internal Evaluation Only. No commercial use, SaaS hosting, redistribution, or public publishing permitted without explicit written consent.
+
+1. Scope of Grant
+Permission is granted solely to authorized internal evaluators to install, execute, and test the Sharp software, scripts, Studio plugin definitions, and associated documentation ("Software") strictly on private or internal evaluation machines for non-commercial research, development, and testing purposes.
+
+2. Restrictions
+Without explicit prior written consent from the copyright holder, you may NOT:
+(a) Use the Software, in whole or in part, for any commercial purpose, paid service, client deliverable, or revenue-generating product;
+(b) Host, operate, or expose the Software as a Software-as-a-Service (SaaS), hosted API, cloud MCP endpoint, or multi-tenant service;
+(c) Redistribute, sell, lease, sublicense, mirror, or publish the Software (in source or packaged form) to any public or private package registry (including without limitation npm, PyPI, GitHub Packages, or Roblox Creator Marketplace);
+(d) Remove, obscure, or alter this license notice or proprietary markings.
+
+3. Pre-Release & Disclaimer of Warranty
+This Software is a private pre-release build provided "AS IS" without warranty of any kind, express or implied, including but not limited to merchantability, fitness for a particular purpose, or non-infringement. In no event shall the authors or copyright holders be liable for any claim, damages, or other liability arising from use of the Software.
