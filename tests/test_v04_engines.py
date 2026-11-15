@@ -450,13 +450,15 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
             "math.abs(away.Y) > 0.9", "top - bottom", "_translateAsset(entry._asset",
             "local horizontal = Vector3.new(away.X, 0, away.Z)",
             "horizontal / horizontalMagnitude * ((penetration + 0.25) / horizontalMagnitude)",
-            "bottom - hit.Position.Y", "math.abs(gap) > FLOAT_TOLERANCE",
+            "sample.Y - hit.Position.Y", "math.abs(gap) > FLOAT_TOLERANCE",
+            "Vector3.new(0, -entry.gapStuds, 0)",
             'elseif gap < 0 then "embedded"', "kind = entry.kind",
             "result.remainingOverlapCount = result.overlapCount",
             "result.remainingFloatingCount = result.floatingCount", "result.grounded = grounded",
         ):
             self.assertIn(fragment, fix_luau)
         self.assertNotIn("math.max(0, bottom - hit.Position.Y)", fix_luau)
+        self.assertNotIn("local sampleGap = bottom - hit.Position.Y", fix_luau)
         self.assertNotIn("local shift = away *", fix_luau)
 
         ca = CriticalAuditEngine()

@@ -998,7 +998,7 @@ local function _auditFloatingAssets(assets)
 			local origin = Vector3.new(sample.X, bottom + 3, sample.Z)
 			local hit = Workspace:Raycast(origin, Vector3.new(0, -512, 0), params)
 			if hit then
-				local sampleGap = bottom - hit.Position.Y
+				local sampleGap = sample.Y - hit.Position.Y
 				if gap == nil or sampleGap < gap then
 					gap = sampleGap
 					nearestHit = hit
