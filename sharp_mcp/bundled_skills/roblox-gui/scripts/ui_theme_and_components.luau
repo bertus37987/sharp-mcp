@@ -1061,7 +1061,7 @@ function UIKit.AttachStackedStrokes(target: GuiObject, opts: StackedStrokeOption
 		s.Color = innerColor
 		s.Thickness = innerThickness
 		s.Transparency = innerTrans
-		s.LineJoinMode = lineJoin
+		s.LineJoinMode = lineJoin;
 		-- Will fail cleanly on channels where BorderStrokePosition is disabled so we avoid overlapping Center strokes
 		(s :: any).BorderStrokePosition = Enum.BorderStrokePosition.Inner
 		s.Parent = target
@@ -2489,11 +2489,9 @@ function UIKit.CreateModalManager(modalGui: ScreenGui, backdropGui: ScreenGui?)
 	end
 
 	function manager:CloseAll()
-		for name, entry in pairs(registered) do
+		for _, entry in pairs(registered) do
 			entry.frame.Visible = false
-			pcall(function()
-				GuiService:RemoveSelectionGroup("Modal_" .. name)
-			end)
+			entry.frame.SelectionGroup = false
 		end
 		activeName = nil
 		if backdropGui then
@@ -2525,11 +2523,7 @@ function UIKit.CreateModalManager(modalGui: ScreenGui, backdropGui: ScreenGui?)
 		end
 		for otherName, other in pairs(registered) do
 			other.frame.Visible = (otherName == name)
-			if otherName ~= name then
-				pcall(function()
-					GuiService:RemoveSelectionGroup("Modal_" .. otherName)
-				end)
-			end
+			other.frame.SelectionGroup = (otherName == name)
 		end
 		modalGui.Enabled = true
 		if backdropGui then
@@ -2554,7 +2548,6 @@ function UIKit.CreateModalManager(modalGui: ScreenGui, backdropGui: ScreenGui?)
 
 		if RunService:IsRunning() and UIKit.GetPreferredInput() == Enum.PreferredInput.Gamepad then
 			pcall(function()
-				GuiService:AddSelectionParent("Modal_" .. name, entry.frame)
 				GuiService:Select(entry.focusTarget or entry.frame)
 			end)
 		end

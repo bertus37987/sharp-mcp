@@ -24,15 +24,15 @@ except ImportError:  # pragma: no cover - optional fallback for minimal environm
     cv2 = None  # type: ignore
 
 from ..credentials_store import resolve_provider_and_model
+from ..ai_http import AIRequestError, post_json, redact_error, response_text
 from .gui_engine import compute_visual_diff
 
 
 VIDEO_MIME_TYPES: Dict[str, str] = {
     ".mp4": "video/mp4",
-    ".mov": "video/quicktime",
+    ".mov": "video/mov",
     ".webm": "video/webm",
-    ".mkv": "video/x-matroska",
-    ".avi": "video/x-msvideo",
+    ".avi": "video/avi",
 }
 
 AUDIO_MIME_TYPES: Dict[str, str] = {
@@ -40,7 +40,7 @@ AUDIO_MIME_TYPES: Dict[str, str] = {
     ".mp3": "audio/mpeg",
     ".ogg": "audio/ogg",
     ".flac": "audio/flac",
-    ".m4a": "audio/mp4",
+    ".m4a": "audio/m4a",
     ".aac": "audio/aac",
 }
 
@@ -591,25 +591,13 @@ class MultimodalQAEngine:
             "Content-Type": "application/json",
             "x-goog-api-key": api_key,
         }
-        timeout = aiohttp.ClientTimeout(total=timeout_sec)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json=payload, headers=headers) as resp:
-                body_text = await resp.text()
-                if resp.status >= 400:
-                    return {
-                        "ok": False,
-                        "status": resp.status,
-                        "error": f"Gemini HTTP {resp.status}: {body_text[:400]}",
-                    }
-                data = json.loads(body_text)
-        candidates = data.get("candidates") or []
-        text_parts: List[str] = []
-        if candidates:
-            content = candidates[0].get("content") or {}
-            for p in content.get("parts") or []:
-                if "text" in p:
-                    text_parts.append(str(p["text"]))
-        raw_text = "\n".join(text_parts).strip()
+        if len(json.dumps(payload).encode("utf-8")) > 20_000_000:
+            return {"ok": False, "error": "Gemini inline request exceeds 20 MB; use smaller images or the Files API."}
+        try:
+            data = await post_json(url, headers=headers, payload=payload, api_key=api_key, timeout_sec=timeout_sec)
+            raw_text = response_text(data, "gemini")
+        except AIRequestError as exc:
+            return {"ok": False, "error": str(exc), **({"status": exc.status} if exc.status is not None else {})}
         return {
             "ok": True,
             "provider": "gemini",
@@ -631,6 +619,8 @@ class MultimodalQAEngine:
     ) -> Dict[str, Any]:
         """Upload media to Gemini Files API if >10MB, analyze, and delete remote file cleanly."""
         size_bytes = file_path.stat().st_size
+        if size_bytes > 2_000_000_000:
+            return {"ok": False, "error": "Media exceeds the supported 2 GB Files API limit."}
         if size_bytes <= 10 * 1024 * 1024:
             b64 = await asyncio.to_thread(lambda: base64.b64encode(file_path.read_bytes()).decode("ascii"))
             return await self._call_gemini_generate(
@@ -646,61 +636,63 @@ class MultimodalQAEngine:
         timeout = aiohttp.ClientTimeout(total=timeout_sec)
         file_name_remote: Optional[str] = None
         file_uri: Optional[str] = None
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            init_headers = {
-                "x-goog-api-key": api_key,
-                "X-Goog-Upload-Protocol": "resumable",
-                "X-Goog-Upload-Command": "start",
-                "X-Goog-Upload-Header-Content-Length": str(size_bytes),
-                "X-Goog-Upload-Header-Content-Type": mime_type,
-                "Content-Type": "application/json",
-            }
-            async with session.post(
-                "https://generativelanguage.googleapis.com/upload/v1beta/files",
-                json={"file": {"display_name": file_path.name}},
-                headers=init_headers,
-            ) as init_resp:
-                if init_resp.status >= 400:
-                    return {"ok": False, "error": f"Gemini file upload init failed: HTTP {init_resp.status}"}
-                upload_url = init_resp.headers.get("x-goog-upload-url") or init_resp.headers.get("X-Goog-Upload-URL")
-            if not upload_url:
-                return {"ok": False, "error": "Gemini file upload missing X-Goog-Upload-URL header."}
-
-            raw_bytes = await asyncio.to_thread(file_path.read_bytes)
-            up_headers = {
-                "Content-Length": str(size_bytes),
-                "X-Goog-Upload-Offset": "0",
-                "X-Goog-Upload-Command": "upload, finalize",
-            }
-            async with session.post(upload_url, data=raw_bytes, headers=up_headers) as up_resp:
-                up_body = await up_resp.text()
-                if up_resp.status >= 400:
-                    return {"ok": False, "error": f"Gemini file upload finalize failed: HTTP {up_resp.status}: {up_body[:300]}"}
-                meta = json.loads(up_body).get("file") or {}
-                file_name_remote = meta.get("name")
-                file_uri = meta.get("uri")
-
-            # Wait briefly if video still PROCESSING
-            for _ in range(20):
-                if not file_name_remote:
-                    break
-                async with session.get(
-                    f"https://generativelanguage.googleapis.com/v1beta/{file_name_remote}",
-                    headers={"x-goog-api-key": api_key},
-                ) as st_resp:
-                    if st_resp.status == 200:
-                        st_json = await st_resp.json()
-                        state = (st_json.get("state") or "").upper()
-                        if state in ("ACTIVE", ""):
-                            file_uri = st_json.get("uri") or file_uri
-                            break
-                        if state == "FAILED":
-                            return {"ok": False, "error": "Gemini media processing returned state=FAILED."}
-                await asyncio.sleep(1.5)
-
         try:
-            if not file_uri:
-                return {"ok": False, "error": "Gemini upload completed without file URI."}
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                init_headers = {
+                    "x-goog-api-key": api_key,
+                    "X-Goog-Upload-Protocol": "resumable",
+                    "X-Goog-Upload-Command": "start",
+                    "X-Goog-Upload-Header-Content-Length": str(size_bytes),
+                    "X-Goog-Upload-Header-Content-Type": mime_type,
+                    "Content-Type": "application/json",
+                }
+                async with session.post(
+                    "https://generativelanguage.googleapis.com/upload/v1beta/files",
+                    json={"file": {"display_name": file_path.name}},
+                    headers=init_headers,
+                ) as init_resp:
+                    if init_resp.status >= 400:
+                        raw = redact_error(await init_resp.text(), api_key)
+                        return {"ok": False, "error": f"Gemini file upload init HTTP {init_resp.status}: {raw[:300]}"}
+                    upload_url = init_resp.headers.get("x-goog-upload-url") or init_resp.headers.get("X-Goog-Upload-URL")
+                if not upload_url:
+                    return {"ok": False, "error": "Gemini file upload missing X-Goog-Upload-URL header."}
+
+                raw_bytes = await asyncio.to_thread(file_path.read_bytes)
+                up_headers = {
+                    "Content-Length": str(size_bytes),
+                    "X-Goog-Upload-Offset": "0",
+                    "X-Goog-Upload-Command": "upload, finalize",
+                }
+                async with session.post(upload_url, data=raw_bytes, headers=up_headers) as up_resp:
+                    up_body = await up_resp.text()
+                    if up_resp.status >= 400:
+                        raw = redact_error(up_body, api_key)
+                        return {"ok": False, "error": f"Gemini file upload finalize HTTP {up_resp.status}: {raw[:300]}"}
+                    meta = json.loads(up_body).get("file") or {}
+                    file_name_remote = meta.get("name")
+                    file_uri = meta.get("uri")
+                if not file_name_remote or not file_uri:
+                    return {"ok": False, "error": "Gemini upload completed without file name or URI."}
+
+                for _ in range(20):
+                    state = meta.get("state")
+                    if state == "ACTIVE":
+                        break
+                    if state == "FAILED":
+                        return {"ok": False, "error": "Gemini media processing returned state=FAILED."}
+                    await asyncio.sleep(1.5)
+                    async with session.get(
+                        f"https://generativelanguage.googleapis.com/v1beta/{file_name_remote}",
+                        headers={"x-goog-api-key": api_key},
+                    ) as st_resp:
+                        if st_resp.status >= 400:
+                            raw = redact_error(await st_resp.text(), api_key)
+                            return {"ok": False, "error": f"Gemini file status HTTP {st_resp.status}: {raw[:300]}"}
+                        meta = await st_resp.json()
+                        file_uri = meta.get("uri") or file_uri
+                if meta.get("state") != "ACTIVE":
+                    return {"ok": False, "error": "Gemini media processing did not become ACTIVE before the polling limit."}
             return await self._call_gemini_generate(
                 api_key=api_key,
                 model=model,
@@ -710,14 +702,17 @@ class MultimodalQAEngine:
                 ],
                 timeout_sec=timeout_sec,
             )
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+            return {"ok": False, "error": "Gemini file request failed, timed out, or returned invalid JSON."}
         finally:
             if file_name_remote:
                 try:
                     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15.0)) as del_sess:
-                        await del_sess.delete(
+                        async with del_sess.delete(
                             f"https://generativelanguage.googleapis.com/v1beta/{file_name_remote}",
                             headers={"x-goog-api-key": api_key},
-                        )
+                        ) as del_resp:
+                            await del_resp.read()
                 except Exception:
                     pass
 
@@ -751,21 +746,11 @@ class MultimodalQAEngine:
             "temperature": 0.2,
             "messages": [{"role": "user", "content": content_items}],
         }
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout_sec)) as session:
-            async with session.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers) as resp:
-                body_text = await resp.text()
-                if resp.status >= 400:
-                    return {"ok": False, "status": resp.status, "error": f"OpenRouter HTTP {resp.status}: {body_text[:400]}"}
-                data = json.loads(body_text)
-        choices = data.get("choices") or []
-        raw_text = ""
-        if choices:
-            msg = choices[0].get("message") or {}
-            c = msg.get("content")
-            if isinstance(c, str):
-                raw_text = c
-            elif isinstance(c, list):
-                raw_text = "\n".join(str(x.get("text", "")) for x in c if isinstance(x, dict))
+        try:
+            data = await post_json("https://openrouter.ai/api/v1/chat/completions", headers=headers, payload=payload, api_key=api_key, timeout_sec=timeout_sec)
+            raw_text = response_text(data, "openrouter")
+        except AIRequestError as exc:
+            return {"ok": False, "error": str(exc), **({"status": exc.status} if exc.status is not None else {})}
         return {
             "ok": True,
             "provider": "openrouter",
@@ -869,14 +854,17 @@ class MultimodalQAEngine:
         ai_report: Optional[Dict[str, Any]] = None
         if route["key_configured"] and route["api_key"]:
             if route["provider"] == "gemini":
-                mime = VIDEO_MIME_TYPES.get(src.suffix.lower(), "video/mp4")
-                ai_report = await self._upload_and_analyze_gemini_file(
-                    api_key=route["api_key"],
-                    model=route["model"],
-                    file_path=src,
-                    mime_type=mime,
-                    prompt_text=prompt_text,
-                )
+                mime = VIDEO_MIME_TYPES.get(src.suffix.lower())
+                if not mime:
+                    ai_report = {"ok": False, "error": "Video format is not supported by Gemini; convert to MP4, MOV, AVI, or WebM."}
+                else:
+                    ai_report = await self._upload_and_analyze_gemini_file(
+                        api_key=route["api_key"],
+                        model=route["model"],
+                        file_path=src,
+                        mime_type=mime,
+                        prompt_text=prompt_text,
+                    )
             else:
                 ai_report = await self._call_openrouter_vision(
                     api_key=route["api_key"],
@@ -962,14 +950,17 @@ class MultimodalQAEngine:
         )
         ai_report: Optional[Dict[str, Any]] = None
         if route["key_configured"] and route["api_key"] and route["provider"] == "gemini":
-            mime = AUDIO_MIME_TYPES.get(src.suffix.lower(), "audio/wav")
-            ai_report = await self._upload_and_analyze_gemini_file(
-                api_key=route["api_key"],
-                model=route["model"],
-                file_path=src,
-                mime_type=mime,
-                prompt_text=prompt_text,
-            )
+            mime = AUDIO_MIME_TYPES.get(src.suffix.lower())
+            if not mime:
+                ai_report = {"ok": False, "error": "Audio format is not supported by Gemini; convert to WAV, MP3, OGG, FLAC, M4A, or AAC."}
+            else:
+                ai_report = await self._upload_and_analyze_gemini_file(
+                    api_key=route["api_key"],
+                    model=route["model"],
+                    file_path=src,
+                    mime_type=mime,
+                    prompt_text=prompt_text,
+                )
 
         return {
             "ok": True,

@@ -16,16 +16,17 @@ try:
     from mathutils import Matrix
 
     try:
-        from blender_anim_helpers import ROBLOX_TO_BLENDER, ROBLOX_TO_BLENDER_INV, matrix_to_roblox_cf
+        from blender_anim_helpers import matrix_to_roblox_cf
     except ImportError:
         import sys
         here = str(Path(__file__).resolve().parent)
         if here not in sys.path:
             sys.path.insert(0, here)
-        from blender_anim_helpers import ROBLOX_TO_BLENDER, ROBLOX_TO_BLENDER_INV, matrix_to_roblox_cf
+        from blender_anim_helpers import matrix_to_roblox_cf
 except ImportError:
     bpy = None  # type: ignore[assignment]
     Matrix = None  # type: ignore[assignment]
+    matrix_to_roblox_cf = None
 
 # Verified Enum.AnimationPriority XML Token values from create.roblox.com/docs
 PRIORITY_XML_TOKEN: dict[str, int] = {
@@ -117,6 +118,8 @@ def bake_clip(
     bake_root_motion: bool = False,
 ) -> dict[str, Any]:
     """Sample evaluated Blender rig across frames into Roblox joint transforms."""
+    if bpy is None or matrix_to_roblox_cf is None:
+        raise RuntimeError("Blender bpy, mathutils, and blender_anim_helpers are required to sample animation.")
     scene = bpy.context.scene
     fps = float(fps or (scene.render.fps / scene.render.fps_base))
     unit_scale = float(rig_obj.get("roblox_unit_scale", 1.0))

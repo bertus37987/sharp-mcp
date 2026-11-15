@@ -9,13 +9,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import io
 import json
 import math
 import os
-import struct
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -42,6 +42,7 @@ from sharp_mcp.credentials_store import (
     set_credentials,
 )
 from sharp_mcp.domain_engines.art_creation_engine import ArtCreationEngine
+from sharp_mcp.domain_engines.attachment_engine import AttachmentEngine
 from sharp_mcp.domain_engines.critical_audit_engine import CriticalAuditEngine
 from sharp_mcp.domain_engines.design_engine import DesignEngine
 from sharp_mcp.domain_engines.game_planner import GamePlanner, MICRO_MVP_REQUIRED_STEPS, MICRO_STEP_EXECUTION_ORDER
@@ -49,8 +50,14 @@ from sharp_mcp.domain_engines.gameplay_systems_engine import GameplaySystemsEngi
 from sharp_mcp.domain_engines.gui_engine import GuiDomainEngine
 from sharp_mcp.domain_engines.luau_audit_engine import LuauAuditSnapshotEngine
 from sharp_mcp.domain_engines.multimodal_qa_engine import MultimodalQAEngine
+from sharp_mcp.domain_engines.rig_anim_engine import RigAnimationEngine
+from sharp_mcp.domain_engines.terrain_env_engine import TerrainEnvironmentEngine
 from sharp_mcp.project_library import ProjectLibraryManager
 from sharp_mcp.skill_router import resolve_default_archive_dir, resolve_default_skills_dir
+
+
+def _luau_compiler() -> str | None:
+    return os.environ.get("LUAU_COMPILE") or shutil.which("luau-compile")
 
 
 class _FakeHttpResponse:
@@ -80,7 +87,24 @@ def _write_test_wav(path: Path, samples: np.ndarray, sample_rate: int = 22050) -
 
 
 def _write_test_avi(path: Path, *, mode: str = "moving", num_frames: int = 10) -> Path:
-    import cv2
+    try:
+        import cv2
+    except ImportError:
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            raise unittest.SkipTest("Video fixtures require OpenCV or ffmpeg") from None
+        with tempfile.TemporaryDirectory(prefix="sharp_video_frames_") as td:
+            for i in range(num_frames):
+                frame = Image.new("RGB", (320, 180), (0, 0, 0) if mode == "black" else (40, 80, 120))
+                if mode != "black":
+                    x = 20 + i * 12 if mode == "moving" else 80
+                    ImageDraw.Draw(frame).rectangle((x, 50, x + 48, 120), fill=(255, 220, 45))
+                frame.save(Path(td) / f"{i:03d}.png")
+            subprocess.run(
+                [ffmpeg, "-y", "-loglevel", "error", "-framerate", "10", "-i", str(Path(td) / "%03d.png"), "-c:v", "mjpeg", str(path)],
+                check=True, capture_output=True,
+            )
+        return path
 
     w, h = 320, 180
     fourcc = cv2.VideoWriter_fourcc(*"MJPG")
@@ -402,10 +426,52 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
         self.assertTrue(audit_luau.startswith("--!strict"))
         self.assertIn("overlapCount", audit_luau)
         self.assertIn("GetBoundingBox", audit_luau)
+        for fragment in (
+            "Workspace:Raycast", "RaycastParams.new()", "Enum.RaycastFilterType.Exclude",
+            "params.FilterDescendantsInstances = { asset.inst }", "_verticalRadius(asset)",
+            "math.abs(cf.RightVector.Y)", "math.abs(cf.UpVector.Y)", "math.abs(cf.LookVector.Y)",
+            "SharpAllowFloating", "not _isAnchored(asset.inst)", "floatingCount = #floating",
+            "gapStuds = gap", "nearestHit.Instance:GetFullName()", "#overlaps == 0 and #floating == 0",
+            "for _, offset in ipairs(footprintSamples) do", "Vector3.zero",
+            "Vector3.new(-0.95, 0, -0.95)", "Vector3.new(-0.95, 0, 0.95)",
+            "Vector3.new(0.95, 0, -0.95)", "Vector3.new(0.95, 0, 0.95)",
+            "local axes = { asset.cf.RightVector, asset.cf.UpVector, asset.cf.LookVector }",
+            "local halfSizes = { asset.half.X, asset.half.Y, asset.half.Z }", "local faceAxis = 1",
+            "for i = 2, 3 do", "math.abs(axes[i].Y) > math.abs(axes[faceAxis].Y) then faceAxis = i",
+            "local normal = axes[faceAxis]", "if normal.Y > 0 then normal = -normal end",
+            "asset.cf.Position + normal * halfSizes[faceAxis]",
+            "faceAxis % 3 + 1, (faceAxis + 1) % 3 + 1",
+            "local tangentU = axes[uAxis] * halfSizes[uAxis]", "local tangentV = axes[vAxis] * halfSizes[vAxis]",
+            "local sample = faceCenter + tangentU * offset.X + tangentV * offset.Z",
+            "local top = asset.cf.Position.Y + _verticalRadius(asset)",
+            "Vector3.new(sample.X, top, sample.Z)", "Vector3.new(0, sample.Y - 512 - origin.Y, 0)",
+            "Workspace:Raycast(origin, direction, params)", "gap == nil or sampleGap < gap",
+            "gap = sampleGap", "nearestHit = hit", "if not nearestHit",
+        ):
+            self.assertIn(fragment, audit_luau)
 
         fix_luau = eng.compile_world_assembly_optimize_luau(action="fix_overlaps", tolerance_studs=0.2)
         self.assertIn("PivotTo", fix_luau)
         self.assertIn("SharpWorldAssembly", fix_luau)
+        for fragment in (
+            "for iteration = 1, MAX_ITERATIONS do", "SharpLocked", "volumeA < volumeB",
+            "moved[target.inst]", "moved[entry._asset.inst]", "if target == B then axis else -axis",
+            "math.abs(away.Y) > 0.9", "top - bottom", "_translateAsset(entry._asset",
+            "local horizontal = Vector3.new(away.X, 0, away.Z)",
+            "horizontal / horizontalMagnitude * ((penetration + 0.25) / horizontalMagnitude)",
+            "sample.Y - hit.Position.Y", "math.abs(gap) > FLOAT_TOLERANCE",
+            "Vector3.new(0, -entry.gapStuds, 0)",
+            'elseif gap < 0 then "embedded"', "kind = entry.kind",
+            "result.remainingOverlapCount = result.overlapCount",
+            "result.remainingFloatingCount = result.floatingCount", "result.grounded = grounded",
+        ):
+            self.assertIn(fragment, fix_luau)
+        self.assertNotIn("math.max(0, bottom - hit.Position.Y)", fix_luau)
+        self.assertNotIn("local sampleGap = bottom - hit.Position.Y", fix_luau)
+        self.assertNotIn("offset.X * asset.half.X, -asset.half.Y, offset.Z * asset.half.Z", fix_luau)
+        self.assertNotIn("bottom + 3", fix_luau)
+        self.assertNotIn("Workspace:Raycast(origin, Vector3.new(0, -512, 0), params)", fix_luau)
+        self.assertNotIn("local shift = away *", fix_luau)
 
         ca = CriticalAuditEngine()
         bad_world = ca.audit_static(
@@ -436,6 +502,102 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
         clean_ids = {f["id"] for f in clean_world["findings"]}
         self.assertNotIn("WORLD-OVERLAP-001", clean_ids)
         self.assertNotIn("WORLD-FLOAT-001", clean_ids)
+
+    def test_world_audit_camel_case_counts(self) -> None:
+        for count in (0, 1):
+            with self.subTest(count=count):
+                result = CriticalAuditEngine().audit_static(world_stats={"overlapCount": count, "floatingCount": count})
+                ids = {f["id"] for f in result["findings"]}
+                for rule in ("WORLD-OVERLAP-001", "WORLD-FLOAT-001"):
+                    self.assertEqual(rule in ids, count > 0)
+
+    def test_world_repair_parameter_bounds(self) -> None:
+        eng = GameplaySystemsEngine(resolve_default_skills_dir(), resolve_default_archive_dir())
+        for tolerance, iterations, expected_tolerance, expected_iterations in (
+            (0.5, 8, 0.5, 8), (-2.0, 0, 0.0, 1), (1000.0, 100, 512.0, 64),
+        ):
+            with self.subTest(tolerance=tolerance, iterations=iterations):
+                luau = eng.compile_world_assembly_optimize_luau(float_tolerance_studs=tolerance, max_iterations=iterations)
+                self.assertIn(f"local FLOAT_TOLERANCE = {expected_tolerance}", luau)
+                self.assertIn(f"local MAX_ITERATIONS = {expected_iterations}", luau)
+        for tolerance in (math.nan, math.inf, -math.inf):
+            with self.subTest(tolerance=tolerance), self.assertRaisesRegex(ValueError, "must be finite"):
+                eng.compile_world_assembly_optimize_luau(float_tolerance_studs=tolerance)
+        for iterations in (math.nan, math.inf):
+            with self.subTest(iterations=iterations), self.assertRaises((ValueError, OverflowError)):
+                eng.compile_world_assembly_optimize_luau(max_iterations=iterations)
+
+    def test_world_assembly_actions_compile(self) -> None:
+        compiler = _luau_compiler()
+        if not compiler:
+            self.skipTest("luau-compile is not installed (set LUAU_COMPILE or add it to PATH)")
+        eng = GameplaySystemsEngine(resolve_default_skills_dir(), resolve_default_archive_dir())
+        with tempfile.TemporaryDirectory(prefix="sharp_world_compile_") as td:
+            for action in ("install", "scatter_and_optimize", "audit_overlaps", "fix_overlaps", "smoke_test", "cleanup"):
+                with self.subTest(action=action):
+                    source = Path(td) / f"{action}.luau"
+                    source.write_text(eng.compile_world_assembly_optimize_luau(action=action), encoding="utf-8")
+                    result = subprocess.run([compiler, "--null", str(source)], capture_output=True, text=True, check=False)
+                    self.assertEqual(result.returncode, 0, f"{action}:\n{result.stdout}\n{result.stderr}")
+
+    def test_plugin_skills_and_generated_luau_compile(self) -> None:
+        compiler = _luau_compiler()
+        if not compiler:
+            self.skipTest("luau-compile is not installed (set LUAU_COMPILE or add it to PATH)")
+        skills = SERVER_ROOT / "sharp_mcp" / "bundled_skills"
+        sources = {str(p.relative_to(SERVER_ROOT)): p.read_text(encoding="utf-8") for p in (
+            *sorted((SERVER_ROOT / "studio_plugin" / "src").glob("*.luau")), *sorted(skills.rglob("*.luau")),
+        )}
+        with tempfile.TemporaryDirectory(prefix="sharp_corpus_compile_") as td:
+            root = Path(td)
+            gameplay = GameplaySystemsEngine(skills)
+            for name in ("combat_and_controller", "audio_vfx_cutscene", "data_economy_monetization", "ai_and_gameplay", "playtest_scenario"):
+                sources[name] = getattr(gameplay, f"compile_{name}_luau")()
+            audit = LuauAuditSnapshotEngine(skills)
+            sources["scaffold"] = audit.compile_scaffold_luau()
+            sources["inventory"] = audit.compile_script_inventory_luau()
+            sources["critical"] = CriticalAuditEngine(luau_audit_engine=audit).compile_live_audit_luau()
+            sources["snapshot"] = audit.compile_snapshot_and_undo_luau()
+            sources["audit"] = audit.compile_audit_all_luau()
+            sources["gui"] = GuiDomainEngine(skills).compile_gui_build_luau()
+            terrain = TerrainEnvironmentEngine(skills)
+            sources["terrain"] = terrain.compile_terrain_build_luau([0, 0, 0], [64, 64, 64])
+            sources["environment"] = terrain.compile_environment_apply_luau()
+            sources["attach"] = AttachmentEngine(skills).compile_attach_luau()
+            sources["verify"] = AttachmentEngine(skills).compile_verify_luau()
+            rig = RigAnimationEngine(skills)
+            sources["probe"] = rig.compile_probe_rig_luau()
+            sources["playback"] = rig.compile_playback_test_luau()
+            for anim_format in ("KeyframeSequence", "CurveAnimation"):
+                sources[anim_format] = rig.compile_animation_from_clips_luau(
+                    {"clips": {"Walk": rig.generate_procedural_preset("walk")}}, anim_format=anim_format,
+                )
+            design = DesignEngine()
+            ds = design.generate_design_system("Corpus")
+            for module_mode in (True, False):
+                sources[f"theme_{module_mode}"] = design.compile_theme_luau(ds, module_mode=module_mode)
+            art = ArtCreationEngine(design_engine=design, gui_engine=GuiDomainEngine(skills))
+            sources["bitmap_font"] = art.create_custom_font_kit(output_dir=str(root / "art"))["luau_source"]
+            vfx = art.create_custom_vfx(output_dir=str(root / "art"))
+            for key in ("ui_2d_vfx", "world_3d_vfx"):
+                sources[key] = vfx[key]["luau_source"]
+            library = ProjectLibraryManager(project_dir=root / "project", project_id="corpus")
+            sources["registry_empty"] = library.luau_registry_path.read_text(encoding="utf-8")
+            sources["registry_populated"] = library._build_luau_registry_source(
+                {"systems": {"combat": {}}}, {"assets": {"weapon": {"name": "Épée"}}},
+            )
+            sources["library_sync"] = library.compile_studio_sync_luau()
+            for name, source in list(sources.items()):
+                embedded = [match[1] for match in re.findall(r"\[(=*)\[(.*?)\]\1\]", source, re.S) if "--!strict" in match[1]]
+                embedded += [json.loads(match) for match in re.findall(r'\.Source\s*=\s*("(?:\\.|[^"\\])*")', source)]
+                for index, snippet in enumerate(embedded):
+                    sources[f"{name}/embedded_{index}"] = snippet
+            for index, (name, source) in enumerate(sources.items()):
+                with self.subTest(source=name):
+                    path = root / f"{index}.luau"
+                    path.write_text(source, encoding="utf-8")
+                    result = subprocess.run([compiler, "--null", str(path)], capture_output=True, text=True, check=False)
+                    self.assertEqual(result.returncode, 0, f"{name}:\n{result.stdout}\n{result.stderr}")
 
     def test_intake_questions_micro_step_progression_and_subagent_brief(self) -> None:
         with tempfile.TemporaryDirectory(prefix="sharp_micro_plan_") as td:
@@ -594,9 +756,11 @@ class TestV04StdioE2E(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(aud["findings"], [])
 
                     # 5. sharp_world_assembly_and_optimization(action='audit_overlaps') offline + readOnly
-                    ov = json.loads((await session.call_tool("sharp_world_assembly_and_optimization", {"action": "audit_overlaps", "execute_in_studio": True})).content[0].text)
+                    ov = json.loads((await session.call_tool("sharp_world_assembly_and_optimization", {"action": "audit_overlaps", "float_tolerance_studs": 0.75, "max_iterations": 3, "execute_in_studio": True})).content[0].text)
                     self.assertTrue(ov["ok"])
                     self.assertEqual(ov["executionMode"], "Compiled_Luau_Ready")
+                    self.assertIn("local FLOAT_TOLERANCE = 0.75", ov["compiledLuau"])
+                    self.assertIn("local MAX_ITERATIONS = 3", ov["compiledLuau"])
 
                     # 6. sharp_game_plan intake_questions & granularity='micro'
                     iq = json.loads((await session.call_tool("sharp_game_plan", {"action": "intake_questions", "title": "Slime Arena", "genre": "Action"})).content[0].text)

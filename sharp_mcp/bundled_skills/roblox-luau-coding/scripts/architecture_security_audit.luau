@@ -121,7 +121,7 @@ local function hasBareCall(cleanSrc: string, token: string): boolean
 		end
 		local before = if s > 1 then string.sub(cleanSrc, s - 1, s - 1) else ""
 		local after = string.sub(cleanSrc, e + 1)
-		local validPrev = (before == "" or string.match(before, "[%w_%.%:]") == nil)
+		local validPrev = (before == "" or string.match(before, "[%w_.:]") == nil)
 		local validNext = (string.match(after, "^%s*%(") ~= nil)
 		if validPrev and validNext then
 			return true

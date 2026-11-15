@@ -1461,7 +1461,7 @@ class DesignEngine:
             f"\t\tBorderSubtle = {_luau_color3(p.get('border_subtle', p['secondary']))},",
             f"\t\tBorderBright = {_luau_color3(p.get('border_bright', p['accent']))},",
             f"\t\tOutlineInk = {_luau_color3(p['outline_ink'])},",
-            f"\t\tInnerHighlight = Color3.fromRGB(255, 255, 255),",
+            "\t\tInnerHighlight = Color3.fromRGB(255, 255, 255),",
             f"\t\tTextPrimary = {_luau_color3(p['text'])},",
             f"\t\tTextSecondary = {_luau_color3(p.get('text_secondary', p['text']))},",
             f"\t\tTextMuted = {_luau_color3(p.get('text_muted', p['text']))},",

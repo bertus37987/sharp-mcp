@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from PIL import Image, ImageDraw
 

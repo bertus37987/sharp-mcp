@@ -6458,7 +6458,7 @@ function UIKit.AttachStackedStrokes(target: GuiObject, opts: StackedStrokeOption
 		s.Color = innerColor
 		s.Thickness = innerThickness
 		s.Transparency = innerTrans
-		s.LineJoinMode = lineJoin
+		s.LineJoinMode = lineJoin;
 		-- Will fail cleanly on channels where BorderStrokePosition is disabled so we avoid overlapping Center strokes
 		(s :: any).BorderStrokePosition = Enum.BorderStrokePosition.Inner
 		s.Parent = target
@@ -7886,11 +7886,9 @@ function UIKit.CreateModalManager(modalGui: ScreenGui, backdropGui: ScreenGui?)
 	end
 
 	function manager:CloseAll()
-		for name, entry in pairs(registered) do
+		for _, entry in pairs(registered) do
 			entry.frame.Visible = false
-			pcall(function()
-				GuiService:RemoveSelectionGroup("Modal_" .. name)
-			end)
+			entry.frame.SelectionGroup = false
 		end
 		activeName = nil
 		if backdropGui then
@@ -7922,11 +7920,7 @@ function UIKit.CreateModalManager(modalGui: ScreenGui, backdropGui: ScreenGui?)
 		end
 		for otherName, other in pairs(registered) do
 			other.frame.Visible = (otherName == name)
-			if otherName ~= name then
-				pcall(function()
-					GuiService:RemoveSelectionGroup("Modal_" .. otherName)
-				end)
-			end
+			other.frame.SelectionGroup = (otherName == name)
 		end
 		modalGui.Enabled = true
 		if backdropGui then
@@ -7951,7 +7945,6 @@ function UIKit.CreateModalManager(modalGui: ScreenGui, backdropGui: ScreenGui?)
 
 		if RunService:IsRunning() and UIKit.GetPreferredInput() == Enum.PreferredInput.Gamepad then
 			pcall(function()
-				GuiService:AddSelectionParent("Modal_" .. name, entry.frame)
 				GuiService:Select(entry.focusTarget or entry.frame)
 			end)
 		end
@@ -9329,7 +9322,7 @@ local function hasBareCall(cleanSrc: string, token: string): boolean
 		end
 		local before = if s &gt; 1 then string.sub(cleanSrc, s - 1, s - 1) else ""
 		local after = string.sub(cleanSrc, e + 1)
-		local validPrev = (before == "" or string.match(before, "[%w_%.%:]") == nil)
+		local validPrev = (before == "" or string.match(before, "[%w_.:]") == nil)
 		local validNext = (string.match(after, "^%s*%(") ~= nil)
 		if validPrev and validNext then
 			return true
@@ -11243,7 +11236,7 @@ function VfxPresetAndHighlightPool.CreateEmitterPreset(
 	elseif presetKind == "ExplosionFlipbook" then
 		pe.Texture = "rbxasset://textures/particles/explosion01_implosion_main.dds"
 		pcall(function()
-			pe.FlipbookLayout = Enum.ParticleFlipbookLayout.FourByFour
+			pe.FlipbookLayout = Enum.ParticleFlipbookLayout.Grid4x4
 			pe.FlipbookMode = Enum.ParticleFlipbookMode.OneShot
 		end)
 		pe.LightEmission = 0.75

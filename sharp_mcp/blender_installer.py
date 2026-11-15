@@ -534,6 +534,7 @@ def _execute_bpy_via_socket(
         sock.settimeout(float(timeout_sec))
         sock.sendall(payload)
         chunks: List[bytes] = []
+        parsed: Any = None
         while True:
             data = sock.recv(65536)
             if not data:
@@ -545,10 +546,6 @@ def _execute_bpy_via_socket(
                 break
             except (UnicodeDecodeError, json.JSONDecodeError):
                 continue
-        else:
-            raw = b"".join(chunks)
-            parsed = json.loads(raw.decode("utf-8")) if raw else {}
-
     if not isinstance(parsed, dict):
         return {
             "ok": False,

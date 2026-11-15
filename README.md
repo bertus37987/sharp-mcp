@@ -12,6 +12,8 @@ Cross-platform Model Context Protocol (MCP) server unifying **Roblox Studio (`Sh
 
 First-class target clients: **Antigravity**, **Claude (Claude Code & Claude Desktop)**, **OpenAI Codex CLI**, and **OpenCode (V2)**.
 
+Requires Python `>=3.11` and `mcp>=1.7.0,<2`: 1.7 adds the tool annotations Sharp uses; MCP 2.x removed `mcp.server.fastmcp`. `doctor` checks actual server importability. For OpenCV-backed media QA, install the optional extra with `python -m pip install '.[media]'` (`opencv-python-headless`); video analysis falls back to `ffmpeg` on PATH when OpenCV is unavailable.
+
 ```bash
 # Run doctor diagnostics without mutating your open Studio place
 npx --yes ./06_sharp_mcp_server doctor
@@ -41,7 +43,7 @@ python -m sharp_mcp.cli install-blender --dry-run
 | Component | Path | Description |
 | :--- | :--- | :--- |
 | **CLI & `npx` Wrapper** | `bin/sharp-mcp.mjs`, `sharp_mcp/cli.py`, `package.json`, `pyproject.toml` | Cross-platform Node ESM wrapper delegating cleanly to Python `>=3.11` / `uv` + subcommands `serve`, `install-plugin`, `install-blender`, `register`, `keys`, `doctor`, and `self-test`. |
-| **External AI Keys Store** | `sharp_mcp/credentials_store.py` | Stores `GEMINI_API_KEY` / `OPENROUTER_API_KEY` outside repos (`~/.sharp-mcp/credentials.json` or `SHARP_CREDENTIALS_PATH`), prefers env vars, never echoes raw secrets, and curates fast affordable Vision/UI/Video/Image models (`gemini-2.5-flash`, `google/gemini-2.5-flash`, `qwen/qwen-2.5-coder-32b-instruct`). |
+| **External AI Keys Store** | `sharp_mcp/credentials_store.py` | Stores `GEMINI_API_KEY` / `OPENROUTER_API_KEY` outside repos (`~/.sharp-mcp/credentials.json` or `SHARP_CREDENTIALS_PATH`), prefers env vars, and never echoes raw secrets. Image presets use `gemini-2.5-flash-image` / `gemini-3-pro-image` (OpenRouter: `google/` prefix); Imagen is retired. Other presets include `google/gemini-2.5-flash-lite`, `qwen/qwen2.5-vl-72b-instruct` (vision), `anthropic/claude-sonnet-4.5`, and `qwen/qwen-2.5-coder-32b-instruct` (text-only GUI code). Run `keys models` for the full list. |
 | **Client Registrar** | `sharp_mcp/client_registry.py` | Atomic config registration with `.bak` backups and legacy pruning for Antigravity, Claude Code (`~/.claude.json` / `.mcp.json`), Claude Desktop, Codex (`~/.codex/config.toml`), and OpenCode V2 (`mcp.servers` JSON/JSONC). |
 | **Skill Router (`<3 KB`)** | `sharp_mcp/skill_router.py` | Indexes **13 local skills** (9 Roblox + 4 optional Blender), built-in Studio `rbx-*` hints, and role-scoped `subagent_delegations` in `detail="complete"`. Token-budgeted rule cards in `detail="summary"` (`<3 KB`) with progressive loading via `sharp_load_skill` or `sharp://skills/{name}/SKILL.md`. |
 | **Effects, Annotations & Pagination** | `sharp_mcp/tool_effects.py` | Declarative `TOOL_EFFECT_AUDIT` generating MCP `ToolAnnotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) for all **34 tools**, retained `SnapshotViewStore` cursor pagination (`sharp_inspect_snapshot_view`), and untrusted-content `_meta` framing. |
@@ -53,7 +55,7 @@ python -m sharp_mcp.cli install-blender --dry-run
 
 ---
 
-## 3. MCP Profiles, Tools (`34` / `30` / `11`), Resources (`5`) & Prompts (`5`)
+## 3. MCP Profiles, Tools (`34` / `30` / `11`), Resources (`4` fixed + `1` template) & Prompts (`5`)
 
 * **`--profile full` (34 tools, default):** Full Roblox Studio + Design System + Art Studio + AI Studio + Multimodal Media QA + Equipment Attach + Micro-MVP Planner + Critical Audit + Toolchain + Blender suite.
 * **`--profile core` (30 tools):** Studio + Design + Art + AI + Media QA + Planner + Audit + Toolchain (omits `sharp_blender_setup`, `sharp_blender_rig_and_anim`, `sharp_blender_asset_pipeline`, and `sharp_equipment_attach`).
@@ -81,7 +83,8 @@ python -m sharp_mcp.cli install-blender --dry-run
 19. `sharp_audio_vfx_cutscenes` — Node-based Audio API bus graph, burst `ParticleEmitter` presets, 28-slot `Highlight` pool, and splines.
 20. `sharp_data_economy_monetization` — Session-locked `DataStoreService:UpdateAsync` (with Studio mock fallback), economy, and `ProcessReceipt`.
 21. `sharp_ai_and_gameplay_systems` — `CollectionService` NPC AI FSM + `PathfindingService`, `ProximityPrompt` dialogues, and wave directors.
-22. `sharp_world_assembly_and_optimization` — Poisson surface scatter, Attachment socket snapping, 3D OBB SAT map overlap audit/fix (`audit_overlaps`/`fix_overlaps`), and `StreamingEnabled` optimization.
+22. `sharp_world_assembly_and_optimization` — Poisson scatter, socket snapping, OBB overlap/floating audits, and streaming optimization. `audit_overlaps` returns `overlapCount`, `floatingCount`, and `allClean`; `fix_overlaps` iteratively separates smaller eligible assets, grounds assets with raycast hits, and returns final remaining counts. `float_tolerance_studs=0.5` (clamped 0–512) and `max_iterations=8` (1–64) control repair. `SharpLocked=true` prevents movement; `SharpAllowFloating=true` opts out of floating checks, as do unanchored assets. Locked conflicts, voids, and iteration limits can leave `allClean=false`; feed the result as `world_stats` to `sharp_critical_audit`.
+    Ground checks sample the center and four inset bottom-face corners of the OBB's projected footprint, using the smallest signed gap to preserve end-supported bridges; no hits means void. `floatingCount` also includes sunk assets (`kind="embedded"`, negative signed `gapStuds`); grounding raises these assets rather than hiding penetration below the support surface.
 23. `sharp_game_library` — Project plan, version snapshots/diffs/rollbacks, relative asset registry, and Studio `SharpAssetRegistry.luau` sync.
 24. `sharp_playtest_scenario` — Automated server-side gameplay smoke-test bot runner.
 25. `sharp_toolchain` — Offline `Rojo` `default.project.json`, `StyLua`, `Selene`, `Lune`, `Wally`, and `Rokit` orchestrator.
@@ -95,13 +98,16 @@ python -m sharp_mcp.cli install-blender --dry-run
 33. `sharp_media_qa` — Multimodal QA engine (`inspect_video` for playtest/animation video telemetry + contact sheet + Gemini/OpenRouter analysis, `inspect_audio` soundtest DSP + Gemini audio check, `inspect_gui_vision` anti-slop screenshot QA, and `batch_check`).
 34. `sharp_art_studio` — Code-driven 2D/3D game art & VFX suite (`create_2d_kit` 2x SSAA 9-slice/icons, `create_font_kit` Roblox fonts + custom stroked BitmapFont + `SharpBitmapFont.luau`, `create_vfx` 4×4 flipbooks + `SharpUiVfx.luau`/`SharpWorldVfx.luau`, and `generate_ai_art`).
 
-### Resources (`5`) & Prompts (`5`)
-* **Resources:** `sharp://skills/catalog`, `sharp://skills/{skill_name}/SKILL.md`, `sharp://game-library/plan`, `sharp://game-library/manifest`, `sharp://game-library/registry-luau`
+### Resources (`4` fixed + `1` template) & Prompts (`5`)
+* **Fixed resources:** `sharp://skills/catalog`, `sharp://game-library/plan`, `sharp://game-library/manifest`, `sharp://game-library/registry-luau`
+* **Resource template:** `sharp://skills/{skill_name}/SKILL.md`
 * **Prompts:** `sharp_new_game_workflow`, `sharp_fix_gui_loop`, `sharp_concept_intake_workflow`, `sharp_mvp_build_loop`, `sharp_ui_antislop_pass`
 
 ---
 
 ## 4. Rebuilding Plugin & Running Tests
+
+Luau compile regression tests run when `luau-compile` is on PATH or `LUAU_COMPILE` points to its executable; otherwise they skip. They syntax-check plugin/skill sources and representative generated Luau.
 
 ```powershell
 # Rebuild SharpBridgePlugin.rbxmx (29 embedded --!strict ModuleScripts) & install to Studio Plugins

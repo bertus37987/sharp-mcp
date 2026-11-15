@@ -38,8 +38,11 @@ def get_plugin_source_path() -> Path:
             return candidate
 
     try:
-        res = importlib.resources.files("sharp_mcp").joinpath("studio_plugin", PLUGIN_FILENAME)
+        res = importlib.resources.files("sharp_mcp").joinpath("studio_plugin").joinpath(PLUGIN_FILENAME)
         res_path = Path(str(res))
+        if res_path.is_file():
+            return res_path
+        res_path = Path(str(importlib.resources.files("studio_plugin").joinpath(PLUGIN_FILENAME)))
         if res_path.is_file():
             return res_path
     except Exception:

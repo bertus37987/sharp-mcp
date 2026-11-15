@@ -10,15 +10,13 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Tuple
 
 SERVER_ROOT = Path(__file__).resolve().parent.parent
 if str(SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_ROOT))
 
 from sharp_mcp.domain_engines.attachment_engine import (  # noqa: E402
-    ARMOR_SLOTS,
-    R15_ATTACHMENTS,
     SOCKET_PRESETS,
     AttachmentEngine,
 )
@@ -701,7 +699,11 @@ class TestBlenderAttachCompilerAndHygiene(unittest.TestCase):
         test_anim_luau = BUNDLED_SKILLS_DIR / "roblox-animation" / "scripts" / "studio_test_anim.luau"
         assert_valid_luau_sanity(test_anim_luau.read_text(encoding="utf-8"), "studio_test_anim.luau")
 
-        # Verify SHA-256 parity across bundled, live, and Desktop mirrors when present
+    def test_external_skill_mirror_parity(self) -> None:
+        for root in (LIVE_SKILLS_DIR / "roblox-animation", LIVE_SKILLS_DIR / "blender-game-assets", LIVE_SKILLS_DIR / "blender-character-rigging", DESKTOP_ANIM_SKILL):
+            if not root.is_dir():
+                self.skipTest(f"External skill mirror not installed: {root}")
+        forbidden = ["Mixar", "mixar", "Forge", "C:\\Users\\willy", "C:/Users/willy", "@auto_inject_skill"]
         skill_pairs = [
             ("roblox-animation", [BUNDLED_SKILLS_DIR / "roblox-animation", LIVE_SKILLS_DIR / "roblox-animation", DESKTOP_ANIM_SKILL]),
             ("blender-game-assets", [BUNDLED_SKILLS_DIR / "blender-game-assets", LIVE_SKILLS_DIR / "blender-game-assets"]),

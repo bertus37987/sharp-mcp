@@ -838,7 +838,6 @@ class CriticalAuditEngine:
             return findings
 
         paren_pairs = _extract_paren_spans(tokens)
-        brace_pairs = _extract_brace_spans(tokens)
         blocks = _extract_block_spans(tokens, paren_pairs)
         fn_map = self._collect_named_functions(tokens, blocks, paren_pairs)
 
@@ -1152,7 +1151,6 @@ class CriticalAuditEngine:
                 elif i + 2 < n and tokens[i + 2].kind == "IDENT" and tokens[i + 2].value in fn_map:
                     cb_start, cb_end, _ = fn_map[tokens[i + 2].value]
                 cb_vals = {t.value for t in tokens[cb_start : cb_end + 1]}
-                cb_text = self._tokens_text_slice(tokens, cb_start, cb_end)
                 has_purchase_id = "PurchaseId" in cb_vals or "UpdateAsync" in cb_vals or "processedReceipts" in cb_vals
                 has_not_processed = "NotProcessedYet" in cb_vals
                 has_pcall_in_receipt = "pcall" in cb_vals or "xpcall" in cb_vals
@@ -1771,7 +1769,7 @@ class CriticalAuditEngine:
                     r1 = first_p.get(jname, {}).get("rot_deg") or first_p.get(jname, {}).get("rot") or []
                     r2 = last_p.get(jname, {}).get("rot_deg") or last_p.get(jname, {}).get("rot") or []
                     if len(r1) == len(r2) and r1:
-                        max_diff = max(max_diff, max(abs(float(a) - float(b)) for a, b in zip(r1, r2)))
+                        max_diff = max(max_diff, max(abs(float(a) - float(b)) for a, b in zip(r1, r2, strict=True)))
                 threshold = 5.0 if (first_p and any("rot_deg" in v for v in first_p.values() if isinstance(v, dict))) else 0.15
                 if max_diff > threshold:
                     findings.append(
