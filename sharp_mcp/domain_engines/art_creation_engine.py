@@ -9,11 +9,11 @@ import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import aiohttp
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from ..credentials_store import resolve_provider_and_model
+from ..ai_http import AIRequestError, post_json, response_content, response_text
 from .design_engine import DesignEngine, hex_to_rgb as _hex_to_rgb, rgb_to_hex as _rgb_to_hex
 from .gui_engine import GuiDomainEngine
 
@@ -978,7 +978,6 @@ class ArtCreationEngine:
 
         ai_payload: Optional[Dict[str, Any]] = None
         if use_ai and route["key_configured"] and route["api_key"]:
-            timeout = aiohttp.ClientTimeout(total=90.0)
             if route["provider"] == "openrouter":
                 headers = {
                     "Authorization": f"Bearer {route['api_key']}",
@@ -994,15 +993,7 @@ class ArtCreationEngine:
                         {"role": "user", "content": user_prompt},
                     ],
                 }
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.post("https://openrouter.ai/api/v1/chat/completions", json=body, headers=headers) as resp:
-                        raw = await resp.text()
-                        if resp.status < 400:
-                            parsed = json.loads(raw)
-                            txt = (((parsed.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
-                            ai_payload = {"ok": True, "provider": "openrouter", "model": route["model"], "raw_text": txt}
-                        else:
-                            ai_payload = {"ok": False, "provider": "openrouter", "error": f"HTTP {resp.status}: {raw[:300]}"}
+                url = "https://openrouter.ai/api/v1/chat/completions"
             else:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{route['model']}:generateContent"
                 headers = {"Content-Type": "application/json", "x-goog-api-key": route["api_key"]}
@@ -1010,16 +1001,12 @@ class ArtCreationEngine:
                     "contents": [{"role": "user", "parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
                     "generationConfig": {"temperature": 0.35, "responseMimeType": "application/json"},
                 }
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.post(url, json=body, headers=headers) as resp:
-                        raw = await resp.text()
-                        if resp.status < 400:
-                            parsed = json.loads(raw)
-                            parts = (((parsed.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
-                            txt = "\n".join(str(p.get("text", "")) for p in parts if "text" in p).strip()
-                            ai_payload = {"ok": True, "provider": "gemini", "model": route["model"], "raw_text": txt}
-                        else:
-                            ai_payload = {"ok": False, "provider": "gemini", "error": f"HTTP {resp.status}: {raw[:300]}"}
+            try:
+                parsed = await post_json(url, headers=headers, payload=body, api_key=route["api_key"], timeout_sec=90.0)
+                txt = response_text(parsed, route["provider"])
+                ai_payload = {"ok": True, "provider": route["provider"], "model": route["model"], "raw_text": txt}
+            except AIRequestError as exc:
+                ai_payload = {"ok": False, "provider": route["provider"], "error": str(exc)}
 
         theme_luau = self.design_engine.compile_theme_luau(ds, module_mode=True)
         return {
@@ -1118,38 +1105,17 @@ class ArtCreationEngine:
         raw_png = out_dir / f"{asset_kind}_raw.png"
 
         img_bytes: Optional[bytes] = None
-        timeout = aiohttp.ClientTimeout(total=120.0)
         if route["provider"] == "gemini":
             mdl = route["model"]
             headers = {"Content-Type": "application/json", "x-goog-api-key": route["api_key"]}
             if mdl.startswith("imagen-"):
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:predict"
-                body = {"instances": [{"prompt": prompt_text}], "parameters": {"sampleCount": 1}}
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.post(url, json=body, headers=headers) as resp:
-                        raw_txt = await resp.text()
-                        if resp.status >= 400:
-                            return {"ok": False, "error": f"Gemini Imagen HTTP {resp.status}: {raw_txt[:350]}"}
-                        preds = json.loads(raw_txt).get("predictions") or []
-                        if preds and preds[0].get("bytesBase64Encoded"):
-                            img_bytes = base64.b64decode(preds[0]["bytesBase64Encoded"])
+                return {"ok": False, "error": "Imagen models are shut down. Select gemini-2.5-flash-image or another Gemini image model."}
             else:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent"
                 body = {
                     "contents": [{"role": "user", "parts": [{"text": prompt_text}]}],
                     "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
                 }
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.post(url, json=body, headers=headers) as resp:
-                        raw_txt = await resp.text()
-                        if resp.status >= 400:
-                            return {"ok": False, "error": f"Gemini image HTTP {resp.status}: {raw_txt[:350]}"}
-                        parts = (((json.loads(raw_txt).get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
-                        for p in parts:
-                            inline = p.get("inlineData") or p.get("inline_data")
-                            if isinstance(inline, dict) and inline.get("data"):
-                                img_bytes = base64.b64decode(inline["data"])
-                                break
         else:
             headers = {
                 "Authorization": f"Bearer {route['api_key']}",
@@ -1162,17 +1128,27 @@ class ArtCreationEngine:
                 "modalities": ["image", "text"],
                 "messages": [{"role": "user", "content": prompt_text}],
             }
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post("https://openrouter.ai/api/v1/chat/completions", json=body, headers=headers) as resp:
-                    raw_txt = await resp.text()
-                    if resp.status >= 400:
-                        return {"ok": False, "error": f"OpenRouter image HTTP {resp.status}: {raw_txt[:350]}"}
-                    msg = (((json.loads(raw_txt).get("choices") or [{}])[0].get("message")) or {})
-                    imgs = msg.get("images") or []
-                    if imgs:
-                        data_url = ((imgs[0].get("image_url") or {}).get("url") or imgs[0].get("url") or "")
-                        if "," in data_url:
-                            img_bytes = base64.b64decode(data_url.split(",", 1)[1])
+            url = "https://openrouter.ai/api/v1/chat/completions"
+
+        try:
+            data = await post_json(url, headers=headers, payload=body, api_key=route["api_key"], timeout_sec=120.0)
+            content = response_content(data, route["provider"])
+            if route["provider"] == "gemini":
+                for part in content.get("parts") or []:
+                    inline = part.get("inlineData") or part.get("inline_data")
+                    if isinstance(inline, dict) and inline.get("data"):
+                        img_bytes = base64.b64decode(inline["data"], validate=True)
+                        break
+            else:
+                imgs = content.get("images") or []
+                if imgs:
+                    data_url = ((imgs[0].get("image_url") or {}).get("url") or "")
+                    if data_url.startswith("data:image/") and ";base64," in data_url:
+                        img_bytes = base64.b64decode(data_url.split(",", 1)[1], validate=True)
+        except AIRequestError as exc:
+            return {"ok": False, "error": str(exc)}
+        except ValueError:
+            return {"ok": False, "error": "Provider returned invalid base64 image data."}
 
         if not img_bytes:
             return {"ok": False, "error": "Model responded without image binary data."}
