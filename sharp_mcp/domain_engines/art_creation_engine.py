@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -14,7 +15,12 @@ from PIL import Image, ImageDraw, ImageFont
 
 from ..credentials_store import resolve_provider_and_model
 from ..ai_http import AIRequestError, post_json, response_content, response_text
-from .design_engine import DesignEngine, hex_to_rgb as _hex_to_rgb, rgb_to_hex as _rgb_to_hex
+from .design_engine import (
+    TEXTURE_STYLE_PROFILES,
+    DesignEngine,
+    hex_to_rgb as _hex_to_rgb,
+    rgb_to_hex as _rgb_to_hex,
+)
 from .gui_engine import GuiDomainEngine
 
 
@@ -80,11 +86,12 @@ def _palette_from_ds(design_system: Dict[str, Any]) -> Dict[str, str]:
         "primary": str(pal.get("primary") or "#FF4D8D"),
         "secondary": str(pal.get("secondary") or "#38E8FF"),
         "accent": str(pal.get("accent") or "#FFD166"),
-        "surface": str(pal.get("surface") or "#1B1633"),
-        "surface_elevated": str(pal.get("surface_elevated") or "#28214A"),
-        "stroke_outer": str(pal.get("stroke_outer") or "#0B0818"),
+        "gold": str(pal.get("gold") or pal.get("accent") or "#FFD166"),
+        "surface": str(pal.get("surface") or pal.get("bg_deep") or "#1B1633"),
+        "surface_elevated": str(pal.get("surface_elevated") or pal.get("bg_panel") or "#28214A"),
+        "stroke_outer": str(pal.get("stroke_outer") or pal.get("outline_ink") or "#0B0818"),
         "stroke_inner": str(pal.get("stroke_inner") or "#FFFFFF"),
-        "text_primary": str(pal.get("text_primary") or "#F8FAFC"),
+        "text_primary": str(pal.get("text_primary") or pal.get("text") or "#F8FAFC"),
         "success": str(pal.get("success") or "#22C55E"),
         "danger": str(pal.get("danger") or "#EF4444"),
     }
@@ -758,6 +765,291 @@ return SharpBitmapFont
 """
 
 
+def _periodic_value_noise(res: int, grid_size: int, rng: np.random.Generator) -> np.ndarray:
+    """Bilinearly interpolated periodic 2D value noise in [0, 1]."""
+    g = max(2, int(grid_size))
+    grid = rng.random((g, g), dtype=np.float32)
+    coords = np.linspace(0.0, float(g), res, endpoint=False, dtype=np.float32)
+    xi = np.floor(coords).astype(np.int32) % g
+    xf = coords - np.floor(coords)
+    x1 = (xi + 1) % g
+    c00 = grid[np.ix_(xi, xi)]
+    c10 = grid[np.ix_(xi, x1)]
+    c01 = grid[np.ix_(x1, xi)]
+    c11 = grid[np.ix_(x1, x1)]
+    wx = xf[None, :]
+    wy = xf[:, None]
+    top = c00 * (1.0 - wx) + c10 * wx
+    bot = c01 * (1.0 - wx) + c11 * wx
+    return np.clip(top * (1.0 - wy) + bot * wy, 0.0, 1.0)
+
+
+def _height_to_opengl_normal(height: np.ndarray, strength: float) -> np.ndarray:
+    """Convert seamless 2D heightfield [0..1] to OpenGL tangent-space NormalMap uint8 RGB."""
+    h = height.astype(np.float32)
+    dx = (np.roll(h, -1, axis=1) - np.roll(h, 1, axis=1)) * 0.5
+    dy = (np.roll(h, -1, axis=0) - np.roll(h, 1, axis=0)) * 0.5
+    scale = max(0.05, float(strength)) * 12.0
+    nx = -dx * scale
+    ny = dy * scale
+    nz = np.ones_like(h, dtype=np.float32)
+    inv_len = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)
+    rgb = np.stack(
+        [
+            (nx * inv_len) * 0.5 + 0.5,
+            (ny * inv_len) * 0.5 + 0.5,
+            (nz * inv_len) * 0.5 + 0.5,
+        ],
+        axis=-1,
+    )
+    return np.clip(np.round(rgb * 255.0), 0, 255).astype(np.uint8)
+
+
+def _mix_rgb(c1: Tuple[int, int, int], c2: Tuple[int, int, int], t: np.ndarray) -> np.ndarray:
+    """Blend two RGB tuples across a 2D [0..1] weight array into float32 (H, W, 3)."""
+    tc = np.clip(t, 0.0, 1.0)[..., None].astype(np.float32)
+    a = np.array(c1, dtype=np.float32)[None, None, :]
+    b = np.array(c2, dtype=np.float32)[None, None, :]
+    return a * (1.0 - tc) + b * tc
+
+
+def _render_pbr_maps(
+    res: int,
+    style_id: str,
+    profile: Dict[str, Any],
+    pal: Dict[str, str],
+    seed_key: str,
+) -> Tuple[Image.Image, Image.Image, Image.Image, Image.Image, Dict[str, Any]]:
+    """Synthesize deterministic 4-map PBR textures matching TEXTURE_STYLE_PROFILES."""
+    digest = hashlib.sha256(seed_key.encode("utf-8")).digest()
+    rng = np.random.default_rng(int.from_bytes(digest[:8], "big"))
+
+    c_pri = _hex_to_rgb(pal["primary"])
+    c_sec = _hex_to_rgb(pal["secondary"])
+    c_acc = _hex_to_rgb(pal["accent"])
+    c_gold = _hex_to_rgb(pal["gold"])
+    c_surf = _hex_to_rgb(pal["surface"])
+    c_elev = _hex_to_rgb(pal["surface_elevated"])
+    c_ink = _hex_to_rgb(pal["stroke_outer"])
+
+    r_lo, r_hi = [float(x) for x in profile.get("roughness_range", [0.4, 0.7])]
+    m_lo, m_hi = [float(x) for x in profile.get("metallic_range", [0.0, 0.1])]
+    n_strength = float(profile.get("normal_strength", 0.5))
+    grain = float(profile.get("grain_strength", 0.1))
+
+    coords = np.linspace(0.0, 1.0, res, endpoint=False, dtype=np.float32)
+    uu, vv = np.meshgrid(coords, coords)
+
+    fbm = (
+        0.55 * _periodic_value_noise(res, 6, rng)
+        + 0.30 * _periodic_value_noise(res, 14, rng)
+        + 0.15 * _periodic_value_noise(res, 32, rng)
+    )
+
+    if style_id == "clean_vector_cel":
+        wave = 0.5 + 0.5 * np.sin(2.0 * math.pi * (uu * 2.0 + vv) + 0.35 * np.cos(2.0 * math.pi * vv * 2.0))
+        band = (wave + 0.15 * (fbm - 0.5) > 0.52).astype(np.float32)
+        border = ((np.abs(uu - 0.5) > 0.46) | (np.abs(vv - 0.5) > 0.46)).astype(np.float32)
+        rgb = _mix_rgb(c_elev, c_pri, band)
+        rgb = rgb * (1.0 - 0.35 * border[..., None]) + np.array(c_ink, dtype=np.float32)[None, None, :] * (0.35 * border[..., None])
+        accent_stripe = (np.abs((uu + vv) % 1.0 - 0.5) < 0.06).astype(np.float32)
+        rgb = rgb * (1.0 - 0.85 * accent_stripe[..., None]) + np.array(c_sec, dtype=np.float32)[None, None, :] * (0.85 * accent_stripe[..., None])
+        rgb = np.clip(rgb + (fbm[..., None] - 0.5) * (grain * 45.0), 0, 255)
+        height = np.clip(0.55 + 0.35 * band - 0.35 * border + 0.15 * accent_stripe, 0.0, 1.0)
+        rough_01 = np.clip(r_lo + (r_hi - r_lo) * (1.0 - band * 0.65 - accent_stripe * 0.25), r_lo, r_hi)
+        metal_01 = np.clip(m_lo + (m_hi - m_lo) * accent_stripe, m_lo, m_hi)
+
+    elif style_id == "pbr_metallic_roughness":
+        streak_row = _periodic_value_noise(res, 48, rng)
+        streak_col = _periodic_value_noise(res, 6, rng)
+        brushed = np.clip(0.65 * streak_row + 0.35 * streak_col, 0.0, 1.0)
+        # Anisotropic horizontal streaks via periodic column smoothing
+        for shift in (-2, -1, 1, 2):
+            brushed = brushed + 0.2 * np.roll(brushed, shift, axis=1)
+        brushed = (brushed - brushed.min()) / max(1e-5, float(brushed.max() - brushed.min()))
+        seam_x = np.minimum(np.abs(uu - 0.5), np.minimum(uu, 1.0 - uu))
+        seam_y = np.minimum(np.abs(vv - 0.5), np.minimum(vv, 1.0 - vv))
+        seam_dist = np.minimum(seam_x, seam_y)
+        seam_mask = np.clip(1.0 - seam_dist / 0.025, 0.0, 1.0)
+        bevel_mask = np.clip(1.0 - np.abs(seam_dist - 0.032) / 0.015, 0.0, 1.0)
+        plate_base = _mix_rgb(c_elev, _lerp_rgb(c_pri, (210, 220, 232), 0.55), brushed * 0.75 + 0.15)
+        plate_base = plate_base + bevel_mask[..., None] * 28.0
+        rgb = plate_base * (1.0 - seam_mask[..., None] * 0.78) + np.array(c_ink, dtype=np.float32)[None, None, :] * (seam_mask[..., None] * 0.78)
+        rgb = np.clip(rgb + (fbm[..., None] - 0.5) * (grain * 50.0), 0, 255)
+        height = np.clip(0.65 + 0.25 * brushed + 0.15 * bevel_mask - 0.60 * seam_mask, 0.0, 1.0)
+        rough_01 = np.clip(r_lo + (r_hi - r_lo) * (0.25 * (1.0 - brushed) + 0.75 * seam_mask - 0.20 * bevel_mask), r_lo, r_hi)
+        metal_01 = np.clip(m_hi - (m_hi - m_lo) * (seam_mask * 0.85 + (1.0 - brushed) * 0.12), m_lo, m_hi)
+
+    elif style_id == "pixel_retro_crisp":
+        block = max(4, min(res // 8, int(profile.get("pixel_grid_px", 16))))
+        cells = max(8, res // block)
+        cell_rng = np.random.default_rng(int.from_bytes(digest[8:16], "big"))
+        palette_list = np.array([c_surf, c_elev, c_pri, c_sec, c_acc, c_gold], dtype=np.float32)
+        cy, cx = np.meshgrid(np.arange(cells), np.arange(cells), indexing="ij")
+        brick_shift = (cy % 2) * (cells // 4)
+        tile_pattern = ((cx + brick_shift) % max(4, cells // 4) == 0) | (cy % max(4, cells // 4) == 0)
+        bayer4 = np.array(
+            [
+                [0, 8, 2, 10],
+                [12, 4, 14, 6],
+                [3, 11, 1, 9],
+                [15, 7, 13, 5],
+            ],
+            dtype=np.float32,
+        ) / 16.0
+        bayer_grid = np.tile(bayer4, (cells // 4 + 1, cells // 4 + 1))[:cells, :cells]
+        noise_low = cell_rng.random((cells, cells), dtype=np.float32)
+        val = np.clip(0.45 * (cy / float(cells)) + 0.35 * noise_low + 0.20 * (bayer_grid - 0.5), 0.0, 0.999)
+        idx = np.where(tile_pattern, 0, np.clip(1 + np.floor(val * (len(palette_list) - 1)).astype(np.int32), 1, len(palette_list) - 1))
+        small_rgb = palette_list[idx]
+        small_h = np.where(tile_pattern, 0.25, 0.55 + 0.35 * (idx / float(len(palette_list) - 1)))
+        small_r = np.where(tile_pattern, r_hi, r_lo + (r_hi - r_lo) * (1.0 - idx / float(len(palette_list) - 1)) * 0.7)
+        small_m = np.where(idx == len(palette_list) - 1, m_hi, m_lo + (m_hi - m_lo) * 0.25 * (idx % 2))
+        # Upscale crisp nearest-neighbor
+        y_up = np.floor(np.linspace(0, cells, res, endpoint=False)).astype(np.int32)
+        x_up = np.floor(np.linspace(0, cells, res, endpoint=False)).astype(np.int32)
+        rgb = small_rgb[np.ix_(y_up, x_up)]
+        height = small_h[np.ix_(y_up, x_up)].astype(np.float32)
+        rough_01 = small_r[np.ix_(y_up, x_up)].astype(np.float32)
+        metal_01 = small_m[np.ix_(y_up, x_up)].astype(np.float32)
+
+    elif style_id == "arcane_emissive_runes":
+        dx_c = np.abs(uu - 0.5)
+        dy_c = np.abs(vv - 0.5)
+        dist_r = np.sqrt(dx_c * dx_c + dy_c * dy_c)
+        diamond = np.abs(dx_c + dy_c - 0.34) < 0.018
+        ring = np.abs(dist_r - 0.23) < 0.015
+        cross = (np.abs(dx_c - dy_c) < 0.012) & (dist_r < 0.32) & (dist_r > 0.09)
+        rune_mask = (diamond | ring | cross).astype(np.float32)
+        gilt_frame = ((np.abs(uu - 0.5) > 0.445) | (np.abs(vv - 0.5) > 0.445)).astype(np.float32)
+        stone = _mix_rgb(c_ink, c_surf, np.clip(fbm * 1.15, 0.0, 1.0))
+        rune_col = _mix_rgb(c_pri, c_acc, 0.5 + 0.5 * np.sin(2.0 * math.pi * (uu + vv)))
+        rgb = stone * (1.0 - rune_mask[..., None]) + rune_col * rune_mask[..., None]
+        rgb = rgb * (1.0 - gilt_frame[..., None]) + np.array(c_gold, dtype=np.float32)[None, None, :] * gilt_frame[..., None]
+        rgb = np.clip(rgb + (fbm[..., None] - 0.5) * (grain * 38.0), 0, 255)
+        height = np.clip(0.62 * fbm + 0.28 * gilt_frame - 0.45 * rune_mask, 0.0, 1.0)
+        rough_01 = np.clip(r_hi - (r_hi - r_lo) * np.maximum(rune_mask, gilt_frame * 0.85), r_lo, r_hi)
+        metal_01 = np.clip(m_lo + (m_hi - m_lo) * np.maximum(gilt_frame, rune_mask * 0.40), m_lo, m_hi)
+
+    else:  # stylized_gradient_atlas
+        grad_t = np.clip(0.60 * vv + 0.40 * (0.5 + 0.5 * np.sin(2.0 * math.pi * uu)), 0.0, 1.0)
+        base_grad = _mix_rgb(c_pri, c_sec, grad_t)
+        cavity = np.clip(0.5 + 0.5 * np.cos(2.0 * math.pi * uu * 2.0) * np.sin(2.0 * math.pi * vv * 2.0), 0.0, 1.0)
+        rgb = base_grad * (0.78 + 0.28 * fbm[..., None]) + np.array(c_acc, dtype=np.float32)[None, None, :] * (0.14 * cavity[..., None])
+        rgb = np.clip(rgb, 0, 255)
+        height = np.clip(0.55 * fbm + 0.30 * cavity + 0.15 * grad_t, 0.0, 1.0)
+        rough_01 = np.clip(r_lo + (r_hi - r_lo) * (0.65 * (1.0 - cavity) + 0.35 * fbm), r_lo, r_hi)
+        metal_01 = np.clip(m_lo + (m_hi - m_lo) * cavity, m_lo, m_hi)
+
+    albedo_u8 = np.clip(np.round(rgb), 0, 255).astype(np.uint8)
+    alpha_u8 = np.full((res, res, 1), 255, dtype=np.uint8)
+    albedo_rgba = np.concatenate([albedo_u8, alpha_u8], axis=-1)
+    normal_rgb = _height_to_opengl_normal(height, n_strength)
+    rough_u8 = np.clip(np.round(rough_01 * 255.0), 0, 255).astype(np.uint8)
+    metal_u8 = np.clip(np.round(metal_01 * 255.0), 0, 255).astype(np.uint8)
+
+    stats = {
+        "mean_roughness": round(float(rough_01.mean()), 4),
+        "mean_metallic": round(float(metal_01.mean()), 4),
+        "normal_blue_min": int(normal_rgb[:, :, 2].min()),
+        "normal_blue_mean": round(float(normal_rgb[:, :, 2].mean()), 2),
+    }
+    return (
+        Image.fromarray(albedo_rgba, mode="RGBA"),
+        Image.fromarray(normal_rgb, mode="RGB"),
+        Image.fromarray(rough_u8, mode="L"),
+        Image.fromarray(metal_u8, mode="L"),
+        stats,
+    )
+
+
+def _build_surface_appearance_luau(style_id: str, profile: Dict[str, Any], resolution: int) -> str:
+    defaults = profile.get("surface_appearance_defaults") or {"Roughness": 0.5, "Metalness": 0.0}
+    rough_def = float(defaults.get("Roughness", 0.5))
+    metal_def = float(defaults.get("Metalness", 0.0))
+    norm_str = float(profile.get("normal_strength", 0.5))
+    return f"""--!strict
+-- SharpSurfaceAppearance: Applies deterministic 4-map PBR textures ({style_id}) to MeshParts & MaterialVariants.
+local MaterialService = game:GetService("MaterialService")
+
+local SharpSurfaceAppearance = {{}}
+
+SharpSurfaceAppearance.Style = {json.dumps(style_id)}
+SharpSurfaceAppearance.Resolution = {int(resolution)}
+SharpSurfaceAppearance.Defaults = {{
+\tRoughness = {rough_def:.3f},
+\tMetalness = {metal_def:.3f},
+\tNormalStrength = {norm_str:.3f},
+}}
+
+export type PbrMapIds = {{
+\tColorMap: string?,
+\tNormalMap: string?,
+\tRoughnessMap: string?,
+\tMetalnessMap: string?,
+\tColor: Color3?,
+\tAlphaMode: Enum.AlphaMode?,
+}}
+
+function SharpSurfaceAppearance.Apply(target: Instance, maps: PbrMapIds): SurfaceAppearance
+\tlocal existing = target:FindFirstChildOfClass("SurfaceAppearance")
+\tlocal sa = existing or Instance.new("SurfaceAppearance")
+\tsa.Name = "SharpSurfaceAppearance"
+\tlocal saAny = sa :: any
+\tif maps.ColorMap and maps.ColorMap ~= "" then
+\t\tsaAny.ColorMap = maps.ColorMap
+\tend
+\tif maps.NormalMap and maps.NormalMap ~= "" then
+\t\tsaAny.NormalMap = maps.NormalMap
+\tend
+\tif maps.RoughnessMap and maps.RoughnessMap ~= "" then
+\t\tsaAny.RoughnessMap = maps.RoughnessMap
+\tend
+\tif maps.MetalnessMap and maps.MetalnessMap ~= "" then
+\t\tsaAny.MetalnessMap = maps.MetalnessMap
+\tend
+\tif maps.Color then
+\t\tsa.Color = maps.Color
+\tend
+\tif maps.AlphaMode then
+\t\tsa.AlphaMode = maps.AlphaMode
+\tend
+\tsa.Parent = target
+\treturn sa
+end
+
+function SharpSurfaceAppearance.ApplyMaterialVariant(
+\tvariantName: string,
+\tbaseMaterial: Enum.Material,
+\tmaps: PbrMapIds,
+\tstudsPerTile: number?
+): MaterialVariant
+\tlocal existing = MaterialService:FindFirstChild(variantName)
+\tlocal mv: MaterialVariant = if existing and existing:IsA("MaterialVariant") then existing else Instance.new("MaterialVariant")
+\tmv.Name = variantName
+\tmv.BaseMaterial = baseMaterial
+\tmv.StudsPerTile = studsPerTile or 8
+\tlocal mvAny = mv :: any
+\tif maps.ColorMap and maps.ColorMap ~= "" then
+\t\tmvAny.ColorMap = maps.ColorMap
+\tend
+\tif maps.NormalMap and maps.NormalMap ~= "" then
+\t\tmvAny.NormalMap = maps.NormalMap
+\tend
+\tif maps.RoughnessMap and maps.RoughnessMap ~= "" then
+\t\tmvAny.RoughnessMap = maps.RoughnessMap
+\tend
+\tif maps.MetalnessMap and maps.MetalnessMap ~= "" then
+\t\tmvAny.MetalnessMap = maps.MetalnessMap
+\tend
+\tmv.Parent = MaterialService
+\treturn mv
+end
+
+return SharpSurfaceAppearance
+"""
+
+
 class ArtCreationEngine:
     """Cohesive 2D procedural kit, custom fonts, 2D/3D VFX, and AI UI/Image creation."""
 
@@ -833,6 +1125,99 @@ class ArtCreationEngine:
             "panel_9slice": panel_meta,
             "emblem_rays_path": rays_path,
             "icon_atlas": atlas_meta,
+        }
+
+    def create_pbr_texture_set(
+        self,
+        *,
+        output_dir: str = "",
+        design_system: Optional[Dict[str, Any]] = None,
+        game_title: str = "Untitled Roblox Game",
+        genre: str = "adventure",
+        texture_style: Optional[str] = None,
+        resolution: int = 512,
+        project_library: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Generate a deterministic 4-map PBR PNG set + --!strict SurfaceAppearance helper."""
+        if isinstance(design_system, dict) and design_system.get("palette"):
+            ds = design_system
+        elif project_library is not None and hasattr(project_library, "get_design_system"):
+            stored = project_library.get_design_system()
+            if isinstance(stored, dict) and stored.get("palette"):
+                ds = stored
+            else:
+                ds = self.design_engine.generate_design_system(
+                    game_title=game_title,
+                    genre=genre,
+                    texture_style=texture_style,
+                )
+        else:
+            ds = self.design_engine.generate_design_system(
+                game_title=game_title,
+                genre=genre,
+                texture_style=texture_style,
+            )
+
+        pal = _palette_from_ds(ds)
+        req_style = str(texture_style or ds.get("texture_style") or "").strip().lower()
+        resolved_style = req_style if req_style in TEXTURE_STYLE_PROFILES else "stylized_gradient_atlas"
+        profile = TEXTURE_STYLE_PROFILES[resolved_style]
+        res = max(64, min(1024, int(resolution)))
+
+        if output_dir and output_dir.strip():
+            out_dir = Path(output_dir).expanduser().resolve()
+        elif project_library is not None and getattr(project_library, "assets_dir", None):
+            out_dir = Path(project_library.assets_dir) / "pbr_textures"
+        else:
+            out_dir = Path.cwd() / "artifacts" / "pbr_textures"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        seed_key = f"{ds.get('seed_hash', '0000')}|{ds.get('game_title', game_title)}|{resolved_style}|{res}"
+        albedo_im, normal_im, rough_im, metal_im, stats = _render_pbr_maps(
+            res=res,
+            style_id=resolved_style,
+            profile=profile,
+            pal=pal,
+            seed_key=seed_key,
+        )
+
+        albedo_path = out_dir / "albedo.png"
+        normal_path = out_dir / "normal.png"
+        rough_path = out_dir / "roughness.png"
+        metal_path = out_dir / "metallic.png"
+        luau_path = out_dir / "SharpSurfaceAppearance.luau"
+
+        albedo_im.save(str(albedo_path), format="PNG")
+        normal_im.save(str(normal_path), format="PNG")
+        rough_im.save(str(rough_path), format="PNG")
+        metal_im.save(str(metal_path), format="PNG")
+
+        luau_src = _build_surface_appearance_luau(resolved_style, profile, res)
+        luau_path.write_text(luau_src, encoding="utf-8")
+
+        return {
+            "ok": True,
+            "mode": "create_pbr_texture_set",
+            "game_title": ds.get("game_title"),
+            "preset_id": ds.get("preset_id"),
+            "texture_style": resolved_style,
+            "texture_style_profile": dict(profile),
+            "resolution": res,
+            "palette": pal,
+            "output_dir": str(out_dir),
+            "maps": {
+                "albedo": str(albedo_path),
+                "normal": str(normal_path),
+                "roughness": str(rough_path),
+                "metallic": str(metal_path),
+            },
+            "albedo_path": str(albedo_path),
+            "normal_path": str(normal_path),
+            "roughness_path": str(rough_path),
+            "metallic_path": str(metal_path),
+            "luau_module_path": str(luau_path),
+            "luau_source": luau_src,
+            "stats": stats,
         }
 
     def create_custom_font_kit(

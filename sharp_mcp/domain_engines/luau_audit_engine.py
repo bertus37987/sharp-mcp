@@ -13,8 +13,9 @@ Embeds:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 class LuauAuditSnapshotEngine:
@@ -559,4 +560,547 @@ if ACTION == "restore" then
 end
 
 return HttpService:JSONEncode({{ ok = false, error = "Unknown action: " .. tostring(ACTION) }})
+"""
+
+    @staticmethod
+    def _sanitize_luau_key(raw: str, fallback: str = "Item") -> str:
+        cleaned = re.sub(r"[^A-Za-z0-9_]", "_", (raw or "").strip())
+        if not cleaned or cleaned[0].isdigit():
+            cleaned = f"K_{cleaned}" if cleaned else fallback
+        return cleaned
+
+    @staticmethod
+    def _normalize_contracts_spec(contracts_spec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        spec = dict(contracts_spec) if isinstance(contracts_spec, dict) else {}
+        root_prefix = str(spec.get("root_prefix") or spec.get("rootPrefix") or "").strip()
+        remotes_folder = str(spec.get("remotes_folder") or spec.get("remotesFolder") or "Remotes").strip() or "Remotes"
+        schema_version = str(spec.get("schema_version") or spec.get("schemaVersion") or "1.0.0").strip() or "1.0.0"
+        ensure_remotes = bool(spec.get("ensure_remote_instances", True))
+
+        # Remotes normalization
+        raw_remotes = spec.get("remotes")
+        remotes_out: List[Dict[str, Any]] = []
+        if isinstance(raw_remotes, dict):
+            for r_key, r_val in raw_remotes.items():
+                if isinstance(r_val, dict):
+                    r_name = str(r_val.get("name") or r_key)
+                    r_kind = str(r_val.get("kind") or r_val.get("className") or "RemoteEvent")
+                    r_dir = str(r_val.get("direction") or "ClientToServer")
+                    rl_raw = r_val.get("rate_limit") or r_val.get("rateLimit") or r_val.get("rateLimitPerSec") or 10
+                    if isinstance(rl_raw, dict):
+                        rl_num = float(rl_raw.get("refillPerSecond") or rl_raw.get("capacity") or 10)
+                    else:
+                        rl_num = float(rl_raw or 10)
+                    r_desc = str(r_val.get("description") or "")
+                else:
+                    r_name = str(r_val or r_key)
+                    r_kind = "RemoteEvent"
+                    r_dir = "ClientToServer"
+                    rl_num = 10.0
+                    r_desc = ""
+                if r_kind not in ("RemoteEvent", "UnreliableRemoteEvent", "RemoteFunction"):
+                    r_kind = "RemoteEvent"
+                remotes_out.append(
+                    {
+                        "key": str(r_key),
+                        "name": r_name,
+                        "kind": r_kind,
+                        "direction": r_dir,
+                        "rateLimitPerSec": rl_num,
+                        "description": r_desc,
+                    }
+                )
+        elif isinstance(raw_remotes, list):
+            for item in raw_remotes:
+                if isinstance(item, str) and item.strip():
+                    remotes_out.append(
+                        {
+                            "key": item.strip(),
+                            "name": item.strip(),
+                            "kind": "RemoteEvent",
+                            "direction": "ClientToServer",
+                            "rateLimitPerSec": 10.0,
+                            "description": "",
+                        }
+                    )
+                elif isinstance(item, dict):
+                    r_name = str(item.get("name") or item.get("key") or "").strip()
+                    if not r_name:
+                        continue
+                    r_key = str(item.get("key") or r_name)
+                    r_kind = str(item.get("kind") or item.get("className") or "RemoteEvent")
+                    if r_kind not in ("RemoteEvent", "UnreliableRemoteEvent", "RemoteFunction"):
+                        r_kind = "RemoteEvent"
+                    rl_raw = item.get("rate_limit") or item.get("rateLimit") or item.get("rateLimitPerSec") or 10
+                    if isinstance(rl_raw, dict):
+                        rl_num = float(rl_raw.get("refillPerSecond") or rl_raw.get("capacity") or 10)
+                    else:
+                        rl_num = float(rl_raw or 10)
+                    remotes_out.append(
+                        {
+                            "key": r_key,
+                            "name": r_name,
+                            "kind": r_kind,
+                            "direction": str(item.get("direction") or "ClientToServer"),
+                            "rateLimitPerSec": rl_num,
+                            "description": str(item.get("description") or ""),
+                        }
+                    )
+
+        # Tags normalization
+        raw_tags = spec.get("tags")
+        tags_out: Dict[str, str] = {}
+        if isinstance(raw_tags, dict):
+            for tk, tv in raw_tags.items():
+                tags_out[str(tk)] = str(tv)
+        elif isinstance(raw_tags, list):
+            for t in raw_tags:
+                if isinstance(t, str) and t.strip():
+                    tags_out[t.strip()] = t.strip()
+                elif isinstance(t, dict):
+                    tk = str(t.get("key") or t.get("name") or "").strip()
+                    tv = str(t.get("tag") or t.get("name") or tk).strip()
+                    if tk:
+                        tags_out[tk] = tv
+
+        # Module contracts normalization
+        raw_mods = spec.get("modules") or spec.get("module_contracts") or spec.get("interfaces")
+        mods_out: List[Dict[str, Any]] = []
+        if isinstance(raw_mods, dict):
+            for mk, mv in raw_mods.items():
+                if isinstance(mv, dict):
+                    mods_out.append(
+                        {
+                            "key": str(mk),
+                            "name": str(mv.get("name") or mk),
+                            "path": str(mv.get("path") or f"ReplicatedStorage.Shared.{mk}"),
+                            "exports": [str(e) for e in (mv.get("exports") or []) if str(e).strip()],
+                            "role": str(mv.get("role") or "shared"),
+                        }
+                    )
+                elif isinstance(mv, list):
+                    mods_out.append(
+                        {
+                            "key": str(mk),
+                            "name": str(mk),
+                            "path": f"ReplicatedStorage.Shared.{mk}",
+                            "exports": [str(e) for e in mv if str(e).strip()],
+                            "role": "shared",
+                        }
+                    )
+        elif isinstance(raw_mods, list):
+            for mv in raw_mods:
+                if isinstance(mv, dict):
+                    mname = str(mv.get("name") or mv.get("key") or "").strip()
+                    if not mname:
+                        continue
+                    mods_out.append(
+                        {
+                            "key": str(mv.get("key") or mname),
+                            "name": mname,
+                            "path": str(mv.get("path") or f"ReplicatedStorage.Shared.{mname}"),
+                            "exports": [str(e) for e in (mv.get("exports") or []) if str(e).strip()],
+                            "role": str(mv.get("role") or "shared"),
+                        }
+                    )
+
+        # Attributes normalization
+        raw_attrs = spec.get("attributes")
+        attrs_out: Dict[str, str] = {}
+        if isinstance(raw_attrs, dict):
+            for ak, av in raw_attrs.items():
+                attrs_out[str(ak)] = str(av)
+        elif isinstance(raw_attrs, list):
+            for a in raw_attrs:
+                if isinstance(a, str) and a.strip():
+                    attrs_out[a.strip()] = a.strip()
+
+        return {
+            "root_prefix": root_prefix,
+            "remotes_folder": remotes_folder,
+            "schema_version": schema_version,
+            "ensure_remote_instances": ensure_remotes,
+            "remotes": remotes_out,
+            "tags": tags_out,
+            "modules": mods_out,
+            "attributes": attrs_out,
+        }
+
+    def compile_system_contracts_luau(self, contracts_spec: Optional[Dict[str, Any]] = None) -> str:
+        """Compile --!strict ReplicatedStorage.Shared.SystemContracts ModuleScript installer for Studio."""
+        norm = self._normalize_contracts_spec(contracts_spec)
+        root_prefix = norm["root_prefix"]
+        remotes_folder = norm["remotes_folder"]
+        schema_version = norm["schema_version"]
+        ensure_remotes = norm["ensure_remote_instances"]
+
+        remote_entries: List[str] = []
+        for rem in norm["remotes"]:
+            key_lit = json.dumps(rem["key"])
+            remote_entries.append(
+                f"\t[{key_lit}] = {{\n"
+                f"\t\tname = {json.dumps(rem['name'])},\n"
+                f"\t\tkind = {json.dumps(rem['kind'])},\n"
+                f"\t\tdirection = {json.dumps(rem['direction'])},\n"
+                f"\t\trateLimitPerSec = {float(rem['rateLimitPerSec'])},\n"
+                f"\t\tdescription = {json.dumps(rem['description'])},\n"
+                f"\t}},"
+            )
+        remotes_block = "{\n" + "\n".join(remote_entries) + "\n}" if remote_entries else "{}"
+
+        tag_entries: List[str] = []
+        for tk, tv in norm["tags"].items():
+            tag_entries.append(f"\t[{json.dumps(tk)}] = {json.dumps(tv)},")
+        tags_block = "{\n" + "\n".join(tag_entries) + "\n}" if tag_entries else "{}"
+
+        mod_entries: List[str] = []
+        for mod in norm["modules"]:
+            exports_lit = "{ " + ", ".join(json.dumps(e) for e in mod["exports"]) + " }"
+            mod_entries.append(
+                f"\t[{json.dumps(mod['key'])}] = {{\n"
+                f"\t\tname = {json.dumps(mod['name'])},\n"
+                f"\t\tpath = {json.dumps(mod['path'])},\n"
+                f"\t\texports = table.freeze({exports_lit}),\n"
+                f"\t\trole = {json.dumps(mod['role'])},\n"
+                f"\t}},"
+            )
+        mods_block = "{\n" + "\n".join(mod_entries) + "\n}" if mod_entries else "{}"
+
+        attr_entries: List[str] = []
+        for ak, av in norm["attributes"].items():
+            attr_entries.append(f"\t[{json.dumps(ak)}] = {json.dumps(av)},")
+        attrs_block = "{\n" + "\n".join(attr_entries) + "\n}" if attr_entries else "{}"
+
+        contracts_module_src = f"""--!strict
+--[[
+	SystemContracts
+	Centralized --!strict cross-script compatibility contract for Remotes,
+	CollectionService Tags, Attributes, and ModuleScript export interfaces.
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+export type RemoteKind = "RemoteEvent" | "UnreliableRemoteEvent" | "RemoteFunction"
+
+export type RemoteContract = {{
+	name: string,
+	kind: RemoteKind,
+	direction: string,
+	rateLimitPerSec: number,
+	description: string,
+}}
+
+export type ModuleContract = {{
+	name: string,
+	path: string,
+	exports: {{ string }},
+	role: string,
+}}
+
+local ROOT_PREFIX: string = {json.dumps(root_prefix)}
+
+local SystemContracts = {{}}
+
+SystemContracts.SchemaVersion = {json.dumps(schema_version)}
+SystemContracts.RemotesFolder = {json.dumps(remotes_folder)}
+
+SystemContracts.Remotes = table.freeze({remotes_block}) :: {{ [string]: RemoteContract }}
+
+SystemContracts.Tags = table.freeze({tags_block}) :: {{ [string]: string }}
+
+SystemContracts.Modules = table.freeze({mods_block}) :: {{ [string]: ModuleContract }}
+
+SystemContracts.Attributes = table.freeze({attrs_block}) :: {{ [string]: string }}
+
+local function resolveContractsRoot(): Instance
+	if ROOT_PREFIX ~= "" then
+		local prefixed = ReplicatedStorage:FindFirstChild(ROOT_PREFIX)
+		if prefixed then
+			return prefixed
+		end
+	end
+	return ReplicatedStorage
+end
+
+local function ensureRemoteChild(remotesFolder: Folder, contract: RemoteContract): Instance
+	local existing = remotesFolder:FindFirstChild(contract.name)
+	if existing then
+		return existing
+	end
+	local className = if contract.kind == "RemoteFunction"
+		then "RemoteFunction"
+		elseif contract.kind == "UnreliableRemoteEvent" then "UnreliableRemoteEvent"
+		else "RemoteEvent"
+	local remote = Instance.new(className)
+	remote.Name = contract.name
+	remote:SetAttribute("Direction", contract.direction)
+	remote:SetAttribute("LuauSkillContractManaged", true)
+	remote.Parent = remotesFolder
+	return remote
+end
+
+function SystemContracts.GetRemotesFolder(timeoutSeconds: number?): Folder?
+	local root = resolveContractsRoot()
+	local existing = root:FindFirstChild(SystemContracts.RemotesFolder)
+	if existing and existing:IsA("Folder") then
+		return existing
+	end
+	if timeoutSeconds and timeoutSeconds > 0 then
+		local waited = root:WaitForChild(SystemContracts.RemotesFolder, timeoutSeconds)
+		if waited and waited:IsA("Folder") then
+			return waited
+		end
+	end
+	return nil
+end
+
+function SystemContracts.EnsureRemotes(parentOverride: Instance?): Folder
+	local root: Instance = parentOverride or ReplicatedStorage
+	if parentOverride == nil and ROOT_PREFIX ~= "" then
+		local prefixed = ReplicatedStorage:FindFirstChild(ROOT_PREFIX)
+		if not prefixed then
+			local createdPrefix = Instance.new("Folder")
+			createdPrefix.Name = ROOT_PREFIX
+			createdPrefix:SetAttribute("LuauSkillContractManaged", true)
+			createdPrefix.Parent = ReplicatedStorage
+			prefixed = createdPrefix
+		end
+		root = prefixed :: Instance
+	end
+
+	local folderInst = root:FindFirstChild(SystemContracts.RemotesFolder)
+	local remotesFolder: Folder
+	if folderInst and folderInst:IsA("Folder") then
+		remotesFolder = folderInst
+	else
+		local created = Instance.new("Folder")
+		created.Name = SystemContracts.RemotesFolder
+		created:SetAttribute("LuauSkillContractManaged", true)
+		created.Parent = root
+		remotesFolder = created
+	end
+
+	for _, contract in SystemContracts.Remotes do
+		ensureRemoteChild(remotesFolder, contract)
+	end
+
+	return remotesFolder
+end
+
+function SystemContracts.GetRemote(name: string, timeoutSeconds: number?): Instance?
+	local folder = SystemContracts.GetRemotesFolder(timeoutSeconds)
+	if not folder then
+		return nil
+	end
+	local direct = folder:FindFirstChild(name)
+	if direct then
+		return direct
+	end
+	if timeoutSeconds and timeoutSeconds > 0 then
+		return folder:WaitForChild(name, timeoutSeconds)
+	end
+	return nil
+end
+
+function SystemContracts.GetRemoteContract(name: string): RemoteContract?
+	for key, contract in SystemContracts.Remotes do
+		if key == name or contract.name == name then
+			return contract
+		end
+	end
+	return nil
+end
+
+function SystemContracts.GetModuleContract(name: string): ModuleContract?
+	return SystemContracts.Modules[name]
+end
+
+function SystemContracts.HasTagContract(tagName: string): boolean
+	for _, value in SystemContracts.Tags do
+		if value == tagName then
+			return true
+		end
+	end
+	return false
+end
+
+return SystemContracts
+"""
+
+        return f"""--!strict
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local ROOT_PREFIX: string = {json.dumps(root_prefix)}
+local ENSURE_REMOTES: boolean = {"true" if ensure_remotes else "false"}
+
+local function ensureFolder(parent: Instance, name: string): Folder
+	local found = parent:FindFirstChild(name)
+	if found and found:IsA("Folder") then
+		return found
+	end
+	local created = Instance.new("Folder")
+	created.Name = name
+	created:SetAttribute("LuauSkillContractManaged", true)
+	created.Parent = parent
+	return created
+end
+
+local activePluginRec = ChangeHistoryService:GetAttribute("__SharpActiveRecordingId")
+local recId = if activePluginRec then nil else (ChangeHistoryService :: any):TryBeginRecording("SharpSystemContracts", "Sharp MCP: Install SystemContracts")
+local ok, resOrErr = xpcall(function()
+	local targetRoot: Instance = if ROOT_PREFIX ~= "" then ensureFolder(ReplicatedStorage, ROOT_PREFIX) else ReplicatedStorage
+	local sharedFolder = ensureFolder(targetRoot, "Shared")
+	local oldMod = sharedFolder:FindFirstChild("SystemContracts")
+	if oldMod then
+		oldMod:Destroy()
+	end
+
+	local mod = Instance.new("ModuleScript")
+	mod.Name = "SystemContracts"
+	mod:SetAttribute("LuauSkillContractManaged", true)
+	mod:SetAttribute("LuauSkillScaffoldManaged", true)
+	mod.Source = [========[{contracts_module_src}]========]
+	mod.Parent = sharedFolder
+
+	local remotesFolderPath = ""
+	if ENSURE_REMOTES then
+		local okReq, loaded = pcall(require, mod)
+		if okReq and type(loaded) == "table" and type((loaded :: any).EnsureRemotes) == "function" then
+			local rf = (loaded :: any).EnsureRemotes()
+			remotesFolderPath = rf:GetFullName()
+		end
+	end
+
+	return {{
+		modulePath = mod:GetFullName(),
+		remotesFolder = remotesFolderPath,
+		remotesCount = {len(norm['remotes'])},
+		tagsCount = {len(norm['tags'])},
+		modulesCount = {len(norm['modules'])},
+		attributesCount = {len(norm['attributes'])},
+	}}
+end, debug.traceback)
+
+if recId then
+	pcall(function()
+		ChangeHistoryService:FinishRecording(
+			recId,
+			if ok then Enum.FinishRecordingOperation.Commit else Enum.FinishRecordingOperation.Cancel
+		)
+	end)
+end
+
+if not ok then
+	error(resOrErr)
+end
+
+return HttpService:JSONEncode({{
+	ok = true,
+	recordingStatus = if (recId or activePluginRec) then "Committed" else "NoRecording",
+	report = resOrErr,
+}})
+"""
+
+    def compile_smoke_test_luau(self, roots: Optional[List[str]] = None) -> str:
+        """Compile read-only Studio Luau smoke test running pcall(require, mod) across ModuleScripts."""
+        target_roots = roots or ["ReplicatedStorage", "ServerScriptService", "StarterPlayerScripts"]
+        roots_lit = "{ " + ", ".join(json.dumps(r) for r in target_roots) + " }"
+
+        return f"""--!strict
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local StarterPlayer = game:GetService("StarterPlayer")
+
+local TARGET_ROOTS: {{ string }} = {roots_lit}
+
+local function resolveContainer(name: string): (string, Instance?)
+	if name == "ReplicatedStorage" then
+		return name, ReplicatedStorage
+	elseif name == "ServerScriptService" then
+		return name, ServerScriptService
+	elseif name == "StarterPlayerScripts" then
+		local sps = StarterPlayer:FindFirstChild("StarterPlayerScripts")
+		return name, sps
+	end
+	local segments = string.split(name, ".")
+	local okSvc, root = pcall(function()
+		return game:GetService(segments[1])
+	end)
+	if not (okSvc and root) then
+		return name, nil
+	end
+	local cur: Instance = root
+	for idx = 2, #segments do
+		local nextInst = cur:FindFirstChild(segments[idx])
+		if not nextInst then
+			return name, nil
+		end
+		cur = nextInst
+	end
+	return name, cur
+end
+
+local modulesToTest: {{ {{ mod: ModuleScript, container: string, path: string }} }} = {{}}
+local missingContainers: {{ string }} = {{}}
+
+for _, rootName in ipairs(TARGET_ROOTS) do
+	local label, container = resolveContainer(rootName)
+	if container then
+		for _, desc in ipairs(container:GetDescendants()) do
+			if desc:IsA("ModuleScript") then
+				local fullName = desc:GetFullName()
+				if string.find(fullName, "SharpBridgePlugin", 1, true) == nil
+					and string.find(fullName, "SharpVisualTools", 1, true) == nil
+					and desc:GetAttribute("LuauSkillAuditIgnore") ~= true
+				then
+					table.insert(modulesToTest, {{
+						mod = desc,
+						container = label,
+						path = fullName,
+					}})
+				end
+			end
+		end
+	else
+		table.insert(missingContainers, label)
+	end
+end
+
+table.sort(modulesToTest, function(a, b)
+	return a.path < b.path
+end)
+
+local passed: {{ {{ path: string, container: string, returnType: string }} }} = {{}}
+local failed: {{ {{ path: string, container: string, error: string }} }} = {{}}
+
+for _, entry in ipairs(modulesToTest) do
+	local okReq, resOrErr = pcall(require, entry.mod)
+	if okReq then
+		table.insert(passed, {{
+			path = entry.path,
+			container = entry.container,
+			returnType = typeof(resOrErr),
+		}})
+	else
+		table.insert(failed, {{
+			path = entry.path,
+			container = entry.container,
+			error = tostring(resOrErr),
+		}})
+	end
+end
+
+return HttpService:JSONEncode({{
+	ok = (#failed == 0),
+	allPassed = (#failed == 0),
+	totalModules = #modulesToTest,
+	passedCount = #passed,
+	failedCount = #failed,
+	missingContainers = missingContainers,
+	passed = passed,
+	failed = failed,
+}})
 """

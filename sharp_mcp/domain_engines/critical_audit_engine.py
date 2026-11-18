@@ -1565,6 +1565,1286 @@ class CriticalAuditEngine:
         return findings
 
     # ------------------------------------------------------------------
+    # Cross-Script System Contracts Linker (REQ / EXPORT / NET / LIFECYCLE)
+    # ------------------------------------------------------------------
+
+    _SCRIPT_CONTAINERS: Tuple[str, ...] = (
+        "ReplicatedStorage",
+        "ServerScriptService",
+        "ServerStorage",
+        "StarterPlayer",
+        "StarterPlayerScripts",
+        "StarterCharacterScripts",
+        "StarterGui",
+        "StarterPack",
+        "ReplicatedFirst",
+        "Workspace",
+    )
+
+    @staticmethod
+    def _extract_bracket_spans(tokens: Sequence[LuauToken]) -> Dict[int, int]:
+        """Map every `[` token index to its matching `]` token index."""
+        stack: List[int] = []
+        pairs: Dict[int, int] = {}
+        for i, tok in enumerate(tokens):
+            if tok.value == "[":
+                stack.append(i)
+            elif tok.value == "]" and stack:
+                pairs[stack.pop()] = i
+        return pairs
+
+    @staticmethod
+    def _read_string_literal_at(lines: Sequence[str], line: int, col: int) -> Optional[str]:
+        """Recover decoded single/double-quoted string literal text from source coordinates."""
+        if line < 1 or line > len(lines) or col < 1:
+            return None
+        ln = lines[line - 1]
+        idx = col - 1
+        if idx >= len(ln):
+            return None
+        quote = ln[idx]
+        if quote not in ('"', "'"):
+            return None
+        out: List[str] = []
+        i = idx + 1
+        while i < len(ln):
+            ch = ln[i]
+            if ch == "\\":
+                i += 1
+                if i < len(ln):
+                    esc = ln[i]
+                    if esc == "n":
+                        out.append("\n")
+                    elif esc == "t":
+                        out.append("\t")
+                    elif esc == "r":
+                        out.append("\r")
+                    else:
+                        out.append(esc)
+                    i += 1
+                continue
+            if ch == quote:
+                return "".join(out)
+            out.append(ch)
+            i += 1
+        return None
+
+    @classmethod
+    def _canonical_script_segments(cls, raw_path: str) -> List[str]:
+        norm = (raw_path or "").replace("\\", "/").strip()
+        for prefix in ("game.", "game/"):
+            if norm.startswith(prefix):
+                norm = norm[len(prefix) :]
+        for suffix in (".server.luau", ".client.luau", ".module.luau", ".server.lua", ".client.lua", ".module.lua", ".luau", ".lua"):
+            if norm.lower().endswith(suffix):
+                norm = norm[: -len(suffix)]
+                break
+        segs = [s for s in re.split(r"[./]+", norm) if s]
+        if segs and segs[-1].lower() == "init":
+            segs = segs[:-1]
+        return segs
+
+    @classmethod
+    def _build_script_lookup(cls, sources_map: Dict[str, str]) -> Tuple[Dict[Tuple[str, ...], str], Dict[Tuple[str, ...], str], Dict[str, List[str]]]:
+        exact: Dict[Tuple[str, ...], str] = {}
+        lower: Dict[Tuple[str, ...], str] = {}
+        path_segs: Dict[str, List[str]] = {}
+        container_set = {c.lower(): c for c in cls._SCRIPT_CONTAINERS}
+
+        for raw_path in sources_map:
+            segs = cls._canonical_script_segments(raw_path)
+            path_segs[raw_path] = segs
+            if not segs:
+                continue
+            key_e = tuple(segs)
+            key_l = tuple(s.lower() for s in segs)
+            exact.setdefault(key_e, raw_path)
+            lower.setdefault(key_l, raw_path)
+            if len(segs) >= 2 and segs[0].lower() == "starterplayer" and segs[1].lower() in ("starterplayerscripts", "startercharacterscripts"):
+                sub_e = tuple(segs[1:])
+                sub_l = tuple(s.lower() for s in sub_e)
+                exact.setdefault(sub_e, raw_path)
+                lower.setdefault(sub_l, raw_path)
+            for idx, s in enumerate(segs):
+                if s.lower() in container_set:
+                    sub_e = tuple(segs[idx:])
+                    sub_l = tuple(x.lower() for x in sub_e)
+                    exact.setdefault(sub_e, raw_path)
+                    lower.setdefault(sub_l, raw_path)
+                    break
+        return exact, lower, path_segs
+
+    @classmethod
+    def _resolve_segments_to_script(
+        cls,
+        segs: Sequence[str],
+        exact: Dict[Tuple[str, ...], str],
+        lower: Dict[Tuple[str, ...], str],
+    ) -> Optional[str]:
+        if not segs:
+            return None
+        key_e = tuple(segs)
+        if key_e in exact:
+            return exact[key_e]
+        key_l = tuple(s.lower() for s in segs)
+        if key_l in lower:
+            return lower[key_l]
+        if len(segs) >= 2 and segs[0].lower() == "starterplayer" and segs[1].lower() in ("starterplayerscripts", "startercharacterscripts"):
+            sub_l = tuple(s.lower() for s in segs[1:])
+            if sub_l in lower:
+                return lower[sub_l]
+        if len(segs) >= 1 and segs[0].lower() in ("starterplayerscripts", "startercharacterscripts"):
+            pref_l = ("starterplayer",) + tuple(s.lower() for s in segs)
+            if pref_l in lower:
+                return lower[pref_l]
+        return None
+
+    @classmethod
+    def _eval_instance_chain(
+        cls,
+        tokens: Sequence[LuauToken],
+        start_idx: int,
+        end_idx: int,
+        var_paths: Dict[str, List[str]],
+        paren_pairs: Dict[int, int],
+        raw_lines: Sequence[str],
+    ) -> Optional[Tuple[List[str], bool]]:
+        """Evaluate an instance path chain returning (segments, originated_from_script) or None."""
+        n = min(len(tokens) - 1, end_idx)
+        i = start_idx
+        if i > n:
+            return None
+        root_tok = tokens[i]
+        if root_tok.kind != "IDENT":
+            return None
+
+        origin_script = root_tok.value == "script"
+        if root_tok.value == "game":
+            cur: List[str] = []
+        elif root_tok.value in var_paths:
+            cur = list(var_paths[root_tok.value])
+        else:
+            return None
+        i += 1
+
+        while i <= n:
+            val = tokens[i].value
+            if val == "::":
+                break
+            if val == "." and i + 1 <= n and tokens[i + 1].kind == "IDENT":
+                seg = tokens[i + 1].value
+                if seg == "Parent":
+                    if cur:
+                        cur.pop()
+                    elif origin_script:
+                        pass
+                    else:
+                        return None
+                else:
+                    cur.append(seg)
+                i += 2
+                continue
+            if val == ":" and i + 2 <= n and tokens[i + 2].value == "(" and (i + 2) in paren_pairs:
+                method = tokens[i + 1].value
+                lp = i + 2
+                rp = paren_pairs[lp]
+                if rp > n:
+                    break
+                str_arg: Optional[str] = None
+                if lp + 1 < rp and tokens[lp + 1].kind == "STRING":
+                    str_arg = cls._read_string_literal_at(raw_lines, tokens[lp + 1].line, tokens[lp + 1].col)
+                if method in ("GetService", "FindService") and len(cur) == 0 and str_arg:
+                    cur = [str_arg]
+                elif method in ("WaitForChild", "FindFirstChild") and str_arg:
+                    cur.append(str_arg)
+                else:
+                    return None
+                i = rp + 1
+                continue
+            break
+
+        if not cur:
+            return None
+        return cur, origin_script
+
+    @classmethod
+    def _compute_token_depths(cls, tokens: Sequence[LuauToken], paren_pairs: Dict[int, int]) -> List[int]:
+        """Compute block nesting depth for each token index (0 = top-level module chunk)."""
+        depths = [0] * len(tokens)
+        block_stack: List[str] = []
+        brace_depth = 0
+        n = len(tokens)
+        i = 0
+        while i < n:
+            tok = tokens[i]
+            val = tok.value
+            depths[i] = len(block_stack) + brace_depth
+            if val == "{":
+                brace_depth += 1
+            elif val == "}":
+                brace_depth = max(0, brace_depth - 1)
+                depths[i] = len(block_stack) + brace_depth
+            elif tok.kind == "KEYWORD":
+                prev_val = tokens[i - 1].value if i > 0 else ""
+                if prev_val not in (".", ":"):
+                    if val == "function":
+                        lp = i + 1
+                        while lp < n and tokens[lp].value not in ("(", "=", ";", "end") and lp - i < 8:
+                            lp += 1
+                        is_type_fn = False
+                        if lp < n and tokens[lp].value == "(" and lp in paren_pairs:
+                            rp = paren_pairs[lp]
+                            if rp + 1 < n and tokens[rp + 1].value == "->":
+                                is_type_fn = True
+                        if not is_type_fn:
+                            block_stack.append("function")
+                    elif val in ("for", "while"):
+                        j = i + 1
+                        while j < n and tokens[j].value != "do":
+                            j += 1
+                        block_stack.append(f"{val}:{j}")
+                    elif val == "do":
+                        if block_stack and (block_stack[-1].startswith("for:") or block_stack[-1].startswith("while:")):
+                            pass
+                        else:
+                            block_stack.append("do")
+                    elif val == "if":
+                        if not _is_if_expression(tokens, i):
+                            block_stack.append("if")
+                    elif val == "repeat":
+                        block_stack.append("repeat")
+                    elif val == "until":
+                        for k in range(len(block_stack) - 1, -1, -1):
+                            if block_stack[k] == "repeat":
+                                block_stack.pop(k)
+                                break
+                    elif val == "end":
+                        for k in range(len(block_stack) - 1, -1, -1):
+                            if block_stack[k] != "repeat":
+                                block_stack.pop(k)
+                                break
+            i += 1
+        return depths
+
+    @classmethod
+    def _extract_table_literal_keys(
+        cls,
+        tokens: Sequence[LuauToken],
+        lbrace_idx: int,
+        rbrace_idx: int,
+        raw_lines: Sequence[str],
+    ) -> Set[str]:
+        """Extract top-level keys from a `{ ... }` table literal."""
+        keys: Set[str] = set()
+        brace_d = 0
+        paren_d = 0
+        bracket_d = 0
+        i = lbrace_idx + 1
+        while i < rbrace_idx:
+            t = tokens[i]
+            v = t.value
+            if v == "{":
+                brace_d += 1
+            elif v == "}":
+                brace_d = max(0, brace_d - 1)
+            elif v == "(":
+                paren_d += 1
+            elif v == ")":
+                paren_d = max(0, paren_d - 1)
+            elif v == "[":
+                if brace_d == 0 and paren_d == 0 and bracket_d == 0:
+                    if i + 3 < rbrace_idx and tokens[i + 1].kind == "STRING" and tokens[i + 2].value == "]" and tokens[i + 3].value == "=":
+                        s_val = cls._read_string_literal_at(raw_lines, tokens[i + 1].line, tokens[i + 1].col)
+                        if s_val:
+                            keys.add(s_val)
+                bracket_d += 1
+            elif v == "]":
+                bracket_d = max(0, bracket_d - 1)
+            elif brace_d == 0 and paren_d == 0 and bracket_d == 0:
+                if t.kind == "IDENT" and i + 1 < rbrace_idx and tokens[i + 1].value == "=":
+                    keys.add(v)
+            i += 1
+        return keys
+
+    @classmethod
+    def _extract_module_exports(
+        cls,
+        raw_path: str,
+        tokens: Sequence[LuauToken],
+        paren_pairs: Dict[int, int],
+        brace_pairs: Dict[int, int],
+        raw_lines: Sequence[str],
+    ) -> Tuple[str, Set[str], Set[str]]:
+        """Inspect a script for exported table fields/methods and exported types.
+
+        Returns `(export_kind, exported_keys, exported_types)` where `export_kind` is one of
+        `"table"`, `"function"`, `"opaque"`, `"none"`.
+        """
+        n = len(tokens)
+        if not n:
+            return "none", set(), set()
+
+        # Collect `export type Foo` declarations
+        exported_types: Set[str] = set()
+        for i in range(n - 2):
+            if tokens[i].value == "export" and tokens[i + 1].value == "type" and tokens[i + 2].kind == "IDENT":
+                exported_types.add(tokens[i + 2].value)
+
+        depths = cls._compute_token_depths(tokens, paren_pairs)
+        top_returns = [i for i, tok in enumerate(tokens) if tok.value == "return" and depths[i] == 0]
+        if not top_returns:
+            return "none", set(), exported_types
+
+        ret_idx = top_returns[-1]
+        if ret_idx + 1 >= n:
+            return "none", set(), exported_types
+
+        nxt = tokens[ret_idx + 1]
+        # Case: `return function(...)`
+        if nxt.value == "function":
+            return "function", set(), exported_types
+
+        # Case: `return { ... }`
+        if nxt.value == "{" and (ret_idx + 1) in brace_pairs:
+            keys = cls._extract_table_literal_keys(tokens, ret_idx + 1, brace_pairs[ret_idx + 1], raw_lines)
+            return "table", keys, exported_types
+
+        # Case: `return table.freeze(...)`
+        target_var: Optional[str] = None
+        if (
+            nxt.value == "table"
+            and ret_idx + 4 < n
+            and tokens[ret_idx + 2].value == "."
+            and tokens[ret_idx + 3].value == "freeze"
+            and tokens[ret_idx + 4].value == "("
+            and (ret_idx + 4) in paren_pairs
+        ):
+            inner_idx = ret_idx + 5
+            rp = paren_pairs[ret_idx + 4]
+            if inner_idx < rp and tokens[inner_idx].value == "{" and inner_idx in brace_pairs:
+                keys = cls._extract_table_literal_keys(tokens, inner_idx, brace_pairs[inner_idx], raw_lines)
+                return "table", keys, exported_types
+            if inner_idx < rp and tokens[inner_idx].kind == "IDENT" and inner_idx + 1 == rp:
+                target_var = tokens[inner_idx].value
+            else:
+                return "opaque", set(), exported_types
+        elif nxt.kind == "IDENT":
+            # Ensure `return Mod` isn't `return require(...)` or `return factory(...)` or `return a + b`
+            after = tokens[ret_idx + 2].value if ret_idx + 2 < n else ""
+            after_same_line = ret_idx + 2 < n and tokens[ret_idx + 2].line == nxt.line
+            if after_same_line and after in ("(", ".", ":"):
+                return "opaque", set(), exported_types
+            target_var = nxt.value
+        else:
+            return "opaque", set(), exported_types
+
+        if not target_var:
+            return "opaque", set(), exported_types
+
+        # Verify `target_var` is actually initialized as a table (not `local x = require(...)`)
+        exports: Set[str] = set()
+        inherited_bases: Set[str] = set()
+        saw_table_init = False
+        saw_opaque_init = False
+        for i in range(n - 3):
+            if tokens[i].value == "local" and tokens[i + 1].value == target_var and tokens[i + 2].value == "=":
+                rhs = tokens[i + 3]
+                if rhs.value == "{" and (i + 3) in brace_pairs:
+                    saw_table_init = True
+                    exports.update(cls._extract_table_literal_keys(tokens, i + 3, brace_pairs[i + 3], raw_lines))
+                elif (
+                    rhs.value == "table"
+                    and i + 7 < n
+                    and tokens[i + 4].value == "."
+                    and tokens[i + 5].value == "freeze"
+                    and tokens[i + 6].value == "("
+                    and tokens[i + 7].value == "{"
+                    and (i + 7) in brace_pairs
+                ):
+                    saw_table_init = True
+                    exports.update(cls._extract_table_literal_keys(tokens, i + 7, brace_pairs[i + 7], raw_lines))
+                elif rhs.value == "setmetatable" and i + 4 < n and tokens[i + 4].value == "(" and (i + 4) in paren_pairs:
+                    rp_sm = paren_pairs[i + 4]
+                    if i + 5 < rp_sm and tokens[i + 5].value == "{" and (i + 5) in brace_pairs:
+                        saw_table_init = True
+                        exports.update(cls._extract_table_literal_keys(tokens, i + 5, brace_pairs[i + 5], raw_lines))
+                        # Also check 2nd arg base identifier
+                        rb = brace_pairs[i + 5]
+                        if rb + 2 < rp_sm and tokens[rb + 1].value == "," and tokens[rb + 2].kind == "IDENT":
+                            inherited_bases.add(tokens[rb + 2].value)
+                    else:
+                        saw_opaque_init = True
+                elif rhs.value == "function":
+                    return "function", set(), exported_types
+                elif rhs.value == "require":
+                    saw_opaque_init = True
+
+        # Scan member definitions targeting `target_var` (or inherited bases)
+        target_names = {target_var} | inherited_bases
+        for i in range(n):
+            t = tokens[i]
+            # Pattern 1: `function Mod.Foo(...)` or `function Mod:Bar(...)`
+            if (
+                t.value == "function"
+                and i + 3 < n
+                and tokens[i + 1].value in target_names
+                and tokens[i + 2].value in (".", ":")
+                and tokens[i + 3].kind == "IDENT"
+            ):
+                exports.add(tokens[i + 3].value)
+                saw_table_init = True
+            # Pattern 2: `Mod.Foo = ...` (exclude `::` or field read; ensure `=` follows)
+            if (
+                t.kind == "IDENT"
+                and t.value in target_names
+                and (i == 0 or tokens[i - 1].value not in (".", ":", "function"))
+                and i + 3 < n
+                and tokens[i + 1].value == "."
+                and tokens[i + 2].kind == "IDENT"
+                and tokens[i + 3].value == "="
+            ):
+                exports.add(tokens[i + 2].value)
+                saw_table_init = True
+            # Pattern 3: `Mod["Foo"] = ...`
+            if (
+                t.kind == "IDENT"
+                and t.value in target_names
+                and (i == 0 or tokens[i - 1].value not in (".", ":", "function"))
+                and i + 4 < n
+                and tokens[i + 1].value == "["
+                and tokens[i + 2].kind == "STRING"
+                and tokens[i + 3].value == "]"
+                and tokens[i + 4].value == "="
+            ):
+                s_key = cls._read_string_literal_at(raw_lines, tokens[i + 2].line, tokens[i + 2].col)
+                if s_key:
+                    exports.add(s_key)
+                    saw_table_init = True
+
+        if saw_opaque_init and not saw_table_init:
+            return "opaque", set(), exported_types
+        if saw_table_init:
+            return "table", exports, exported_types
+        return "opaque", set(), exported_types
+
+    @classmethod
+    def _parse_system_contracts_remotes(
+        cls,
+        sources_map: Dict[str, str],
+        contracts_spec: Optional[Dict[str, Any]],
+    ) -> Tuple[Dict[str, str], Dict[str, str]]:
+        """Return (remote_key_to_name, remote_name_to_kind) from contracts_spec and any SystemContracts script."""
+        key_to_name: Dict[str, str] = {}
+        name_to_kind: Dict[str, str] = {}
+
+        if isinstance(contracts_spec, dict):
+            raw_rem = contracts_spec.get("remotes")
+            if isinstance(raw_rem, dict):
+                for k, v in raw_rem.items():
+                    if isinstance(v, dict):
+                        rname = str(v.get("name") or k)
+                        rkind = str(v.get("kind") or v.get("className") or "RemoteEvent")
+                    else:
+                        rname = str(v or k)
+                        rkind = "RemoteEvent"
+                    key_to_name[str(k)] = rname
+                    key_to_name[rname] = rname
+                    name_to_kind[rname] = rkind
+            elif isinstance(raw_rem, list):
+                for item in raw_rem:
+                    if isinstance(item, str) and item.strip():
+                        rn = item.strip()
+                        key_to_name[rn] = rn
+                        name_to_kind[rn] = "RemoteEvent"
+                    elif isinstance(item, dict):
+                        rn = str(item.get("name") or item.get("key") or "").strip()
+                        rk = str(item.get("key") or rn)
+                        if rn:
+                            key_to_name[rk] = rn
+                            key_to_name[rn] = rn
+                            name_to_kind[rn] = str(item.get("kind") or item.get("className") or "RemoteEvent")
+
+        for path, src in sources_map.items():
+            if "systemcontracts" not in path.lower():
+                continue
+            # Extract `["Key"] = { name = "RemoteName", kind = "RemoteEvent" }` or `Key = "RemoteName"`
+            for m in re.finditer(r'(?:\[\s*["\']([A-Za-z0-9_]+)["\']\s*\]|([A-Za-z0-9_]+))\s*=\s*\{([^}]*)\}', src, re.S):
+                key = m.group(1) or m.group(2)
+                body = m.group(3)
+                mn = re.search(r'name\s*=\s*["\']([^"\']+)["\']', body)
+                if key and mn:
+                    rname = mn.group(1)
+                    key_to_name[key] = rname
+                    key_to_name[rname] = rname
+                    mk = re.search(r'kind\s*=\s*["\']([^"\']+)["\']', body)
+                    if mk:
+                        name_to_kind[rname] = mk.group(1)
+            for m in re.finditer(r'(?:\[\s*["\']([A-Za-z0-9_]+)["\']\s*\]|([A-Za-z0-9_]+))\s*=\s*["\']([A-Za-z0-9_]+)["\']', src):
+                key = m.group(1) or m.group(2)
+                val = m.group(3)
+                if key and val and key not in ("SchemaVersion", "RemotesFolder", "direction", "kind", "description", "role", "path"):
+                    key_to_name.setdefault(key, val)
+        return key_to_name, name_to_kind
+
+    def verify_system_contracts(
+        self,
+        luau_sources: Dict[str, str] | List[Any] | str,
+        *,
+        contracts_spec: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Verify cross-script require targets, module exports, Remote Server<->Client parity, and Player lifecycle."""
+        sources_map = self._normalize_luau_sources(luau_sources=luau_sources)
+        findings: List[Dict[str, Any]] = []
+
+        if not sources_map:
+            score, verdict, counts = _score_and_verdict(findings)
+            return _sign_audit_report({
+                "ok": True,
+                "passed": True,
+                "mode": "contracts",
+                "score": score,
+                "verdict": verdict,
+                "summary": {
+                    **counts,
+                    "total": 0,
+                    "scripts_scanned": 0,
+                    "domains_audited": ["contracts"],
+                    "modules_indexed": 0,
+                    "remotes_indexed": 0,
+                },
+                "findings": findings,
+                "modules": {},
+                "remotes": {},
+            })
+
+        exact_idx, lower_idx, path_segs_map = self._build_script_lookup(sources_map)
+        remote_key_map, contract_remote_kinds = self._parse_system_contracts_remotes(sources_map, contracts_spec)
+
+        external_modules: Set[str] = set()
+        declared_mod_exports: Dict[str, Set[str]] = {}
+        if isinstance(contracts_spec, dict):
+            raw_ext = contracts_spec.get("external_modules") or contracts_spec.get("known_modules") or []
+            for item in raw_ext:
+                external_modules.add(str(item).lower())
+            raw_mods = contracts_spec.get("modules") or contracts_spec.get("module_contracts") or contracts_spec.get("interfaces")
+            if isinstance(raw_mods, dict):
+                for mk, mv in raw_mods.items():
+                    if isinstance(mv, dict):
+                        if mv.get("external"):
+                            external_modules.add(str(mv.get("path") or mk).lower())
+                        if mv.get("exports"):
+                            declared_mod_exports[str(mv.get("path") or mk).lower()] = {str(e) for e in mv["exports"]}
+                    elif isinstance(mv, list):
+                        declared_mod_exports[str(mk).lower()] = {str(e) for e in mv}
+
+        # Pass 1: Tokenize all files and extract ModuleScript exports
+        parsed_files: Dict[str, Dict[str, Any]] = {}
+        module_exports: Dict[str, Tuple[str, Set[str], Set[str]]] = {}
+        for fpath, src in sources_map.items():
+            tokens, directives = tokenize_luau(src)
+            raw_lines = src.splitlines()
+            paren_pairs = _extract_paren_spans(tokens)
+            brace_pairs = _extract_brace_spans(tokens)
+            bracket_pairs = self._extract_bracket_spans(tokens)
+            blocks = _extract_block_spans(tokens, paren_pairs)
+            exp_kind, exp_keys, exp_types = self._extract_module_exports(
+                fpath, tokens, paren_pairs, brace_pairs, raw_lines
+            )
+            module_exports[fpath] = (exp_kind, exp_keys, exp_types)
+            parsed_files[fpath] = {
+                "source": src,
+                "lines": raw_lines,
+                "tokens": tokens,
+                "directives": directives,
+                "paren_pairs": paren_pairs,
+                "brace_pairs": brace_pairs,
+                "bracket_pairs": bracket_pairs,
+                "blocks": blocks,
+            }
+
+        # Check explicit `contracts_spec.modules` exports against actual ModuleScript exports
+        for fpath, (exp_kind, exp_keys, _) in module_exports.items():
+            if exp_kind != "table":
+                continue
+            segs_l = ".".join(s.lower() for s in path_segs_map.get(fpath, []))
+            last_l = path_segs_map.get(fpath, [""])[-1].lower() if path_segs_map.get(fpath) else ""
+            req_exps = declared_mod_exports.get(segs_l) or declared_mod_exports.get(last_l) or set()
+            for exp_name in sorted(req_exps):
+                if exp_name not in exp_keys:
+                    findings.append(
+                        _make_finding(
+                            rule_id="CONTRACT-EXPORT-001",
+                            severity="CRITICAL",
+                            domain="contracts",
+                            file=fpath,
+                            line=1,
+                            evidence=f"ModuleScript '{fpath}' omits contract-declared export '{exp_name}' (exports={sorted(exp_keys)})",
+                            why_it_matters="Callers depending on declared SystemContracts module interfaces will hit nil runtime errors.",
+                            fix=f"Export `{exp_name}` on the returned module table in `{fpath}`.",
+                        )
+                    )
+
+        # Remote & lifecycle collection across project
+        client_fire_server: List[Tuple[str, str, int]] = []
+        server_fire_client: List[Tuple[str, str, int]] = []
+        client_invoke_server: List[Tuple[str, str, int]] = []
+        server_on_server_event: Dict[str, List[str]] = {}
+        client_on_client_event: Dict[str, List[str]] = {}
+        server_on_server_invoke: Dict[str, List[str]] = {}
+
+        # Track module-level cleanup functions invoked by PlayerRemoving across scripts
+        player_removing_called_exports: Set[Tuple[str, str]] = set()
+        script_has_player_removing: Dict[str, bool] = {}
+        per_file_state_allocs: Dict[str, List[Tuple[int, str, str]]] = {}
+        per_file_nil_cleanups: Dict[str, Set[str]] = {}
+
+        # Pass 2: Extract instance bindings, requires, remote calls/listeners, and lifecycle facts per file
+        for fpath, pdata in parsed_files.items():
+            tokens: List[LuauToken] = pdata["tokens"]
+            raw_lines: List[str] = pdata["lines"]
+            paren_pairs: Dict[int, int] = pdata["paren_pairs"]
+            bracket_pairs: Dict[int, int] = pdata["bracket_pairs"]
+            blocks: List[_BlockSpan] = pdata["blocks"]
+            n = len(tokens)
+            cur_segs = list(path_segs_map.get(fpath, []))
+
+            var_paths: Dict[str, List[str]] = {
+                "game": [],
+                "script": cur_segs,
+                "workspace": ["Workspace"],
+                "Players": ["Players"],
+            }
+            for cname in self._SCRIPT_CONTAINERS:
+                var_paths[cname] = [cname]
+
+            var_modules: Dict[str, str] = {}
+            var_remotes: Dict[str, str] = {}
+            remote_folder_vars: Set[str] = set()
+            gateway_vars: Set[str] = set()
+            system_contracts_vars: Set[str] = set()
+            user_id_vars: Set[str] = set()
+            fn_map = self._collect_named_functions(tokens, blocks, paren_pairs)
+
+            # Collect parameter names used as player references inside callbacks
+            player_param_names: Set[str] = {"player", "plr", "targetplayer", "client"}
+            for i, tok in enumerate(tokens):
+                if tok.value == ":" and i + 2 < n and tokens[i + 1].value in ("Connect", "connect", "Once") and tokens[i + 2].value == "(":
+                    sig = tokens[i - 1].value if i >= 1 else ""
+                    if sig in ("PlayerAdded", "PlayerRemoving", "OnServerEvent"):
+                        lp = i + 2
+                        rp = paren_pairs.get(lp)
+                        if rp and lp + 1 < rp and tokens[lp + 1].value == "function":
+                            p_names = self._extract_fn_params(tokens, lp + 1, paren_pairs)
+                            if p_names:
+                                player_param_names.add(p_names[0].lower())
+                        elif rp and lp + 1 < rp and tokens[lp + 1].kind == "IDENT" and tokens[lp + 1].value in fn_map:
+                            _, _, p_names = fn_map[tokens[lp + 1].value]
+                            if p_names:
+                                player_param_names.add(p_names[0].lower())
+
+            def _line_end_token_idx(start: int) -> int:
+                ln = tokens[start].line
+                j = start
+                paren_d = 0
+                while j < n:
+                    if tokens[j].value == "(":
+                        paren_d += 1
+                    elif tokens[j].value == ")":
+                        paren_d = max(0, paren_d - 1)
+                    if paren_d == 0 and tokens[j].line > ln:
+                        break
+                    if paren_d == 0 and tokens[j].value == ";":
+                        break
+                    j += 1
+                return min(n - 1, j - 1) if j > start else start
+
+            def _resolve_remote_from_chain(start_idx: int, end_idx: int) -> Optional[str]:
+                if start_idx > end_idx:
+                    return None
+                # Trim trailing Luau type cast `:: RemoteEvent` if present at top level
+                paren_d = 0
+                for k in range(start_idx, end_idx + 1):
+                    if tokens[k].value == "(":
+                        paren_d += 1
+                    elif tokens[k].value == ")":
+                        paren_d = max(0, paren_d - 1)
+                    elif paren_d == 0 and tokens[k].value == "::":
+                        end_idx = k - 1
+                        break
+                if start_idx > end_idx:
+                    return None
+                # Single identifier bound in var_remotes or var_paths
+                if start_idx == end_idx and tokens[start_idx].kind == "IDENT":
+                    v = tokens[start_idx].value
+                    if v in var_remotes:
+                        return var_remotes[v]
+                    if v in var_paths and len(var_paths[v]) >= 2:
+                        return var_paths[v][-1]
+                    return None
+                # `SystemContracts.Remotes.Key`
+                if (
+                    end_idx - start_idx == 4
+                    and tokens[start_idx].value in system_contracts_vars
+                    and tokens[start_idx + 1].value == "."
+                    and tokens[start_idx + 2].value == "Remotes"
+                    and tokens[start_idx + 3].value == "."
+                    and tokens[start_idx + 4].kind == "IDENT"
+                ):
+                    rk = tokens[start_idx + 4].value
+                    return remote_key_map.get(rk, rk)
+                # `...WaitForChild("Name", ...)` / `FindFirstChild("Name")` / `GetRemote("Name", ...)`
+                if tokens[end_idx].value == ")":
+                    for lp_cand in range(end_idx - 1, start_idx - 1, -1):
+                        if tokens[lp_cand].value == "(" and paren_pairs.get(lp_cand) == end_idx:
+                            if lp_cand >= 1 and tokens[lp_cand - 1].value in ("WaitForChild", "FindFirstChild", "GetRemote"):
+                                if lp_cand + 1 < end_idx and tokens[lp_cand + 1].kind == "STRING":
+                                    s_arg = self._read_string_literal_at(
+                                        raw_lines, tokens[lp_cand + 1].line, tokens[lp_cand + 1].col
+                                    )
+                                    if s_arg:
+                                        return remote_key_map.get(s_arg, s_arg)
+                            break
+                # `Remotes.Attack` or `ReplicatedStorage.Remotes.Attack`
+                if tokens[end_idx].kind == "IDENT" and end_idx - 1 >= start_idx and tokens[end_idx - 1].value == ".":
+                    base_tok = tokens[end_idx - 2] if end_idx - 2 >= start_idx else None
+                    if base_tok and base_tok.kind == "IDENT" and (
+                        base_tok.value in remote_folder_vars
+                        or "remote" in base_tok.value.lower()
+                        or base_tok.value in var_paths
+                    ):
+                        rn = tokens[end_idx].value
+                        return remote_key_map.get(rn, rn)
+                # Generic instance chain ending in >= 2 segments
+                eval_res = self._eval_instance_chain(tokens, start_idx, end_idx, var_paths, paren_pairs, raw_lines)
+                if eval_res and len(eval_res[0]) >= 2:
+                    return eval_res[0][-1]
+                return None
+
+            # Statement pass: track var_paths, require(), var_modules, var_remotes
+            i = 0
+            while i < n:
+                tok = tokens[i]
+
+                # Track `local v = ...` and `local ok, v = pcall(require, ...)`
+                if tok.value == "local" and i + 1 < n and tokens[i + 1].kind == "IDENT":
+                    lhs_vars: List[str] = [tokens[i + 1].value]
+                    eq_idx = i + 2
+                    if i + 4 < n and tokens[i + 2].value == "," and tokens[i + 3].kind == "IDENT" and tokens[i + 4].value == "=":
+                        lhs_vars.append(tokens[i + 3].value)
+                        eq_idx = i + 4
+                    elif i + 3 < n and tokens[i + 2].value == ":" and tokens[i + 3].kind == "IDENT":
+                        # Typed local `local x: Type = ...`
+                        j = i + 3
+                        while j < n and tokens[j].value != "=" and tokens[j].line == tok.line:
+                            j += 1
+                        if j < n and tokens[j].value == "=":
+                            eq_idx = j
+
+                    if eq_idx < n and tokens[eq_idx].value == "=" and eq_idx + 1 < n:
+                        rhs_start = eq_idx + 1
+                        rhs_end = _line_end_token_idx(rhs_start)
+                        # `local ok, Mod = pcall(require, <expr>)`
+                        if (
+                            tokens[rhs_start].value == "pcall"
+                            and rhs_start + 3 < n
+                            and tokens[rhs_start + 1].value == "("
+                            and tokens[rhs_start + 2].value == "require"
+                            and tokens[rhs_start + 3].value == ","
+                            and (rhs_start + 1) in paren_pairs
+                        ):
+                            rp_pc = paren_pairs[rhs_start + 1]
+                            req_res = self._eval_instance_chain(tokens, rhs_start + 4, rp_pc - 1, var_paths, paren_pairs, raw_lines)
+                            mod_var = lhs_vars[-1]
+                            if req_res is not None:
+                                segs_req, from_script = req_res
+                                resolved = self._resolve_segments_to_script(segs_req, exact_idx, lower_idx)
+                                if resolved:
+                                    var_modules[mod_var] = resolved
+                                    if "systemcontracts" in resolved.lower():
+                                        system_contracts_vars.add(mod_var)
+                                else:
+                                    is_proj = from_script or (segs_req[0] in self._SCRIPT_CONTAINERS)
+                                    dotted_l = ".".join(s.lower() for s in segs_req)
+                                    if is_proj and dotted_l not in external_modules:
+                                        findings.append(
+                                            _make_finding(
+                                                rule_id="CONTRACT-REQ-001",
+                                                severity="CRITICAL",
+                                                domain="contracts",
+                                                file=fpath,
+                                                line=tokens[rhs_start + 2].line,
+                                                evidence=f"`pcall(require, {'.'.join(segs_req)})` target not found in project script set",
+                                                why_it_matters="Requiring a missing or renamed ModuleScript crashes initialization or returns nil at runtime.",
+                                                fix=f"Create `{'.'.join(segs_req)}` or fix the require path in `{fpath}`.",
+                                            )
+                                        )
+                        # `local Mod = require(<expr>)`
+                        elif (
+                            tokens[rhs_start].value == "require"
+                            and rhs_start + 1 < n
+                            and tokens[rhs_start + 1].value == "("
+                            and (rhs_start + 1) in paren_pairs
+                        ):
+                            rp_req = paren_pairs[rhs_start + 1]
+                            req_res = self._eval_instance_chain(tokens, rhs_start + 2, rp_req - 1, var_paths, paren_pairs, raw_lines)
+                            mod_var = lhs_vars[0]
+                            if req_res is not None:
+                                segs_req, from_script = req_res
+                                resolved = self._resolve_segments_to_script(segs_req, exact_idx, lower_idx)
+                                if resolved:
+                                    var_modules[mod_var] = resolved
+                                    if "systemcontracts" in resolved.lower():
+                                        system_contracts_vars.add(mod_var)
+                                else:
+                                    is_proj = from_script or (segs_req[0] in self._SCRIPT_CONTAINERS)
+                                    dotted_l = ".".join(s.lower() for s in segs_req)
+                                    if is_proj and dotted_l not in external_modules:
+                                        findings.append(
+                                            _make_finding(
+                                                rule_id="CONTRACT-REQ-001",
+                                                severity="CRITICAL",
+                                                domain="contracts",
+                                                file=fpath,
+                                                line=tokens[rhs_start].line,
+                                                evidence=f"`require({'.'.join(segs_req)})` target not found in project script set",
+                                                why_it_matters="Requiring a missing or mistyped ModuleScript path throws an immediate runtime error on load.",
+                                                fix=f"Create `{'.'.join(segs_req)}` or fix the `require(...)` path in `{fpath}`.",
+                                            )
+                                        )
+                        else:
+                            # Check `local uid = player.UserId`
+                            if (
+                                rhs_end >= rhs_start + 2
+                                and tokens[rhs_start].kind == "IDENT"
+                                and tokens[rhs_start + 1].value == "."
+                                and tokens[rhs_start + 2].value == "UserId"
+                            ):
+                                user_id_vars.add(lhs_vars[0])
+                            # Check SafeRemoteGateway.Create(...)
+                            if tokens[rhs_start].value == "SafeRemoteGateway" or "gateway" in tokens[rhs_start].value.lower():
+                                gateway_vars.add(lhs_vars[0])
+                            # Check `SystemContracts.GetRemotesFolder()` or `SystemContracts.Remotes.X`
+                            if tokens[rhs_start].value in system_contracts_vars and rhs_end >= rhs_start + 2:
+                                if tokens[rhs_start + 2].value == "GetRemotesFolder":
+                                    remote_folder_vars.add(lhs_vars[0])
+                                    var_paths[lhs_vars[0]] = ["ReplicatedStorage", "Remotes"]
+                                elif tokens[rhs_start + 2].value == "GetRemote":
+                                    r_res = _resolve_remote_from_chain(rhs_start, rhs_end)
+                                    if r_res:
+                                        var_remotes[lhs_vars[0]] = r_res
+                                elif tokens[rhs_start + 2].value == "Remotes" and rhs_end >= rhs_start + 4:
+                                    rk = tokens[rhs_start + 4].value
+                                    var_remotes[lhs_vars[0]] = remote_key_map.get(rk, rk)
+                            # Check Instance chain
+                            chain = self._eval_instance_chain(tokens, rhs_start, rhs_end, var_paths, paren_pairs, raw_lines)
+                            if chain is not None:
+                                segs_val, _ = chain
+                                var_paths[lhs_vars[0]] = segs_val
+                                if segs_val and segs_val[-1].lower() == "remotes":
+                                    remote_folder_vars.add(lhs_vars[0])
+                                elif len(segs_val) >= 2 and segs_val[-2].lower() == "remotes":
+                                    var_remotes[lhs_vars[0]] = remote_key_map.get(segs_val[-1], segs_val[-1])
+                            elif (
+                                tokens[rhs_start].kind == "IDENT"
+                                and ("remote" in tokens[rhs_start].value.lower() or tokens[rhs_start].value in remote_folder_vars)
+                                and rhs_end >= rhs_start + 3
+                                and tokens[rhs_start + 1].value == ":"
+                                and tokens[rhs_start + 2].value in ("WaitForChild", "FindFirstChild")
+                                and tokens[rhs_start + 3].value == "("
+                                and tokens[rhs_start + 4].kind == "STRING"
+                            ):
+                                rn_s = self._read_string_literal_at(
+                                    raw_lines, tokens[rhs_start + 4].line, tokens[rhs_start + 4].col
+                                )
+                                if rn_s:
+                                    var_remotes[lhs_vars[0]] = remote_key_map.get(rn_s, rn_s)
+
+                # Standalone `require(<expr>)` (not assigned to local var)
+                if (
+                    tok.value == "require"
+                    and (i == 0 or tokens[i - 1].value not in (".", ":", "function"))
+                    and i + 1 < n
+                    and tokens[i + 1].value == "("
+                    and (i + 1) in paren_pairs
+                ):
+                    # Avoid double-reporting if just handled as `local X = require(...)` or `pcall(require, ...)`
+                    already_handled = (
+                        (i >= 2 and tokens[i - 1].value == "=" and tokens[i - 2].kind == "IDENT")
+                        or (i >= 2 and tokens[i - 1].value == "," and tokens[i - 2].value == "(" and i >= 3 and tokens[i - 3].value == "pcall")
+                    )
+                    if not already_handled:
+                        rp_req = paren_pairs[i + 1]
+                        req_res = self._eval_instance_chain(tokens, i + 2, rp_req - 1, var_paths, paren_pairs, raw_lines)
+                        if req_res is not None:
+                            segs_req, from_script = req_res
+                            resolved = self._resolve_segments_to_script(segs_req, exact_idx, lower_idx)
+                            if not resolved:
+                                is_proj = from_script or (segs_req[0] in self._SCRIPT_CONTAINERS)
+                                dotted_l = ".".join(s.lower() for s in segs_req)
+                                if is_proj and dotted_l not in external_modules:
+                                    findings.append(
+                                        _make_finding(
+                                            rule_id="CONTRACT-REQ-001",
+                                            severity="CRITICAL",
+                                            domain="contracts",
+                                            file=fpath,
+                                            line=tok.line,
+                                            evidence=f"`require({'.'.join(segs_req)})` target not found in project script set",
+                                            why_it_matters="Requiring a missing ModuleScript fails at runtime.",
+                                            fix=f"Create `{'.'.join(segs_req)}` or fix the `require(...)` path in `{fpath}`.",
+                                        )
+                                    )
+
+                # Track `remoteVar.Name = "MyRemote"` after `Instance.new("RemoteEvent")`
+                if (
+                    tok.kind == "IDENT"
+                    and i + 4 < n
+                    and tokens[i + 1].value == "."
+                    and tokens[i + 2].value == "Name"
+                    and tokens[i + 3].value == "="
+                    and tokens[i + 4].kind == "STRING"
+                ):
+                    s_name = self._read_string_literal_at(raw_lines, tokens[i + 4].line, tokens[i + 4].col)
+                    if s_name:
+                        var_remotes[tok.value] = s_name
+
+                i += 1
+
+            # Check `CONTRACT-EXPORT-001`: caller invokes Mod.Method(...) / Mod:Method(...) or accesses missing field
+            for idx, tok in enumerate(tokens):
+                if tok.kind != "IDENT" or tok.value not in var_modules:
+                    continue
+                if idx >= 1 and tokens[idx - 1].value in (".", ":", "function", "local"):
+                    continue
+                if idx + 1 < n and tokens[idx + 1].value == "=":
+                    continue
+                if idx + 2 >= n or tokens[idx + 1].value not in (".", ":") or tokens[idx + 2].kind != "IDENT":
+                    continue
+                op = tokens[idx + 1].value
+                member = tokens[idx + 2].value
+                is_call = idx + 3 < n and tokens[idx + 3].value == "("
+                is_type_pos = idx >= 1 and tokens[idx - 1].value in (":", "::", "->", "|", "&", "type")
+                if not is_call and is_type_pos:
+                    continue
+                # Skip `type Foo = Mod.Bar` declarations
+                line_start = idx
+                while line_start > 0 and tokens[line_start - 1].line == tok.line:
+                    line_start -= 1
+                if tokens[line_start].value == "type" or (
+                    line_start + 1 < n and tokens[line_start].value == "export" and tokens[line_start + 1].value == "type"
+                ):
+                    continue
+
+                target_path = var_modules[tok.value]
+                exp_kind, exp_keys, exp_types = module_exports.get(target_path, ("opaque", set(), set()))
+                if not is_call and member in exp_types:
+                    continue
+                if exp_kind == "table" and member not in exp_keys:
+                    findings.append(
+                        _make_finding(
+                            rule_id="CONTRACT-EXPORT-001",
+                            severity="CRITICAL",
+                            domain="contracts",
+                            file=fpath,
+                            line=tok.line,
+                            evidence=(
+                                f"`{tok.value}{op}{member}{'()' if is_call else ''}` references missing export '{member}' "
+                                f"on `{target_path}` (exported: {sorted(exp_keys)})"
+                            ),
+                            why_it_matters="Invoking a missing or mismatched ModuleScript field/method raises `attempt to call a nil value` at runtime.",
+                            fix=f"Export `{member}` in `{target_path}` or update `{fpath}` to call one of {sorted(exp_keys)}.",
+                        )
+                    )
+                elif exp_kind == "function":
+                    findings.append(
+                        _make_finding(
+                            rule_id="CONTRACT-EXPORT-001",
+                            severity="CRITICAL",
+                            domain="contracts",
+                            file=fpath,
+                            line=tok.line,
+                            evidence=f"`{tok.value}{op}{member}` indexes `{target_path}`, which returns a function rather than a table",
+                            why_it_matters="Indexing a function ModuleScript crashes at runtime.",
+                            fix=f"Return a table exporting `{member}` from `{target_path}` or invoke `{tok.value}(...)` directly.",
+                        )
+                    )
+
+            # Collect Remote calls & listeners
+            def _find_chain_start(end_tok_idx: int) -> int:
+                j = end_tok_idx
+                while j >= 0:
+                    if tokens[j].value == ")":
+                        # Jump to matching `(`
+                        matched_lp = None
+                        for lp_k, rp_k in paren_pairs.items():
+                            if rp_k == j:
+                                matched_lp = lp_k
+                                break
+                        if matched_lp is None:
+                            break
+                        j = matched_lp - 1
+                        continue
+                    if j >= 1 and tokens[j - 1].value in (".", ":"):
+                        j -= 2
+                        continue
+                    break
+                return max(0, j)
+
+            for idx, tok in enumerate(tokens):
+                # `:FireServer(`, `:FireClient(`, `:FireAllClients(`, `:InvokeServer(`
+                if tok.value == ":" and idx + 2 < n and tokens[idx + 2].value == "(":
+                    mname = tokens[idx + 1].value
+                    if mname in ("FireServer", "FireClient", "FireAllClients", "InvokeServer"):
+                        c_start = _find_chain_start(idx - 1)
+                        r_name = _resolve_remote_from_chain(c_start, idx - 1)
+                        if r_name:
+                            if mname == "FireServer":
+                                client_fire_server.append((r_name, fpath, tok.line))
+                            elif mname in ("FireClient", "FireAllClients"):
+                                server_fire_client.append((r_name, fpath, tok.line))
+                            elif mname == "InvokeServer":
+                                client_invoke_server.append((r_name, fpath, tok.line))
+                    elif mname in ("RegisterReliable", "RegisterUnreliable"):
+                        lp = idx + 2
+                        rp = paren_pairs.get(lp)
+                        if rp and lp + 1 < rp and tokens[lp + 1].kind == "STRING":
+                            r_name = self._read_string_literal_at(raw_lines, tokens[lp + 1].line, tokens[lp + 1].col)
+                            if r_name:
+                                server_on_server_event.setdefault(r_name, []).append(fpath)
+
+                # `.OnServerEvent:Connect` / `.OnClientEvent:Connect` / `.OnServerInvoke =`
+                if tok.value == "." and idx + 1 < n:
+                    evt = tokens[idx + 1].value
+                    if evt in ("OnServerEvent", "OnClientEvent") and idx + 3 < n and tokens[idx + 2].value == ":" and tokens[idx + 3].value in ("Connect", "connect", "Once"):
+                        c_start = _find_chain_start(idx - 1)
+                        r_name = _resolve_remote_from_chain(c_start, idx - 1)
+                        if r_name:
+                            if evt == "OnServerEvent":
+                                server_on_server_event.setdefault(r_name, []).append(fpath)
+                            else:
+                                client_on_client_event.setdefault(r_name, []).append(fpath)
+                    elif evt == "OnServerInvoke" and idx + 2 < n and tokens[idx + 2].value == "=":
+                        c_start = _find_chain_start(idx - 1)
+                        r_name = _resolve_remote_from_chain(c_start, idx - 1)
+                        if r_name:
+                            server_on_server_invoke.setdefault(r_name, []).append(fpath)
+
+            # Collect Player Lifecycle facts
+            has_player_added = any(
+                tokens[k].value == "PlayerAdded"
+                and k + 2 < n
+                and tokens[k + 1].value == ":"
+                and tokens[k + 2].value in ("Connect", "connect", "Once")
+                for k in range(n)
+            )
+            has_get_players = any(
+                tokens[k].value == "GetPlayers" and k + 1 < n and tokens[k + 1].value == "("
+                for k in range(n)
+            )
+            has_player_removing = any(
+                tokens[k].value == "PlayerRemoving"
+                and k + 2 < n
+                and tokens[k + 1].value == ":"
+                and tokens[k + 2].value in ("Connect", "connect", "Once")
+                for k in range(n)
+            )
+            script_has_player_removing[fpath] = has_player_removing
+
+            if has_player_added and not has_get_players:
+                pa_line = next((tokens[k].line for k in range(n) if tokens[k].value == "PlayerAdded"), 1)
+                findings.append(
+                    _make_finding(
+                        rule_id="CONTRACT-LIFECYCLE-001",
+                        severity="CRITICAL",
+                        domain="contracts",
+                        file=fpath,
+                        line=pa_line,
+                        evidence="`Players.PlayerAdded` connected without iterating existing `Players:GetPlayers()`",
+                        why_it_matters="Players who join before deferred ModuleScripts finish loading miss `PlayerAdded` entirely (especially in Studio Play Solo).",
+                        fix="Iterate `for _, player in ipairs(Players:GetPlayers()) do task.spawn(onPlayerAdded, player) end` alongside `Players.PlayerAdded:Connect(onPlayerAdded)`.",
+                    )
+                )
+
+            # Track module cleanup calls invoked inside PlayerRemoving blocks
+            for conn_k in range(n - 3):
+                if tokens[conn_k].value == "PlayerRemoving" and tokens[conn_k + 1].value == ":" and tokens[conn_k + 2].value in ("Connect", "connect", "Once") and tokens[conn_k + 3].value == "(":
+                    lp = conn_k + 3
+                    rp = paren_pairs.get(lp)
+                    if not rp:
+                        continue
+                    span_lo, span_hi = lp, rp
+                    if lp + 1 < rp and tokens[lp + 1].kind == "IDENT" and tokens[lp + 1].value in fn_map:
+                        span_lo, span_hi, _ = fn_map[tokens[lp + 1].value]
+                    for m_i in range(span_lo, min(n - 3, span_hi + 1)):
+                        if tokens[m_i].kind == "IDENT" and tokens[m_i].value in var_modules and tokens[m_i + 1].value in (".", ":") and tokens[m_i + 2].kind == "IDENT":
+                            player_removing_called_exports.add((var_modules[tokens[m_i].value], tokens[m_i + 2].value))
+
+            # Detect per-player state writes `tbl[playerKey] = nonNil` and `tbl[playerKey] = nil`
+            state_allocs: List[Tuple[int, str, str]] = []
+            nil_cleanups: Set[str] = set()
+            for idx, tok in enumerate(tokens):
+                if tok.kind == "IDENT" and idx + 1 < n and tokens[idx + 1].value == "[" and (idx + 1) in bracket_pairs:
+                    rb = bracket_pairs[idx + 1]
+                    if rb + 1 < n and tokens[rb + 1].value == "=":
+                        key_slice = tokens[idx + 2 : rb]
+                        key_vals = {kt.value for kt in key_slice}
+                        key_lowers = {kt.value.lower() for kt in key_slice}
+                        is_player_key = bool(
+                            (key_lowers & player_param_names)
+                            or "UserId" in key_vals
+                            or (key_vals & user_id_vars)
+                        )
+                        if is_player_key:
+                            rhs_tok = tokens[rb + 2] if rb + 2 < n else None
+                            if rhs_tok and rhs_tok.value == "nil":
+                                nil_cleanups.add(tok.value)
+                            elif rhs_tok is not None:
+                                state_allocs.append((tok.line, tok.value, f"{tok.value}[{' '.join(kt.value for kt in key_slice)}]"))
+
+            per_file_state_allocs[fpath] = state_allocs
+            per_file_nil_cleanups[fpath] = nil_cleanups
+
+        # Pass 3: Cross-check PlayerRemoving cleanup on allocated per-player state
+        for fpath, allocs in per_file_state_allocs.items():
+            if not allocs or script_has_player_removing.get(fpath):
+                continue
+            # Allow ModuleScript if it cleans up via `tbl[player] = nil` inside a function called by another script's PlayerRemoving
+            pdata = parsed_files[fpath]
+            tokens = pdata["tokens"]
+            paren_pairs = pdata["paren_pairs"]
+            blocks = pdata["blocks"]
+            fn_map = self._collect_named_functions(tokens, blocks, paren_pairs)
+            cleaned_externally = False
+            if per_file_nil_cleanups.get(fpath):
+                for (mod_path, fn_name) in player_removing_called_exports:
+                    if mod_path == fpath and fn_name in fn_map:
+                        fs, fe, _ = fn_map[fn_name]
+                        fn_vals = {tokens[k].value for k in range(fs, fe + 1)}
+                        if "nil" in fn_vals and any(tbl in fn_vals for tbl in per_file_nil_cleanups[fpath]):
+                            cleaned_externally = True
+                            break
+            if not cleaned_externally:
+                first_ln, tbl_name, expr_txt = allocs[0]
+                findings.append(
+                    _make_finding(
+                        rule_id="CONTRACT-LIFECYCLE-001",
+                        severity="CRITICAL",
+                        domain="contracts",
+                        file=fpath,
+                        line=first_ln,
+                        evidence=f"Per-player state `{expr_txt}` allocated without `Players.PlayerRemoving` cleanup",
+                        why_it_matters="Per-player tables and cooldown caches leak memory and retain Player instance references indefinitely after players leave.",
+                        fix=f"Connect `Players.PlayerRemoving` (or invoke `{fpath}` cleanup from a PlayerRemoving handler) to clear `{tbl_name}[player] = nil`.",
+                    )
+                )
+
+        # Pass 4: Cross-check Remote Server <-> Client parity (`CONTRACT-NET-001`)
+        for r_name, fpath, ln in client_fire_server:
+            if r_name not in server_on_server_event:
+                close = next((k for k in server_on_server_event if k.lower() == r_name.lower()), None)
+                hint = f" (did you mean `{close}`?)" if close else ""
+                findings.append(
+                    _make_finding(
+                        rule_id="CONTRACT-NET-001",
+                        severity="CRITICAL",
+                        domain="contracts",
+                        file=fpath,
+                        line=ln,
+                        evidence=f"Client fires RemoteEvent `{r_name}:FireServer(...)`, but no server script handles `{r_name}.OnServerEvent`{hint}",
+                        why_it_matters="Firing a RemoteEvent with no server listener silently drops player actions or indicates a server/client naming mismatch.",
+                        fix=f"Register `{r_name}.OnServerEvent` (or `SafeRemoteGateway:RegisterReliable({json.dumps(r_name)}, ...)`) on the server, or align the remote name via SystemContracts.",
+                    )
+                )
+            elif contract_remote_kinds.get(r_name) == "RemoteFunction":
+                findings.append(
+                    _make_finding(
+                        rule_id="CONTRACT-NET-001",
+                        severity="CRITICAL",
+                        domain="contracts",
+                        file=fpath,
+                        line=ln,
+                        evidence=f"`{r_name}:FireServer(...)` called on contract RemoteFunction `{r_name}`",
+                        why_it_matters="RemoteFunction does not support `:FireServer()`; it throws an immediate runtime error.",
+                        fix=f"Use `:InvokeServer(...)` or change `{r_name}` kind to `RemoteEvent` in SystemContracts.",
+                    )
+                )
+
+        for r_name, fpath, ln in server_fire_client:
+            if r_name not in client_on_client_event:
+                close = next((k for k in client_on_client_event if k.lower() == r_name.lower()), None)
+                hint = f" (did you mean `{close}`?)" if close else ""
+                findings.append(
+                    _make_finding(
+                        rule_id="CONTRACT-NET-001",
+                        severity="CRITICAL",
+                        domain="contracts",
+                        file=fpath,
+                        line=ln,
+                        evidence=f"Server fires RemoteEvent `{r_name}:FireClient/FireAllClients(...)`, but no client script listens to `{r_name}.OnClientEvent`{hint}",
+                        why_it_matters="Server-to-client updates are silently dropped when no client script connects `OnClientEvent` for that exact remote name.",
+                        fix=f"Connect `{r_name}.OnClientEvent` on the client or align the remote name via SystemContracts.",
+                    )
+                )
+
+        for r_name, fpath, ln in client_invoke_server:
+            if r_name not in server_on_server_invoke:
+                close = next((k for k in server_on_server_invoke if k.lower() == r_name.lower()), None)
+                hint = f" (did you mean `{close}`?)" if close else ""
+                findings.append(
+                    _make_finding(
+                        rule_id="CONTRACT-NET-001",
+                        severity="CRITICAL",
+                        domain="contracts",
+                        file=fpath,
+                        line=ln,
+                        evidence=f"Client invokes RemoteFunction `{r_name}:InvokeServer(...)`, but no server script assigns `{r_name}.OnServerInvoke`{hint}",
+                        why_it_matters="Calling `:InvokeServer()` on a RemoteFunction without a bound `OnServerInvoke` callback yields the client thread indefinitely.",
+                        fix=f"Assign `{r_name}.OnServerInvoke = function(player, ...) ... end` on the server.",
+                    )
+                )
+
+        remotes_summary = {
+            "client_fire_server": sorted({r for r, _, _ in client_fire_server}),
+            "server_on_server_event": sorted(server_on_server_event.keys()),
+            "server_fire_client": sorted({r for r, _, _ in server_fire_client}),
+            "client_on_client_event": sorted(client_on_client_event.keys()),
+            "client_invoke_server": sorted({r for r, _, _ in client_invoke_server}),
+            "server_on_server_invoke": sorted(server_on_server_invoke.keys()),
+        }
+        modules_summary = {
+            fp: {"kind": ek, "exports": sorted(eks)}
+            for fp, (ek, eks, _) in module_exports.items()
+            if ek != "none"
+        }
+
+        score, verdict, counts = _score_and_verdict(findings)
+        return _sign_audit_report({
+            "ok": True,
+            "passed": len(findings) == 0,
+            "mode": "contracts",
+            "score": score,
+            "verdict": verdict,
+            "summary": {
+                **counts,
+                "total": len(findings),
+                "scripts_scanned": len(sources_map),
+                "domains_audited": ["contracts"],
+                "modules_indexed": len(modules_summary),
+                "remotes_indexed": len(
+                    set(remotes_summary["client_fire_server"])
+                    | set(remotes_summary["server_on_server_event"])
+                    | set(remotes_summary["server_fire_client"])
+                    | set(remotes_summary["client_on_client_event"])
+                    | set(remotes_summary["client_invoke_server"])
+                    | set(remotes_summary["server_on_server_invoke"])
+                ),
+            },
+            "findings": findings,
+            "modules": modules_summary,
+            "remotes": remotes_summary,
+        })
+
+    # ------------------------------------------------------------------
     # GUI, Animation, World, Plan/State & Cross-Check Audits
     # ------------------------------------------------------------------
 
@@ -2274,8 +3554,10 @@ class CriticalAuditEngine:
         game_state: Optional[Dict[str, Any]] = None,
         asset_manifest: Optional[Dict[str, Any]] = None,
         check_plan: Optional[bool] = None,
+        verify_contracts: bool = True,
+        contracts_spec: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Run offline adversarial tokenizer-based audit across Luau, GUI, animation, world, and plan/state."""
+        """Run offline adversarial tokenizer-based audit across Luau, GUI, animation, world, contracts, and plan/state."""
         sources_map = self._normalize_luau_sources(luau_sources=luau_sources, file_paths=file_paths)
         all_tokens_text = " ".join(
             t.value for src in sources_map.values() for t in tokenize_luau(src)[0]
@@ -2289,6 +3571,10 @@ class CriticalAuditEngine:
             domains_audited.append("luau")
             for fpath, src in sources_map.items():
                 findings.extend(self._analyze_single_luau_file(fpath, src, shared_bind_to_close_present=shared_bind))
+            if verify_contracts and len(sources_map) >= 2:
+                domains_audited.append("contracts")
+                contract_res = self.verify_system_contracts(sources_map, contracts_spec=contracts_spec)
+                findings.extend(contract_res["findings"])
 
         if gui_spec is not None or design_lint is not None:
             domains_audited.append("gui")
@@ -2371,6 +3657,8 @@ class CriticalAuditEngine:
         project_library: Optional[Any] = None,
         design_lint: Optional[Dict[str, Any]] = None,
         anim_analysis: Optional[Dict[str, Any]] = None,
+        verify_contracts: bool = True,
+        contracts_spec: Optional[Dict[str, Any]] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
         findings: List[Dict[str, Any]] = []
         reports = decoded.get("reports") or {}
@@ -2501,6 +3789,8 @@ class CriticalAuditEngine:
             anim_analysis=anim_analysis,
             project_library=project_library,
             check_plan=bool(project_library is not None),
+            verify_contracts=verify_contracts,
+            contracts_spec=contracts_spec,
         )
         findings.extend(static_merged["findings"])
         return findings, len(scripts_map)
@@ -2519,8 +3809,10 @@ class CriticalAuditEngine:
         design_lint: Optional[Dict[str, Any]] = None,
         anim_analysis: Optional[Dict[str, Any]] = None,
         project_library: Optional[Any] = None,
+        verify_contracts: bool = True,
+        contracts_spec: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Compile live Studio audit Luau and merge any live bridge report with static/plan checks."""
+        """Compile live Studio audit Luau and merge any live bridge report with static/plan/contract checks."""
         active_lib = project_library if project_library is not None else self.project_library
         compiled_luau: Optional[str] = None
         if self.luau_audit_engine is not None:
@@ -2539,6 +3831,8 @@ class CriticalAuditEngine:
                 design_lint=design_lint,
                 anim_analysis=anim_analysis,
                 project_library=active_lib,
+                verify_contracts=verify_contracts,
+                contracts_spec=contracts_spec,
             )
             return _sign_audit_report({
                 **offline,
@@ -2555,14 +3849,22 @@ class CriticalAuditEngine:
             project_library=active_lib,
             design_lint=design_lint,
             anim_analysis=anim_analysis,
+            verify_contracts=verify_contracts,
+            contracts_spec=contracts_spec,
         )
         if luau_sources is not None or gui_spec is not None:
             extra = self.audit_static(
                 luau_sources=luau_sources,
                 gui_spec=gui_spec,
                 check_plan=False,
+                verify_contracts=verify_contracts,
+                contracts_spec=contracts_spec,
             )
             live_findings.extend(extra["findings"])
+
+        domains_list = {"luau", "gui", "world", "plan", "cross_check"}
+        if verify_contracts and live_scripts_cnt >= 2:
+            domains_list.add("contracts")
 
         score, verdict, counts = _score_and_verdict(live_findings)
         return _sign_audit_report({
@@ -2575,7 +3877,7 @@ class CriticalAuditEngine:
                 **counts,
                 "total": len(live_findings),
                 "scripts_scanned": live_scripts_cnt,
-                "domains_audited": sorted({"luau", "gui", "world", "plan", "cross_check"}),
+                "domains_audited": sorted(domains_list),
             },
             "findings": live_findings,
             "compiledLuau": compiled_luau,
@@ -2859,7 +4161,7 @@ class CriticalAuditEngine:
         })
 
     def run_audit(self, mode: str = "static", **kwargs: Any) -> Dict[str, Any]:
-        """Unified entry point supporting `static`, `live`, `challenge`, and `gate` modes."""
+        """Unified entry point supporting `static`, `live`, `challenge`, `gate`, and `contracts` modes."""
         norm = (mode or "static").strip().lower()
         if norm == "static":
             return self.audit_static(**kwargs)
@@ -2869,4 +4171,9 @@ class CriticalAuditEngine:
             return self.challenge(**kwargs)
         if norm == "gate":
             return self.audit_gate(**kwargs)
-        return {"ok": False, "error": f"Unknown audit mode '{mode}'. Expected static|live|challenge|gate."}
+        if norm == "contracts":
+            return self.verify_system_contracts(
+                luau_sources=kwargs.get("luau_sources") or {},
+                contracts_spec=kwargs.get("contracts_spec"),
+            )
+        return {"ok": False, "error": f"Unknown audit mode '{mode}'. Expected static|live|challenge|gate|contracts."}

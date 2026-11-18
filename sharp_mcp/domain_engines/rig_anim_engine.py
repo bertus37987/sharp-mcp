@@ -111,11 +111,59 @@ PRESET_ALIASES: Dict[str, str] = {
     "emote": "emote_wave",
 }
 
+ANIMATION_STYLE_PROFILES: Dict[str, Dict[str, Any]] = {
+    "heavy_souls": {
+        "style_id": "heavy_souls",
+        "hold_ratio": 0.22,
+        "anticipation_ratio": 0.24,
+        "overshoot": 1.14,
+        "lag_scale": 1.20,
+        "default_tempo_scale": 1.0,
+        "description": "Deliberate windup holds, heavy impact hit-stop, and grounded weight recovery.",
+    },
+    "snappy_anime": {
+        "style_id": "snappy_anime",
+        "hold_ratio": 0.14,
+        "anticipation_ratio": 0.18,
+        "overshoot": 1.22,
+        "lag_scale": 0.85,
+        "default_tempo_scale": 0.78,
+        "description": "Crisp anticipation, explosive strike arcs, sharp overshoot, and snappy recoil.",
+    },
+    "stylized_cartoony": {
+        "style_id": "stylized_cartoony",
+        "hold_ratio": 0.16,
+        "anticipation_ratio": 0.26,
+        "overshoot": 1.30,
+        "lag_scale": 1.30,
+        "default_tempo_scale": 0.95,
+        "description": "Exaggerated anticipation, bouncy overshoot follow-through, and expressive secondary lag.",
+    },
+    "tactical_military": {
+        "style_id": "tactical_military",
+        "hold_ratio": 0.10,
+        "anticipation_ratio": 0.14,
+        "overshoot": 1.03,
+        "lag_scale": 0.65,
+        "default_tempo_scale": 0.85,
+        "description": "Compact disciplined posture, minimal overshoot, tight recovery, and taut limb coupling.",
+    },
+    "floaty_arcane": {
+        "style_id": "floaty_arcane",
+        "hold_ratio": 0.26,
+        "anticipation_ratio": 0.22,
+        "overshoot": 1.12,
+        "lag_scale": 1.45,
+        "default_tempo_scale": 1.15,
+        "description": "Suspended gather holds, sweeping arcane arcs, and flowing delayed hand/head lag.",
+    },
+}
+
 PROCEDURAL_PRESET_CATALOG: Dict[str, Dict[str, Any]] = {
     "idle_breathing": {
         "name": "Idle_Breathing",
         "kind": "idle",
-        "duration": 2.4,
+        "duration": 2.80,
         "loop": True,
         "priority": "Idle",
         "description": "Calm chest breathing with phase-lagged arm/head settle and grounded stance.",
@@ -123,7 +171,7 @@ PROCEDURAL_PRESET_CATALOG: Dict[str, Dict[str, Any]] = {
     "walk": {
         "name": "Walk_Locomotion",
         "kind": "walk",
-        "duration": 1.0,
+        "duration": 1.20,
         "loop": True,
         "priority": "Movement",
         "description": "Cyclic R15 walk with pelvic bob, counter-rotated torso, knee cushioning, and elbow lag.",
@@ -131,7 +179,7 @@ PROCEDURAL_PRESET_CATALOG: Dict[str, Dict[str, Any]] = {
     "run": {
         "name": "Run_Locomotion",
         "kind": "run",
-        "duration": 0.65,
+        "duration": 0.80,
         "loop": True,
         "priority": "Movement",
         "description": "Forward-leaning sprint cycle with high knee drive, double-bob hips, and arm pump overlap.",
@@ -139,79 +187,79 @@ PROCEDURAL_PRESET_CATALOG: Dict[str, Dict[str, Any]] = {
     "sword_slash_single": {
         "name": "Sword_Slash_Single",
         "kind": "attack",
-        "duration": 0.55,
+        "duration": 1.35,
         "loop": False,
         "priority": "Action2",
-        "description": "Focused single melee strike with windup anticipation, hip/torso lead, wrist whip, HitFrame marker, and settle.",
+        "description": "Readable RPG single strike with windup hold, diagonal action arc, impact hit-stop, HitFrame marker, and recovery.",
     },
     "sword_combo_3hit": {
         "name": "Sword_Combo_3Hit",
         "kind": "attack",
-        "duration": 2.15,
+        "duration": 2.40,
         "loop": False,
         "priority": "Action2",
-        "description": "3-hit melee combo with windup anticipation, whip follow-through, overshoot, and hit markers.",
+        "description": "3-hit melee combo with windup holds, whip arcs, impact hit-stops, follow-through, and hit markers.",
     },
     "dash_roll": {
         "name": "Dash_Evade",
         "kind": "run",
-        "duration": 0.50,
+        "duration": 1.05,
         "loop": False,
         "priority": "Action",
-        "description": "Forward burst dash/evade with root motion, forward torso pitch, alternating leg drive, and landing cushion.",
+        "description": "Forward burst dash/evade with crouch anticipation hold, root motion drive, and landing cushion.",
     },
     "jump_land": {
         "name": "Jump_Arc_Land",
         "kind": "jump",
-        "duration": 0.75,
+        "duration": 1.25,
         "loop": False,
         "priority": "Movement",
-        "description": "Crouch anticipation, vertical +Y LowerTorso launch arc, airborne tuck, and knee landing absorb.",
+        "description": "Crouch anticipation hold, vertical +Y LowerTorso launch arc, airborne hang, and knee landing absorb.",
     },
     "cast_spell": {
         "name": "Cast_Arcane_Spell",
         "kind": "attack",
-        "duration": 0.95,
+        "duration": 1.70,
         "loop": False,
         "priority": "Action2",
-        "description": "Dual-arm arcane gather, chest/head lift, forward spell thrust with CastRelease marker, and recovery.",
+        "description": "Dual-arm arcane gather hold, chest/head lift, forward spell thrust with impact hold & CastRelease marker, and recovery.",
     },
     "bow_draw_release": {
         "name": "Bow_Draw_Release",
         "kind": "attack",
-        "duration": 1.4,
+        "duration": 1.65,
         "loop": False,
         "priority": "Action2",
-        "description": "Archer stance draw with chest brace, draw tension, crisp release recoil, and settle.",
+        "description": "Archer stance draw with full-draw hold plateau, crisp release recoil hit-stop, and settle.",
     },
     "shield_block": {
         "name": "Shield_Block",
         "kind": "block",
-        "duration": 0.8,
+        "duration": 1.30,
         "loop": False,
         "priority": "Action",
-        "description": "Tucked anticipation into braced forward shield raise with damped guard settle.",
+        "description": "Tucked anticipation into braced forward shield guard hold with damped settle.",
     },
     "hit_react": {
         "name": "Hit_React",
         "kind": "hit_react",
-        "duration": 0.65,
+        "duration": 0.95,
         "loop": False,
         "priority": "Action3",
-        "description": "Sharp chest knockback, delayed head whip, knee absorb, and recovery bounce.",
+        "description": "Sharp chest knockback, recoil hold, delayed head whip, knee absorb, and recovery bounce.",
     },
     "death": {
         "name": "Death_Collapse",
         "kind": "death",
-        "duration": 1.3,
+        "duration": 1.80,
         "loop": False,
         "priority": "Action4",
-        "description": "Stagger recoil, knee buckle, sequential limb drop, and damped ground settle.",
+        "description": "Stagger recoil hold, knee buckle, sequential limb drop, and damped ground settle.",
     },
     "emote_wave": {
         "name": "Emote_Wave",
         "kind": "emote",
-        "duration": 1.5,
+        "duration": 2.10,
         "loop": False,
         "priority": "Action",
         "description": "Torso lean anticipation, elbow-led arm raise, 2-cycle wrist-lagged wave, and settle.",
@@ -324,8 +372,38 @@ def _ease_in_out_cubic(u: float) -> float:
     return 4.0 * u * u * u if u < 0.5 else 1.0 - ((-2.0 * u + 2.0) ** 3) * 0.5
 
 
+def _mat3_to_euler_deg(m9: List[float]) -> Tuple[float, float, float]:
+    r00, r01, r02, r10, r11, r12, _r20, _r21, r22 = [float(v) for v in m9]
+    if r02 >= 0.99999:
+        ry = math.pi * 0.5
+        rx = math.atan2(r10, r11)
+        rz = 0.0
+    elif r02 <= -0.99999:
+        ry = -math.pi * 0.5
+        rx = math.atan2(-r10, r11)
+        rz = 0.0
+    else:
+        ry = math.asin(max(-1.0, min(1.0, r02)))
+        rx = math.atan2(-r12, r22)
+        rz = math.atan2(-r01, r00)
+    return (round(math.degrees(rx), 4), round(math.degrees(ry), 4), round(math.degrees(rz), 4))
+
+
+def _planted_stance_leg(lt_rx_deg: float, hip_world_deg: float) -> Tuple[float, float, float, float]:
+    """Return `(lt_y, hip_rx, knee_rx, foot_rx)` keeping R15 foot planted on ground."""
+    l1, l2 = 1.10, 0.70
+    th1 = math.radians(hip_world_deg)
+    sin_shin = max(-0.98, min(0.98, -(l1 / l2) * math.sin(th1)))
+    th_shin = math.asin(sin_shin)
+    lt_y = (l1 * math.cos(th1) + l2 * math.cos(th_shin)) - (l1 + l2)
+    hip_rx = hip_world_deg - lt_rx_deg
+    knee_rx = math.degrees(th_shin) - hip_world_deg
+    foot_rx = -math.degrees(th_shin)
+    return (round(lt_y, 5), round(hip_rx, 4), round(knee_rx, 4), round(foot_rx, 4))
+
+
 def _sample_channel(tracks: List[Tuple[float, float]], t: float) -> float:
-    """Smooth cosine/cubic Hermite interpolation through `(time, value)` control points."""
+    """Monotone Catmull-Rom/Hermite spline through `(time, value)` points with crisp flat hold plateaus."""
     if not tracks:
         return 0.0
     if t <= tracks[0][0]:
@@ -336,13 +414,27 @@ def _sample_channel(tracks: List[Tuple[float, float]], t: float) -> float:
         t0, v0 = tracks[i]
         t1, v1 = tracks[i + 1]
         if t0 <= t <= t1:
+            if abs(v1 - v0) <= 1e-6:
+                return v0
             span = max(1e-6, t1 - t0)
             u = (t - t0) / span
-            # Catmull-Rom tangent slopes for organic anticipation/overshoot continuity
-            p_prev = tracks[i - 1] if i > 0 else (t0 - span, v0)
-            p_next = tracks[i + 2] if i + 2 < len(tracks) else (t1 + span, v1)
-            m0 = 0.5 * ((v1 - v0) / span + (v0 - p_prev[1]) / max(1e-6, t0 - p_prev[0])) * span
-            m1 = 0.5 * ((p_next[1] - v1) / max(1e-6, p_next[0] - t1) + (v1 - v0) / span) * span
+            slope_seg = (v1 - v0) / span
+            if i > 0 and abs(v0 - tracks[i - 1][1]) <= 1e-6:
+                m0 = 0.0
+            elif i > 0:
+                s_prev = (v0 - tracks[i - 1][1]) / max(1e-6, t0 - tracks[i - 1][0])
+                m0 = 0.0 if (s_prev * slope_seg <= 0.0) else 0.5 * (slope_seg + s_prev) * span
+            else:
+                m0 = 0.0
+
+            if i + 2 < len(tracks) and abs(tracks[i + 2][1] - v1) <= 1e-6:
+                m1 = 0.0
+            elif i + 2 < len(tracks):
+                s_next = (tracks[i + 2][1] - v1) / max(1e-6, tracks[i + 2][0] - t1)
+                m1 = 0.0 if (s_next * slope_seg <= 0.0) else 0.5 * (s_next + slope_seg) * span
+            else:
+                m1 = 0.0
+
             u2 = u * u
             u3 = u2 * u
             h00 = 2.0 * u3 - 3.0 * u2 + 1.0
@@ -472,11 +564,12 @@ class RigAnimationEngine:
 
     @staticmethod
     def list_procedural_presets() -> Dict[str, Any]:
-        """List all procedural R15 animation presets and aliases."""
+        """List all procedural R15 animation presets, aliases, and style profiles."""
         return {
             "ok": True,
             "presets": PROCEDURAL_PRESET_CATALOG,
             "aliases": PRESET_ALIASES,
+            "styles": ANIMATION_STYLE_PROFILES,
         }
 
     @classmethod
@@ -489,22 +582,56 @@ class RigAnimationEngine:
             )
         return key
 
+    @classmethod
+    def _resolve_style_key(cls, style: Optional[str]) -> str:
+        raw = (style or "heavy_souls").strip().lower().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "souls": "heavy_souls",
+            "heavy": "heavy_souls",
+            "rpg": "heavy_souls",
+            "anime": "snappy_anime",
+            "snappy": "snappy_anime",
+            "cartoony": "stylized_cartoony",
+            "toon": "stylized_cartoony",
+            "tactical": "tactical_military",
+            "military": "tactical_military",
+            "arcane": "floaty_arcane",
+            "floaty": "floaty_arcane",
+        }
+        key = aliases.get(raw, raw)
+        if key not in ANIMATION_STYLE_PROFILES:
+            raise ValueError(
+                f"Unknown animation style '{style}'. Valid styles: {', '.join(ANIMATION_STYLE_PROFILES.keys())}"
+            )
+        return key
+
     def generate_procedural_preset(
         self,
         preset_name: str = "idle_breathing",
         fps: float = 30.0,
         intensity: float = 1.0,
         clip_name: Optional[str] = None,
+        style: str = "heavy_souls",
+        tempo_scale: float = 1.0,
     ) -> Dict[str, Any]:
-        """Generate a normalize_clip_dict-compatible clip with anticipation, overshoot & joint overlap."""
+        """Generate a normalize_clip_dict-compatible clip with style timing, hold plateaus & joint overlap."""
         key = self._resolve_preset_key(preset_name)
+        style_key = self._resolve_style_key(style)
+        profile = ANIMATION_STYLE_PROFILES[style_key]
         meta = PROCEDURAL_PRESET_CATALOG[key]
         fps_val = max(12.0, min(120.0, float(fps)))
         amp = max(0.1, min(2.0, float(intensity)))
-        duration = float(meta["duration"])
+        tempo_val = max(0.25, min(4.0, float(tempo_scale))) * float(profile["default_tempo_scale"])
+        duration = round(float(meta["duration"]) * tempo_val, 4)
         loop = bool(meta["loop"])
 
-        frames, markers = self._build_procedural_frames(key, duration, fps_val, amp)
+        frames, markers = self._build_procedural_frames(
+            key,
+            duration,
+            fps_val,
+            amp,
+            style_profile=profile,
+        )
 
         return {
             "name": clip_name or meta["name"],
@@ -515,6 +642,8 @@ class RigAnimationEngine:
             "parents": dict(DEFAULT_R15_PARENTS),
             "frames": frames,
             "markers": markers,
+            "style": style_key,
+            "tempo_scale": round(tempo_val, 4),
         }
 
     def _build_procedural_frames(
@@ -523,8 +652,10 @@ class RigAnimationEngine:
         duration: float,
         fps_val: float,
         amp: float,
+        style_profile: Optional[Dict[str, Any]] = None,
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """Build frame poses and animation markers for any preset in PROCEDURAL_PRESET_CATALOG."""
+        profile = style_profile or ANIMATION_STYLE_PROFILES["heavy_souls"]
         n_frames = max(12, int(round(duration * fps_val)) + 1)
         times = [round(duration * i / (n_frames - 1), 5) for i in range(n_frames)]
 
@@ -542,12 +673,13 @@ class RigAnimationEngine:
 
         if key == "idle_breathing":
             # Phase-lagged breathing wave: LowerTorso settles slightly opposite UpperTorso inhale,
-            # Head and arms lag 0.14s..0.28s for soft secondary overlap; feet remain planted.
+            # Head and arms lag for soft secondary overlap; feet remain planted.
+            lag_mul = max(0.5, min(1.5, float(profile.get("lag_scale", 1.0))))
             for idx, t in enumerate(times):
                 ph = 2.0 * math.pi * (t / duration) if idx < n_frames - 1 else 0.0
                 breath = math.sin(ph)
-                breath_lag1 = math.sin(ph - 0.45)
-                breath_lag2 = math.sin(ph - 0.85)
+                breath_lag1 = math.sin(ph - 0.42 * lag_mul)
+                breath_lag2 = math.sin(ph - 0.80 * lag_mul)
                 sway = math.sin(ph) * 0.6
 
                 lt_y = -0.02 * amp * (1.0 - math.cos(ph))
@@ -560,14 +692,13 @@ class RigAnimationEngine:
                 lua_rx = -4.0 - 3.0 * amp * breath_lag1
                 lua_rz = 8.0 + 2.2 * amp * breath_lag1
                 lla_rx = -14.0 - 4.0 * amp * breath_lag2
-                lh_rx = -4.0 - 3.5 * amp * math.sin(ph - 1.15)
+                lh_rx = -4.0 - 3.5 * amp * math.sin(ph - 1.05 * lag_mul)
 
                 rua_rx = -4.0 - 3.0 * amp * breath_lag1
                 rua_rz = -8.0 - 2.2 * amp * breath_lag1
                 rla_rx = -14.0 - 4.0 * amp * breath_lag2
-                rh_rx = -4.0 - 3.5 * amp * math.sin(ph - 1.15)
+                rh_rx = -4.0 - 3.5 * amp * math.sin(ph - 1.05 * lag_mul)
 
-                # Slight knee flex compensating LowerTorso y drop so feet stay flat at Y=0
                 knee_bend = max(0.0, -lt_y * 28.0)
                 poses = {
                     "HumanoidRootPart": make_pose(),
@@ -597,6 +728,7 @@ class RigAnimationEngine:
             torso_lean = (-13.0 if is_run else -5.5) * amp
             bob_amp = (0.16 if is_run else 0.08) * amp
             torso_twist = (11.0 if is_run else 6.5) * amp
+            lag_mul = max(0.5, min(1.5, float(profile.get("lag_scale", 1.0))))
 
             for idx, t in enumerate(times):
                 ph = 2.0 * math.pi * (t / duration) if idx < n_frames - 1 else 0.0
@@ -615,17 +747,17 @@ class RigAnimationEngine:
                 lt_y = bob_amp * (math.sin(2.0 * ph - 0.4) - 0.35)
                 lt_yaw = -torso_twist * 0.45 * l_sin
                 lt_roll = 3.5 * amp * l_sin
-                ut_yaw = torso_twist * math.sin(ph - 0.25)
+                ut_yaw = torso_twist * math.sin(ph - 0.25 * lag_mul)
                 ut_pitch = torso_lean + (2.5 * amp * math.sin(2.0 * ph - 0.6))
                 head_pitch = -torso_lean * 0.72 + 2.0 * amp * math.sin(2.0 * ph - 1.0)
                 head_yaw = -ut_yaw * 0.65
 
-                l_arm_lag = math.sin(ph - 0.22)
-                r_arm_lag = math.sin(ph + math.pi - 0.22)
-                l_elb_lag = math.sin(ph - 0.55)
-                r_elb_lag = math.sin(ph + math.pi - 0.55)
-                l_wrist_lag = math.sin(ph - 0.90)
-                r_wrist_lag = math.sin(ph + math.pi - 0.90)
+                l_arm_lag = math.sin(ph - 0.22 * lag_mul)
+                r_arm_lag = math.sin(ph + math.pi - 0.22 * lag_mul)
+                l_elb_lag = math.sin(ph - 0.52 * lag_mul)
+                r_elb_lag = math.sin(ph + math.pi - 0.52 * lag_mul)
+                l_wrist_lag = math.sin(ph - 0.85 * lag_mul)
+                r_wrist_lag = math.sin(ph + math.pi - 0.85 * lag_mul)
 
                 base_elbow = -58.0 if is_run else -20.0
                 poses = {
@@ -660,9 +792,9 @@ class RigAnimationEngine:
             ]
 
         else:
-            # Expressive spline-keyed action clips with explicit anticipation, overshoot & lagged follow-through.
-            tracks, markers = self._get_action_spline_tracks(key, duration, amp)
-            lag_scale = min(1.0, duration / 0.85) if key in ("sword_slash_single", "dash_roll", "jump_land", "cast_spell") else 1.0
+            # Expressive spline-keyed action clips with explicit Windup Hold -> Action Arc -> Impact Hit-Stop -> Recovery.
+            tracks, markers = self._get_action_spline_tracks(key, duration, amp, style_profile=profile)
+            base_lag = max(0.4, min(1.5, float(profile.get("lag_scale", 1.0)))) * min(1.0, duration / 0.95)
             for t in times:
                 lt_y = _sample_channel(tracks.get("LowerTorso.y", [(0.0, 0.0), (duration, 0.0)]), t)
                 lt_z = _sample_channel(tracks.get("LowerTorso.z", [(0.0, 0.0), (duration, 0.0)]), t)
@@ -672,12 +804,14 @@ class RigAnimationEngine:
 
                 hrp_z = _sample_channel(tracks.get("HumanoidRootPart.z", [(0.0, 0.0), (duration, 0.0)]), t)
 
-                # Secondary joint phase lag for organic overlap
-                t_torso = _clamp_phase_lag(t, 0.04 * lag_scale, duration, False)
-                t_arm = _clamp_phase_lag(t, 0.06 * lag_scale, duration, False)
-                t_forearm = _clamp_phase_lag(t, 0.10 * lag_scale, duration, False)
-                t_hand = _clamp_phase_lag(t, 0.13 * lag_scale, duration, False)
-                t_head = _clamp_phase_lag(t, 0.08 * lag_scale, duration, False)
+                # Smoothly envelope secondary lag so ends stay synchronized with rest/final poses
+                env = math.sin(math.pi * max(0.0, min(1.0, t / max(1e-5, duration))))
+                lag_eff = base_lag * env
+                t_torso = _clamp_phase_lag(t, 0.032 * lag_eff, duration, False)
+                t_arm = _clamp_phase_lag(t, 0.050 * lag_eff, duration, False)
+                t_forearm = _clamp_phase_lag(t, 0.082 * lag_eff, duration, False)
+                t_hand = _clamp_phase_lag(t, 0.110 * lag_eff, duration, False)
+                t_head = _clamp_phase_lag(t, 0.068 * lag_eff, duration, False)
 
                 def ch(name: str, eval_t: float, default: float = 0.0) -> float:
                     pts = tracks.get(name)
@@ -703,7 +837,6 @@ class RigAnimationEngine:
                 }
                 frames.append({"t": t, "poses": poses})
 
-            # Lock final frame of non-loop clips smoothly if near neutral (except death)
             if key != "death" and frames:
                 neutral_tail = frames[-1]["poses"]
                 for b in list(neutral_tail.keys()):
@@ -717,257 +850,325 @@ class RigAnimationEngine:
         key: str,
         duration: float,
         amp: float,
+        style_profile: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, List[Tuple[float, float]]], List[Dict[str, Any]]]:
-        """Author keyframe splines with anticipation, overshoot, and damped settle."""
+        """Author keyframe splines with explicit Windup Hold -> Action Arc -> Impact Hit-Stop -> Recovery."""
         d = duration
+        prof = style_profile or ANIMATION_STYLE_PROFILES["heavy_souls"]
+        hold_ratio = max(0.06, min(0.30, float(prof.get("hold_ratio", 0.22))))
+        antic_ratio = max(0.12, min(0.32, float(prof.get("anticipation_ratio", 0.24))))
+        overshoot = max(1.0, min(1.32, float(prof.get("overshoot", 1.14))))
 
         if key == "sword_slash_single":
-            # Focused single melee slash (Micro-Step S2.1): crouch windup -> hip/torso lead ->
-            # diagonal blade whip + wrist snap + HitFrame -> damped settle back to neutral.
+            # Explicit 4-phase RPG strike:
+            # 1) Windup + Windup Hold (w0..w1)
+            # 2) Action Arc (w1..h0)
+            # 3) Impact Hit-Stop Hold (h0..h1)
+            # 4) Follow-Through Overshoot (fl) -> Damped Recovery (rc..d)
+            w0 = max(0.10, min(0.20, antic_ratio * 0.65))
+            w1 = min(0.32, w0 + hold_ratio * 0.42)
+            h0 = w1 + 0.19
+            h1 = min(0.68, h0 + hold_ratio * 0.40)
+            fl = min(0.81, h1 + 0.12)
+            rc = 0.91
+
+            st_w = _planted_stance_leg(2.0 * amp, 14.0 * amp)
+            st_h = _planted_stance_leg(-4.0 * amp, 10.0 * amp)
+            ov = min(1.22, overshoot)
+
             tracks = {
-                "LowerTorso.y": [(0.0, 0.0), (0.20 * d, -0.07 * amp), (0.48 * d, -0.04 * amp), (0.76 * d, -0.02 * amp), (1.0 * d, 0.0)],
-                "LowerTorso.ry": [(0.0, 0.0), (0.18 * d, -16.0 * amp), (0.46 * d, 18.0 * amp), (0.64 * d, 21.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.ry": [(0.0, 0.0), (0.18 * d, -20.0 * amp), (0.46 * d, 24.0 * amp), (0.62 * d, 27.0 * amp), (0.88 * d, 2.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.rx": [(0.0, 0.0), (0.18 * d, 6.0 * amp), (0.46 * d, -12.0 * amp), (0.88 * d, 0.0), (1.0 * d, 0.0)],
-                "Head.ry": [(0.0, 0.0), (0.18 * d, 14.0 * amp), (0.48 * d, -16.0 * amp), (0.88 * d, 0.0), (1.0 * d, 0.0)],
-                "RightUpperArm.rx": [(0.0, -5.0), (0.20 * d, -32.0 * amp), (0.48 * d, 48.0 * amp), (0.62 * d, 56.0 * amp), (0.88 * d, -5.0), (1.0 * d, -5.0)],
-                "RightUpperArm.ry": [(0.0, 0.0), (0.20 * d, -24.0 * amp), (0.48 * d, 32.0 * amp), (0.62 * d, 36.0 * amp), (0.88 * d, 0.0), (1.0 * d, 0.0)],
-                "RightUpperArm.rz": [(0.0, -8.0), (0.20 * d, -22.0 * amp), (0.48 * d, 12.0 * amp), (0.88 * d, -8.0), (1.0 * d, -8.0)],
-                "RightLowerArm.rx": [(0.0, -16.0), (0.18 * d, -48.0 * amp), (0.46 * d, -12.0 * amp), (0.84 * d, -16.0), (1.0 * d, -16.0)],
-                "RightHand.rx": [(0.0, 0.0), (0.18 * d, 16.0 * amp), (0.46 * d, -26.0 * amp), (0.60 * d, -30.0 * amp), (0.82 * d, 0.0), (1.0 * d, 0.0)],
-                "LeftUpperArm.rx": [(0.0, -8.0), (0.18 * d, 16.0 * amp), (0.46 * d, -28.0 * amp), (0.88 * d, -8.0), (1.0 * d, -8.0)],
-                "LeftLowerArm.rx": [(0.0, -18.0), (0.46 * d, -42.0 * amp), (0.84 * d, -18.0), (1.0 * d, -18.0)],
-                "LeftUpperLeg.rx": [(0.0, 0.0), (0.20 * d, 14.0 * amp), (0.50 * d, 10.0 * amp), (1.0 * d, 0.0)],
-                "LeftLowerLeg.rx": [(0.0, 0.0), (0.20 * d, -28.0 * amp), (0.50 * d, -20.0 * amp), (1.0 * d, 0.0)],
-                "LeftFoot.rx": [(0.0, 0.0), (0.20 * d, 14.0 * amp), (0.50 * d, 10.0 * amp), (1.0 * d, 0.0)],
-                "RightUpperLeg.rx": [(0.0, 0.0), (0.20 * d, 12.0 * amp), (0.50 * d, 8.0 * amp), (1.0 * d, 0.0)],
-                "RightLowerLeg.rx": [(0.0, 0.0), (0.20 * d, -24.0 * amp), (0.50 * d, -16.0 * amp), (1.0 * d, 0.0)],
-                "RightFoot.rx": [(0.0, 0.0), (0.20 * d, 12.0 * amp), (0.50 * d, 8.0 * amp), (1.0 * d, 0.0)],
+                "LowerTorso.y": [(0.0, 0.0), (w0 * d, st_w[0]), (w1 * d, st_w[0]), (h0 * d, st_h[0]), (h1 * d, st_h[0]), (fl * d, st_h[0] * 0.6), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LowerTorso.rx": [(0.0, 0.0), (w0 * d, 2.0 * amp), (w1 * d, 2.0 * amp), (h0 * d, -4.0 * amp), (h1 * d, -4.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LowerTorso.ry": [(0.0, 0.0), (w0 * d, -16.0 * amp), (w1 * d, -16.0 * amp), (h0 * d, 18.0 * amp), (h1 * d, 18.0 * amp), (fl * d, 21.0 * amp * ov), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "UpperTorso.ry": [(0.0, 0.0), (w0 * d, -22.0 * amp), (w1 * d, -22.0 * amp), (h0 * d, 24.0 * amp), (h1 * d, 24.0 * amp), (fl * d, 27.0 * amp * ov), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "UpperTorso.rx": [(0.0, 0.0), (w0 * d, 7.0 * amp), (w1 * d, 7.0 * amp), (h0 * d, -12.0 * amp), (h1 * d, -12.0 * amp), (fl * d, -15.0 * amp * ov), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "Head.ry": [(0.0, 0.0), (w0 * d, 14.0 * amp), (w1 * d, 14.0 * amp), (h0 * d, -16.0 * amp), (h1 * d, -16.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperArm.rx": [(0.0, -5.0), (w0 * d, -32.0 * amp), (w1 * d, -32.0 * amp), (h0 * d, 44.0 * amp), (h1 * d, 44.0 * amp), (fl * d, 52.0 * amp * ov), (rc * d, -5.0), (1.0 * d, -5.0)],
+                "RightUpperArm.ry": [(0.0, 0.0), (w0 * d, -20.0 * amp), (w1 * d, -20.0 * amp), (h0 * d, 28.0 * amp), (h1 * d, 28.0 * amp), (fl * d, 32.0 * amp * ov), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperArm.rz": [(0.0, -8.0), (w0 * d, -20.0 * amp), (w1 * d, -20.0 * amp), (h0 * d, 10.0 * amp), (h1 * d, 10.0 * amp), (rc * d, -8.0), (1.0 * d, -8.0)],
+                "RightLowerArm.rx": [(0.0, -16.0), (w0 * d, -48.0 * amp), (w1 * d, -48.0 * amp), (h0 * d, -12.0 * amp), (h1 * d, -12.0 * amp), (fl * d, -18.0 * amp), (rc * d, -16.0), (1.0 * d, -16.0)],
+                "RightHand.rx": [(0.0, 0.0), (w0 * d, 16.0 * amp), (w1 * d, 16.0 * amp), (h0 * d, -24.0 * amp), (h1 * d, -24.0 * amp), (fl * d, -28.0 * amp * ov), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftUpperArm.rx": [(0.0, -8.0), (w0 * d, 16.0 * amp), (w1 * d, 16.0 * amp), (h0 * d, -28.0 * amp), (h1 * d, -28.0 * amp), (rc * d, -8.0), (1.0 * d, -8.0)],
+                "LeftLowerArm.rx": [(0.0, -18.0), (w0 * d, -24.0 * amp), (h0 * d, -42.0 * amp), (h1 * d, -42.0 * amp), (rc * d, -18.0), (1.0 * d, -18.0)],
+                "LeftUpperLeg.rx": [(0.0, 0.0), (w0 * d, st_w[1]), (w1 * d, st_w[1]), (h0 * d, st_h[1]), (h1 * d, st_h[1]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftLowerLeg.rx": [(0.0, 0.0), (w0 * d, st_w[2]), (w1 * d, st_w[2]), (h0 * d, st_h[2]), (h1 * d, st_h[2]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftFoot.rx": [(0.0, 0.0), (w0 * d, st_w[3]), (w1 * d, st_w[3]), (h0 * d, st_h[3]), (h1 * d, st_h[3]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperLeg.rx": [(0.0, 0.0), (w0 * d, st_w[1]), (w1 * d, st_w[1]), (h0 * d, st_h[1]), (h1 * d, st_h[1]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightLowerLeg.rx": [(0.0, 0.0), (w0 * d, st_w[2]), (w1 * d, st_w[2]), (h0 * d, st_h[2]), (h1 * d, st_h[2]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightFoot.rx": [(0.0, 0.0), (w0 * d, st_w[3]), (w1 * d, st_w[3]), (h0 * d, st_h[3]), (h1 * d, st_h[3]), (rc * d, 0.0), (1.0 * d, 0.0)],
             }
             markers = [
-                {"t": round(0.18 * d, 4), "name": "Windup", "value": "slash_single"},
-                {"t": round(0.46 * d, 4), "name": "HitFrame", "value": "slash_single"},
+                {"t": round(w0 * d, 4), "name": "Windup", "value": "slash_single"},
+                {"t": round(w1 * d, 4), "name": "WindupHoldEnd", "value": "slash_single"},
+                {"t": round(h0 * d, 4), "name": "HitFrame", "value": "slash_single"},
+                {"t": round(h1 * d, 4), "name": "HitStopEnd", "value": "slash_single"},
             ]
             return tracks, markers
 
         if key == "dash_roll":
-            # Forward burst dash: crouch spring -> forward pitch & lunge with alternating stride -> landing cushion.
+            c0 = max(0.10, min(0.20, antic_ratio * 0.65))
+            c1 = min(0.30, c0 + hold_ratio * 0.32)
+            b0 = c1 + 0.18
+            l0 = 0.78
             tracks = {
-                "HumanoidRootPart.z": [(0.0, 0.0), (0.16 * d, 0.04 * amp), (0.42 * d, -0.34 * amp), (0.72 * d, -0.62 * amp), (1.0 * d, -0.62 * amp)],
-                "LowerTorso.y": [(0.0, 0.0), (0.16 * d, -0.16 * amp), (0.44 * d, 0.10 * amp), (0.76 * d, -0.18 * amp), (1.0 * d, 0.0)],
-                "LowerTorso.rx": [(0.0, 0.0), (0.16 * d, -8.0 * amp), (0.42 * d, -22.0 * amp), (0.76 * d, -10.0 * amp), (1.0 * d, 0.0)],
-                "LowerTorso.ry": [(0.0, 0.0), (0.24 * d, -10.0 * amp), (0.56 * d, 12.0 * amp), (0.84 * d, 2.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.rx": [(0.0, 0.0), (0.16 * d, -10.0 * amp), (0.44 * d, -24.0 * amp), (0.76 * d, -12.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.ry": [(0.0, 0.0), (0.24 * d, 14.0 * amp), (0.56 * d, -16.0 * amp), (0.86 * d, 0.0), (1.0 * d, 0.0)],
-                "Head.rx": [(0.0, 0.0), (0.18 * d, 12.0 * amp), (0.46 * d, 26.0 * amp), (0.86 * d, 0.0), (1.0 * d, 0.0)],
-                "LeftUpperArm.rx": [(0.0, -5.0), (0.22 * d, -36.0 * amp), (0.54 * d, 32.0 * amp), (0.86 * d, -5.0), (1.0 * d, -5.0)],
-                "LeftLowerArm.rx": [(0.0, -16.0), (0.22 * d, -48.0 * amp), (0.54 * d, -34.0 * amp), (0.84 * d, -16.0), (1.0 * d, -16.0)],
-                "RightUpperArm.rx": [(0.0, -5.0), (0.22 * d, 28.0 * amp), (0.54 * d, -40.0 * amp), (0.86 * d, -5.0), (1.0 * d, -5.0)],
-                "RightLowerArm.rx": [(0.0, -16.0), (0.22 * d, -38.0 * amp), (0.54 * d, -52.0 * amp), (0.84 * d, -16.0), (1.0 * d, -16.0)],
-                "LeftUpperLeg.rx": [(0.0, 0.0), (0.18 * d, 26.0 * amp), (0.46 * d, 42.0 * amp), (0.76 * d, 16.0 * amp), (1.0 * d, 0.0)],
-                "LeftLowerLeg.rx": [(0.0, 0.0), (0.18 * d, -44.0 * amp), (0.46 * d, -66.0 * amp), (0.76 * d, -32.0 * amp), (1.0 * d, 0.0)],
-                "LeftFoot.rx": [(0.0, 0.0), (0.18 * d, 14.0 * amp), (0.46 * d, 18.0 * amp), (0.76 * d, 16.0 * amp), (1.0 * d, 0.0)],
-                "RightUpperLeg.rx": [(0.0, 0.0), (0.18 * d, 18.0 * amp), (0.46 * d, -28.0 * amp), (0.76 * d, 22.0 * amp), (1.0 * d, 0.0)],
-                "RightLowerLeg.rx": [(0.0, 0.0), (0.18 * d, -34.0 * amp), (0.46 * d, -32.0 * amp), (0.76 * d, -42.0 * amp), (1.0 * d, 0.0)],
-                "RightFoot.rx": [(0.0, 0.0), (0.18 * d, 14.0 * amp), (0.46 * d, -10.0 * amp), (0.76 * d, 20.0 * amp), (1.0 * d, 0.0)],
+                "HumanoidRootPart.z": [(0.0, 0.0), (c0 * d, 0.05 * amp), (c1 * d, 0.05 * amp), (b0 * d, -0.36 * amp), (l0 * d, -0.64 * amp), (1.0 * d, -0.64 * amp)],
+                "LowerTorso.y": [(0.0, 0.0), (c0 * d, -0.16 * amp), (c1 * d, -0.16 * amp), (b0 * d, 0.10 * amp), (l0 * d, -0.18 * amp), (1.0 * d, 0.0)],
+                "LowerTorso.rx": [(0.0, 0.0), (c0 * d, -8.0 * amp), (c1 * d, -8.0 * amp), (b0 * d, -22.0 * amp), (l0 * d, -10.0 * amp), (1.0 * d, 0.0)],
+                "LowerTorso.ry": [(0.0, 0.0), (c1 * d, -10.0 * amp), (0.58 * d, 12.0 * amp), (0.86 * d, 2.0 * amp), (1.0 * d, 0.0)],
+                "UpperTorso.rx": [(0.0, 0.0), (c0 * d, -10.0 * amp), (c1 * d, -10.0 * amp), (b0 * d, -24.0 * amp), (l0 * d, -12.0 * amp), (1.0 * d, 0.0)],
+                "UpperTorso.ry": [(0.0, 0.0), (c1 * d, 14.0 * amp), (0.58 * d, -16.0 * amp), (0.88 * d, 0.0), (1.0 * d, 0.0)],
+                "Head.rx": [(0.0, 0.0), (c0 * d, 12.0 * amp), (b0 * d, 26.0 * amp), (0.88 * d, 0.0), (1.0 * d, 0.0)],
+                "LeftUpperArm.rx": [(0.0, -5.0), (c1 * d, -36.0 * amp), (0.56 * d, 32.0 * amp), (0.88 * d, -5.0), (1.0 * d, -5.0)],
+                "LeftLowerArm.rx": [(0.0, -16.0), (c1 * d, -48.0 * amp), (0.56 * d, -34.0 * amp), (0.86 * d, -16.0), (1.0 * d, -16.0)],
+                "RightUpperArm.rx": [(0.0, -5.0), (c1 * d, 28.0 * amp), (0.56 * d, -40.0 * amp), (0.88 * d, -5.0), (1.0 * d, -5.0)],
+                "RightLowerArm.rx": [(0.0, -16.0), (c1 * d, -38.0 * amp), (0.56 * d, -52.0 * amp), (0.86 * d, -16.0), (1.0 * d, -16.0)],
+                "LeftUpperLeg.rx": [(0.0, 0.0), (c0 * d, 26.0 * amp), (c1 * d, 26.0 * amp), (b0 * d, 42.0 * amp), (l0 * d, 16.0 * amp), (1.0 * d, 0.0)],
+                "LeftLowerLeg.rx": [(0.0, 0.0), (c0 * d, -44.0 * amp), (c1 * d, -44.0 * amp), (b0 * d, -66.0 * amp), (l0 * d, -32.0 * amp), (1.0 * d, 0.0)],
+                "LeftFoot.rx": [(0.0, 0.0), (c0 * d, 14.0 * amp), (c1 * d, 14.0 * amp), (b0 * d, 18.0 * amp), (l0 * d, 16.0 * amp), (1.0 * d, 0.0)],
+                "RightUpperLeg.rx": [(0.0, 0.0), (c0 * d, 18.0 * amp), (c1 * d, 18.0 * amp), (b0 * d, -28.0 * amp), (l0 * d, 22.0 * amp), (1.0 * d, 0.0)],
+                "RightLowerLeg.rx": [(0.0, 0.0), (c0 * d, -34.0 * amp), (c1 * d, -34.0 * amp), (b0 * d, -32.0 * amp), (l0 * d, -42.0 * amp), (1.0 * d, 0.0)],
+                "RightFoot.rx": [(0.0, 0.0), (c0 * d, 14.0 * amp), (c1 * d, 14.0 * amp), (b0 * d, -10.0 * amp), (l0 * d, 20.0 * amp), (1.0 * d, 0.0)],
             }
             markers = [
-                {"t": round(0.18 * d, 4), "name": "DashBurst", "value": "evade"},
-                {"t": round(0.76 * d, 4), "name": "DashRecover", "value": "land"},
+                {"t": round(c1 * d, 4), "name": "DashBurst", "value": "evade"},
+                {"t": round(l0 * d, 4), "name": "DashRecover", "value": "land"},
             ]
             return tracks, markers
 
         if key == "jump_land":
-            # Crouch anticipation -> +Y LowerTorso launch arc -> airborne knee tuck -> landing absorb.
+            c0 = 0.14
+            c1 = min(0.26, c0 + hold_ratio * 0.35)
+            ap0 = 0.46
+            ap1 = min(0.58, ap0 + hold_ratio * 0.35)
+            ln0 = 0.78
+            ln1 = min(0.86, ln0 + hold_ratio * 0.25)
             tracks = {
-                "LowerTorso.y": [(0.0, 0.0), (0.18 * d, -0.22 * amp), (0.48 * d, 1.25 * amp), (0.78 * d, -0.24 * amp), (1.0 * d, 0.0)],
-                "LowerTorso.rx": [(0.0, 0.0), (0.18 * d, -10.0 * amp), (0.44 * d, 8.0 * amp), (0.78 * d, -12.0 * amp), (1.0 * d, 0.0)],
-                "LowerTorso.rz": [(0.0, 0.0), (0.48 * d, 3.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.rx": [(0.0, 0.0), (0.18 * d, -14.0 * amp), (0.44 * d, 10.0 * amp), (0.78 * d, -16.0 * amp), (1.0 * d, 0.0)],
-                "Head.rx": [(0.0, 0.0), (0.18 * d, 12.0 * amp), (0.46 * d, -8.0 * amp), (0.78 * d, 14.0 * amp), (1.0 * d, 0.0)],
-                "LeftUpperArm.rx": [(0.0, -5.0), (0.18 * d, -34.0 * amp), (0.46 * d, 76.0 * amp), (0.78 * d, -22.0 * amp), (0.94 * d, -5.0), (1.0 * d, -5.0)],
-                "LeftUpperArm.rz": [(0.0, 8.0), (0.46 * d, 26.0 * amp), (0.94 * d, 8.0), (1.0 * d, 8.0)],
-                "LeftLowerArm.rx": [(0.0, -16.0), (0.18 * d, -28.0 * amp), (0.46 * d, -44.0 * amp), (0.78 * d, -48.0 * amp), (0.92 * d, -16.0), (1.0 * d, -16.0)],
-                "RightUpperArm.rx": [(0.0, -5.0), (0.18 * d, -30.0 * amp), (0.48 * d, 82.0 * amp), (0.78 * d, -18.0 * amp), (0.94 * d, -5.0), (1.0 * d, -5.0)],
-                "RightUpperArm.rz": [(0.0, -8.0), (0.48 * d, -24.0 * amp), (0.94 * d, -8.0), (1.0 * d, -8.0)],
-                "RightLowerArm.rx": [(0.0, -16.0), (0.18 * d, -26.0 * amp), (0.48 * d, -40.0 * amp), (0.78 * d, -46.0 * amp), (0.92 * d, -16.0), (1.0 * d, -16.0)],
-                "LeftUpperLeg.rx": [(0.0, 0.0), (0.18 * d, 24.0 * amp), (0.48 * d, 46.0 * amp), (0.78 * d, 26.0 * amp), (1.0 * d, 0.0)],
-                "LeftLowerLeg.rx": [(0.0, 0.0), (0.18 * d, -48.0 * amp), (0.48 * d, -82.0 * amp), (0.78 * d, -52.0 * amp), (1.0 * d, 0.0)],
-                "LeftFoot.rx": [(0.0, 0.0), (0.18 * d, 24.0 * amp), (0.48 * d, -18.0 * amp), (0.78 * d, 26.0 * amp), (1.0 * d, 0.0)],
-                "RightUpperLeg.rx": [(0.0, 0.0), (0.18 * d, 24.0 * amp), (0.48 * d, 32.0 * amp), (0.78 * d, 26.0 * amp), (1.0 * d, 0.0)],
-                "RightLowerLeg.rx": [(0.0, 0.0), (0.18 * d, -48.0 * amp), (0.48 * d, -64.0 * amp), (0.78 * d, -52.0 * amp), (1.0 * d, 0.0)],
-                "RightFoot.rx": [(0.0, 0.0), (0.18 * d, 24.0 * amp), (0.48 * d, -14.0 * amp), (0.78 * d, 26.0 * amp), (1.0 * d, 0.0)],
+                "LowerTorso.y": [(0.0, 0.0), (c0 * d, -0.22 * amp), (c1 * d, -0.22 * amp), (ap0 * d, 1.25 * amp), (ap1 * d, 1.25 * amp), (ln0 * d, -0.24 * amp), (ln1 * d, -0.24 * amp), (1.0 * d, 0.0)],
+                "LowerTorso.rx": [(0.0, 0.0), (c0 * d, -10.0 * amp), (c1 * d, -10.0 * amp), (ap0 * d, 8.0 * amp), (ap1 * d, 8.0 * amp), (ln0 * d, -12.0 * amp), (ln1 * d, -12.0 * amp), (1.0 * d, 0.0)],
+                "LowerTorso.rz": [(0.0, 0.0), (ap0 * d, 3.0 * amp), (1.0 * d, 0.0)],
+                "UpperTorso.rx": [(0.0, 0.0), (c0 * d, -14.0 * amp), (c1 * d, -14.0 * amp), (ap0 * d, 10.0 * amp), (ap1 * d, 10.0 * amp), (ln0 * d, -16.0 * amp), (1.0 * d, 0.0)],
+                "Head.rx": [(0.0, 0.0), (c0 * d, 12.0 * amp), (ap0 * d, -8.0 * amp), (ln0 * d, 14.0 * amp), (1.0 * d, 0.0)],
+                "LeftUpperArm.rx": [(0.0, -5.0), (c0 * d, -34.0 * amp), (c1 * d, -34.0 * amp), (ap0 * d, 76.0 * amp), (ap1 * d, 76.0 * amp), (ln0 * d, -22.0 * amp), (0.94 * d, -5.0), (1.0 * d, -5.0)],
+                "LeftUpperArm.rz": [(0.0, 8.0), (ap0 * d, 26.0 * amp), (0.94 * d, 8.0), (1.0 * d, 8.0)],
+                "LeftLowerArm.rx": [(0.0, -16.0), (c0 * d, -28.0 * amp), (ap0 * d, -44.0 * amp), (ln0 * d, -48.0 * amp), (0.92 * d, -16.0), (1.0 * d, -16.0)],
+                "RightUpperArm.rx": [(0.0, -5.0), (c0 * d, -30.0 * amp), (c1 * d, -30.0 * amp), (ap0 * d, 82.0 * amp), (ap1 * d, 82.0 * amp), (ln0 * d, -18.0 * amp), (0.94 * d, -5.0), (1.0 * d, -5.0)],
+                "RightUpperArm.rz": [(0.0, -8.0), (ap0 * d, -24.0 * amp), (0.94 * d, -8.0), (1.0 * d, -8.0)],
+                "RightLowerArm.rx": [(0.0, -16.0), (c0 * d, -26.0 * amp), (ap0 * d, -40.0 * amp), (ln0 * d, -46.0 * amp), (0.92 * d, -16.0), (1.0 * d, -16.0)],
+                "LeftUpperLeg.rx": [(0.0, 0.0), (c0 * d, 24.0 * amp), (c1 * d, 24.0 * amp), (ap0 * d, 46.0 * amp), (ap1 * d, 46.0 * amp), (ln0 * d, 26.0 * amp), (ln1 * d, 26.0 * amp), (1.0 * d, 0.0)],
+                "LeftLowerLeg.rx": [(0.0, 0.0), (c0 * d, -48.0 * amp), (c1 * d, -48.0 * amp), (ap0 * d, -82.0 * amp), (ap1 * d, -82.0 * amp), (ln0 * d, -52.0 * amp), (ln1 * d, -52.0 * amp), (1.0 * d, 0.0)],
+                "LeftFoot.rx": [(0.0, 0.0), (c0 * d, 24.0 * amp), (c1 * d, 24.0 * amp), (ap0 * d, -18.0 * amp), (ap1 * d, -18.0 * amp), (ln0 * d, 26.0 * amp), (ln1 * d, 26.0 * amp), (1.0 * d, 0.0)],
+                "RightUpperLeg.rx": [(0.0, 0.0), (c0 * d, 24.0 * amp), (c1 * d, 24.0 * amp), (ap0 * d, 32.0 * amp), (ap1 * d, 32.0 * amp), (ln0 * d, 26.0 * amp), (ln1 * d, 26.0 * amp), (1.0 * d, 0.0)],
+                "RightLowerLeg.rx": [(0.0, 0.0), (c0 * d, -48.0 * amp), (c1 * d, -48.0 * amp), (ap0 * d, -64.0 * amp), (ap1 * d, -64.0 * amp), (ln0 * d, -52.0 * amp), (ln1 * d, -52.0 * amp), (1.0 * d, 0.0)],
+                "RightFoot.rx": [(0.0, 0.0), (c0 * d, 24.0 * amp), (c1 * d, 24.0 * amp), (ap0 * d, -14.0 * amp), (ap1 * d, -14.0 * amp), (ln0 * d, 26.0 * amp), (ln1 * d, 26.0 * amp), (1.0 * d, 0.0)],
             }
             markers = [
-                {"t": round(0.20 * d, 4), "name": "JumpLaunch", "value": "jump"},
-                {"t": round(0.48 * d, 4), "name": "JumpApex", "value": "apex"},
-                {"t": round(0.76 * d, 4), "name": "LandImpact", "value": "land"},
+                {"t": round(c1 * d, 4), "name": "JumpLaunch", "value": "jump"},
+                {"t": round(ap0 * d, 4), "name": "JumpApex", "value": "apex"},
+                {"t": round(ln0 * d, 4), "name": "LandImpact", "value": "land"},
             ]
             return tracks, markers
 
         if key == "cast_spell":
-            # Dual-arm arcane gather -> chest/head lift -> forward spell thrust + CastRelease -> recovery.
+            # Explicit 4-phase arcane cast: Gather -> Gather Hold -> Thrust Arc -> Release Hit-Stop -> Follow-Through/Recovery
+            g0 = max(0.14, min(0.26, antic_ratio * 0.90))
+            g1 = min(0.42, g0 + hold_ratio * 0.55)
+            r0 = g1 + 0.15
+            r1 = min(0.72, r0 + hold_ratio * 0.45)
+            fl = min(0.84, r1 + 0.10)
+            rc = 0.92
+            st_g = _planted_stance_leg(6.0 * amp, 14.0 * amp)
+            st_r = _planted_stance_leg(-8.0 * amp, 10.0 * amp)
+            ov = min(1.22, overshoot)
+
             tracks = {
-                "LowerTorso.y": [(0.0, 0.0), (0.28 * d, -0.09 * amp), (0.46 * d, 0.05 * amp), (0.62 * d, -0.05 * amp), (1.0 * d, 0.0)],
-                "LowerTorso.rx": [(0.0, 0.0), (0.28 * d, 6.0 * amp), (0.58 * d, -8.0 * amp), (1.0 * d, 0.0)],
-                "LowerTorso.ry": [(0.0, 0.0), (0.28 * d, 10.0 * amp), (0.58 * d, -12.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.rx": [(0.0, 0.0), (0.28 * d, 10.0 * amp), (0.46 * d, 14.0 * amp), (0.60 * d, -16.0 * amp), (0.90 * d, 0.0), (1.0 * d, 0.0)],
-                "UpperTorso.ry": [(0.0, 0.0), (0.28 * d, 14.0 * amp), (0.60 * d, -14.0 * amp), (0.90 * d, 0.0), (1.0 * d, 0.0)],
-                "Head.rx": [(0.0, 0.0), (0.28 * d, -10.0 * amp), (0.46 * d, 12.0 * amp), (0.62 * d, -6.0 * amp), (0.90 * d, 0.0), (1.0 * d, 0.0)],
-                "LeftUpperArm.rx": [(0.0, -5.0), (0.26 * d, 26.0 * amp), (0.44 * d, 44.0 * amp), (0.58 * d, 76.0 * amp), (0.90 * d, -5.0), (1.0 * d, -5.0)],
-                "LeftUpperArm.ry": [(0.0, 0.0), (0.26 * d, 32.0 * amp), (0.58 * d, -14.0 * amp), (0.90 * d, 0.0), (1.0 * d, 0.0)],
-                "LeftUpperArm.rz": [(0.0, 8.0), (0.26 * d, 24.0 * amp), (0.58 * d, 6.0 * amp), (0.90 * d, 8.0), (1.0 * d, 8.0)],
-                "LeftLowerArm.rx": [(0.0, -16.0), (0.26 * d, -72.0 * amp), (0.58 * d, -12.0 * amp), (0.88 * d, -16.0), (1.0 * d, -16.0)],
-                "LeftHand.rx": [(0.0, 0.0), (0.26 * d, 22.0 * amp), (0.58 * d, -28.0 * amp), (0.86 * d, 0.0), (1.0 * d, 0.0)],
-                "RightUpperArm.rx": [(0.0, -5.0), (0.28 * d, 32.0 * amp), (0.44 * d, 48.0 * amp), (0.58 * d, 80.0 * amp), (0.90 * d, -5.0), (1.0 * d, -5.0)],
-                "RightUpperArm.ry": [(0.0, 0.0), (0.28 * d, -34.0 * amp), (0.58 * d, 14.0 * amp), (0.90 * d, 0.0), (1.0 * d, 0.0)],
-                "RightUpperArm.rz": [(0.0, -8.0), (0.28 * d, -26.0 * amp), (0.58 * d, -6.0 * amp), (0.90 * d, -8.0), (1.0 * d, -8.0)],
-                "RightLowerArm.rx": [(0.0, -16.0), (0.28 * d, -76.0 * amp), (0.58 * d, -10.0 * amp), (0.88 * d, -16.0), (1.0 * d, -16.0)],
-                "RightHand.rx": [(0.0, 0.0), (0.28 * d, 24.0 * amp), (0.58 * d, -32.0 * amp), (0.86 * d, 0.0), (1.0 * d, 0.0)],
-                "LeftUpperLeg.rx": [(0.0, 0.0), (0.28 * d, 14.0 * amp), (0.62 * d, 10.0 * amp), (1.0 * d, 0.0)],
-                "LeftLowerLeg.rx": [(0.0, 0.0), (0.28 * d, -28.0 * amp), (0.62 * d, -20.0 * amp), (1.0 * d, 0.0)],
-                "LeftFoot.rx": [(0.0, 0.0), (0.28 * d, 14.0 * amp), (0.62 * d, 10.0 * amp), (1.0 * d, 0.0)],
-                "RightUpperLeg.rx": [(0.0, 0.0), (0.28 * d, 12.0 * amp), (0.62 * d, 8.0 * amp), (1.0 * d, 0.0)],
-                "RightLowerLeg.rx": [(0.0, 0.0), (0.28 * d, -24.0 * amp), (0.62 * d, -16.0 * amp), (1.0 * d, 0.0)],
-                "RightFoot.rx": [(0.0, 0.0), (0.28 * d, 12.0 * amp), (0.62 * d, 8.0 * amp), (1.0 * d, 0.0)],
+                "LowerTorso.y": [(0.0, 0.0), (g0 * d, st_g[0]), (g1 * d, st_g[0]), (r0 * d, st_r[0]), (r1 * d, st_r[0]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LowerTorso.rx": [(0.0, 0.0), (g0 * d, 6.0 * amp), (g1 * d, 6.0 * amp), (r0 * d, -8.0 * amp), (r1 * d, -8.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LowerTorso.ry": [(0.0, 0.0), (g0 * d, 10.0 * amp), (g1 * d, 10.0 * amp), (r0 * d, -12.0 * amp), (r1 * d, -12.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "UpperTorso.rx": [(0.0, 0.0), (g0 * d, 12.0 * amp), (g1 * d, 12.0 * amp), (r0 * d, -16.0 * amp), (r1 * d, -16.0 * amp), (fl * d, -18.0 * amp * ov), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "UpperTorso.ry": [(0.0, 0.0), (g0 * d, 14.0 * amp), (g1 * d, 14.0 * amp), (r0 * d, -14.0 * amp), (r1 * d, -14.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "Head.rx": [(0.0, 0.0), (g0 * d, -10.0 * amp), (g1 * d, -10.0 * amp), (r0 * d, -6.0 * amp), (r1 * d, -6.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftUpperArm.rx": [(0.0, -5.0), (g0 * d, 28.0 * amp), (g1 * d, 28.0 * amp), (r0 * d, 76.0 * amp), (r1 * d, 76.0 * amp), (fl * d, 82.0 * amp * ov), (rc * d, -5.0), (1.0 * d, -5.0)],
+                "LeftUpperArm.ry": [(0.0, 0.0), (g0 * d, 32.0 * amp), (g1 * d, 32.0 * amp), (r0 * d, -14.0 * amp), (r1 * d, -14.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftUpperArm.rz": [(0.0, 8.0), (g0 * d, 24.0 * amp), (g1 * d, 24.0 * amp), (r0 * d, 6.0 * amp), (r1 * d, 6.0 * amp), (rc * d, 8.0), (1.0 * d, 8.0)],
+                "LeftLowerArm.rx": [(0.0, -16.0), (g0 * d, -72.0 * amp), (g1 * d, -72.0 * amp), (r0 * d, -12.0 * amp), (r1 * d, -12.0 * amp), (rc * d, -16.0), (1.0 * d, -16.0)],
+                "LeftHand.rx": [(0.0, 0.0), (g0 * d, 22.0 * amp), (g1 * d, 22.0 * amp), (r0 * d, -28.0 * amp), (r1 * d, -28.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperArm.rx": [(0.0, -5.0), (g0 * d, 32.0 * amp), (g1 * d, 32.0 * amp), (r0 * d, 80.0 * amp), (r1 * d, 80.0 * amp), (fl * d, 86.0 * amp * ov), (rc * d, -5.0), (1.0 * d, -5.0)],
+                "RightUpperArm.ry": [(0.0, 0.0), (g0 * d, -34.0 * amp), (g1 * d, -34.0 * amp), (r0 * d, 14.0 * amp), (r1 * d, 14.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperArm.rz": [(0.0, -8.0), (g0 * d, -26.0 * amp), (g1 * d, -26.0 * amp), (r0 * d, -6.0 * amp), (r1 * d, -6.0 * amp), (rc * d, -8.0), (1.0 * d, -8.0)],
+                "RightLowerArm.rx": [(0.0, -16.0), (g0 * d, -76.0 * amp), (g1 * d, -76.0 * amp), (r0 * d, -10.0 * amp), (r1 * d, -10.0 * amp), (rc * d, -16.0), (1.0 * d, -16.0)],
+                "RightHand.rx": [(0.0, 0.0), (g0 * d, 24.0 * amp), (g1 * d, 24.0 * amp), (r0 * d, -32.0 * amp), (r1 * d, -32.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftUpperLeg.rx": [(0.0, 0.0), (g0 * d, st_g[1]), (g1 * d, st_g[1]), (r0 * d, st_r[1]), (r1 * d, st_r[1]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftLowerLeg.rx": [(0.0, 0.0), (g0 * d, st_g[2]), (g1 * d, st_g[2]), (r0 * d, st_r[2]), (r1 * d, st_r[2]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftFoot.rx": [(0.0, 0.0), (g0 * d, st_g[3]), (g1 * d, st_g[3]), (r0 * d, st_r[3]), (r1 * d, st_r[3]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperLeg.rx": [(0.0, 0.0), (g0 * d, st_g[1]), (g1 * d, st_g[1]), (r0 * d, st_r[1]), (r1 * d, st_r[1]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightLowerLeg.rx": [(0.0, 0.0), (g0 * d, st_g[2]), (g1 * d, st_g[2]), (r0 * d, st_r[2]), (r1 * d, st_r[2]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightFoot.rx": [(0.0, 0.0), (g0 * d, st_g[3]), (g1 * d, st_g[3]), (r0 * d, st_r[3]), (r1 * d, st_r[3]), (rc * d, 0.0), (1.0 * d, 0.0)],
             }
             markers = [
-                {"t": round(0.26 * d, 4), "name": "CastGather", "value": "arcane"},
-                {"t": round(0.56 * d, 4), "name": "CastRelease", "value": "arcane"},
+                {"t": round(g0 * d, 4), "name": "CastGather", "value": "arcane"},
+                {"t": round(g1 * d, 4), "name": "CastHoldEnd", "value": "arcane"},
+                {"t": round(r0 * d, 4), "name": "CastRelease", "value": "arcane"},
+                {"t": round(r1 * d, 4), "name": "CastHitStopEnd", "value": "arcane"},
             ]
             return tracks, markers
 
         if key == "sword_combo_3hit":
-            # Hit 1 (0.0-0.55): windup back right -> diagonal slash across -> overshoot
-            # Hit 2 (0.55-1.10): coil left -> backhand slash right -> overshoot
-            # Hit 3 (1.10-1.80): crouch coil overhead -> heavy cleave -> follow-through -> recover
+            h1 = min(0.045, hold_ratio * 0.18)
+            h2 = min(0.045, hold_ratio * 0.18)
+            w1s, w1e = 0.08, 0.08 + h1
+            a1s, a1e = 0.21, 0.21 + h2
+            w2s, w2e = 0.34, 0.34 + h1
+            a2s, a2e = 0.47, 0.47 + h2
+            w3s, w3e = 0.62, 0.62 + h1
+            a3s, a3e = 0.78, 0.78 + h2
+            f3 = 0.88
+            rc = 0.95
+            ov = min(1.18, overshoot)
+
             tracks = {
-                "LowerTorso.y": [(0.0, 0.0), (0.14 * d, -0.10 * amp), (0.28 * d, -0.05 * amp), (0.45 * d, -0.08 * amp), (0.68 * d, -0.16 * amp), (0.85 * d, -0.06 * amp), (1.0 * d, 0.0)],
-                "LowerTorso.ry": [(0.0, 0.0), (0.12 * d, -22.0 * amp), (0.26 * d, 24.0 * amp), (0.42 * d, 28.0 * amp), (0.56 * d, -28.0 * amp), (0.72 * d, -18.0 * amp), (0.84 * d, 18.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.ry": [(0.0, 0.0), (0.12 * d, -28.0 * amp), (0.26 * d, 34.0 * amp), (0.36 * d, -12.0 * amp), (0.55 * d, -32.0 * amp), (0.72 * d, 16.0 * amp), (0.84 * d, 28.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.rx": [(0.0, 0.0), (0.12 * d, 8.0 * amp), (0.26 * d, -14.0 * amp), (0.52 * d, -8.0 * amp), (0.70 * d, 16.0 * amp), (0.83 * d, -26.0 * amp), (1.0 * d, 0.0)],
-                "Head.ry": [(0.0, 0.0), (0.12 * d, 18.0 * amp), (0.28 * d, -18.0 * amp), (0.55 * d, 14.0 * amp), (0.83 * d, -10.0 * amp), (1.0 * d, 0.0)],
-                "RightUpperArm.rx": [(0.0, -5.0), (0.13 * d, -44.0 * amp), (0.26 * d, 76.0 * amp), (0.33 * d, 84.0 * amp), (0.43 * d, 24.0 * amp), (0.56 * d, 62.0 * amp), (0.72 * d, -94.0 * amp), (0.85 * d, 68.0 * amp), (0.91 * d, 76.0 * amp), (1.0 * d, -5.0)],
-                "RightUpperArm.ry": [(0.0, 0.0), (0.13 * d, -34.0 * amp), (0.26 * d, 48.0 * amp), (0.43 * d, 32.0 * amp), (0.56 * d, -42.0 * amp), (0.72 * d, 8.0 * amp), (0.85 * d, 22.0 * amp), (1.0 * d, 0.0)],
-                "RightUpperArm.rz": [(0.0, -8.0), (0.13 * d, -32.0 * amp), (0.26 * d, 16.0 * amp), (0.56 * d, -26.0 * amp), (0.72 * d, -12.0 * amp), (0.85 * d, 8.0 * amp), (1.0 * d, -8.0)],
-                "RightLowerArm.rx": [(0.0, -16.0), (0.12 * d, -62.0 * amp), (0.25 * d, -14.0 * amp), (0.42 * d, -48.0 * amp), (0.56 * d, -18.0 * amp), (0.71 * d, -54.0 * amp), (0.84 * d, -12.0 * amp), (1.0 * d, -16.0)],
-                "RightHand.rx": [(0.0, 0.0), (0.12 * d, 22.0 * amp), (0.26 * d, -34.0 * amp), (0.56 * d, 28.0 * amp), (0.71 * d, 26.0 * amp), (0.85 * d, -38.0 * amp), (1.0 * d, 0.0)],
-                "LeftUpperArm.rx": [(0.0, -8.0), (0.12 * d, 22.0 * amp), (0.26 * d, -38.0 * amp), (0.56 * d, 28.0 * amp), (0.71 * d, -32.0 * amp), (0.84 * d, 30.0 * amp), (1.0 * d, -8.0)],
-                "LeftLowerArm.rx": [(0.0, -18.0), (0.26 * d, -48.0 * amp), (0.56 * d, -28.0 * amp), (0.84 * d, -45.0 * amp), (1.0 * d, -18.0)],
-                "LeftUpperLeg.rx": [(0.0, 0.0), (0.14 * d, 16.0 * amp), (0.45 * d, 14.0 * amp), (0.70 * d, 24.0 * amp), (1.0 * d, 0.0)],
-                "LeftLowerLeg.rx": [(0.0, 0.0), (0.14 * d, -30.0 * amp), (0.45 * d, -26.0 * amp), (0.70 * d, -44.0 * amp), (1.0 * d, 0.0)],
-                "LeftFoot.rx": [(0.0, 0.0), (0.14 * d, 14.0 * amp), (0.45 * d, 12.0 * amp), (0.70 * d, 20.0 * amp), (1.0 * d, 0.0)],
-                "RightUpperLeg.rx": [(0.0, 0.0), (0.14 * d, 12.0 * amp), (0.45 * d, 10.0 * amp), (0.70 * d, 18.0 * amp), (1.0 * d, 0.0)],
-                "RightLowerLeg.rx": [(0.0, 0.0), (0.14 * d, -26.0 * amp), (0.45 * d, -22.0 * amp), (0.70 * d, -36.0 * amp), (1.0 * d, 0.0)],
-                "RightFoot.rx": [(0.0, 0.0), (0.14 * d, 14.0 * amp), (0.45 * d, 12.0 * amp), (0.70 * d, 18.0 * amp), (1.0 * d, 0.0)],
+                "LowerTorso.y": [(0.0, 0.0), (w1s * d, -0.09 * amp), (w1e * d, -0.09 * amp), (a1s * d, -0.05 * amp), (w2s * d, -0.08 * amp), (w3s * d, -0.14 * amp), (w3e * d, -0.14 * amp), (a3s * d, -0.06 * amp), (a3e * d, -0.06 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LowerTorso.ry": [(0.0, 0.0), (w1s * d, -18.0 * amp), (w1e * d, -18.0 * amp), (a1s * d, 20.0 * amp), (a1e * d, 20.0 * amp), (w2s * d, 22.0 * amp), (w2e * d, 22.0 * amp), (a2s * d, -22.0 * amp), (a2e * d, -22.0 * amp), (w3s * d, -14.0 * amp), (w3e * d, -14.0 * amp), (a3s * d, 18.0 * amp), (a3e * d, 18.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "UpperTorso.ry": [(0.0, 0.0), (w1s * d, -22.0 * amp), (w1e * d, -22.0 * amp), (a1s * d, 26.0 * amp), (a1e * d, 26.0 * amp), (w2s * d, 24.0 * amp), (w2e * d, 24.0 * amp), (a2s * d, -26.0 * amp), (a2e * d, -26.0 * amp), (w3s * d, 12.0 * amp), (w3e * d, 12.0 * amp), (a3s * d, 24.0 * amp), (a3e * d, 24.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "UpperTorso.rx": [(0.0, 0.0), (w1s * d, 7.0 * amp), (a1s * d, -12.0 * amp), (a2s * d, -8.0 * amp), (w3s * d, 14.0 * amp), (w3e * d, 14.0 * amp), (a3s * d, -20.0 * amp), (a3e * d, -20.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "Head.ry": [(0.0, 0.0), (w1s * d, 14.0 * amp), (a1s * d, -16.0 * amp), (a2s * d, 12.0 * amp), (a3s * d, -10.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperArm.rx": [(0.0, -5.0), (w1s * d, -34.0 * amp), (w1e * d, -34.0 * amp), (a1s * d, 52.0 * amp), (a1e * d, 52.0 * amp), (w2s * d, 24.0 * amp), (w2e * d, 24.0 * amp), (a2s * d, 42.0 * amp), (a2e * d, 42.0 * amp), (w3s * d, -66.0 * amp), (w3e * d, -66.0 * amp), (a3s * d, 50.0 * amp), (a3e * d, 50.0 * amp), (f3 * d, 58.0 * amp * ov), (rc * d, -5.0), (1.0 * d, -5.0)],
+                "RightUpperArm.ry": [(0.0, 0.0), (w1s * d, -26.0 * amp), (w1e * d, -26.0 * amp), (a1s * d, 34.0 * amp), (a1e * d, 34.0 * amp), (w2s * d, 26.0 * amp), (a2s * d, -32.0 * amp), (a2e * d, -32.0 * amp), (w3s * d, 6.0 * amp), (a3s * d, 20.0 * amp), (a3e * d, 20.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperArm.rz": [(0.0, -8.0), (w1s * d, -24.0 * amp), (a1s * d, 14.0 * amp), (a2s * d, -22.0 * amp), (w3s * d, -10.0 * amp), (a3s * d, 8.0 * amp), (rc * d, -8.0), (1.0 * d, -8.0)],
+                "RightLowerArm.rx": [(0.0, -16.0), (w1s * d, -54.0 * amp), (w1e * d, -54.0 * amp), (a1s * d, -14.0 * amp), (a1e * d, -14.0 * amp), (w2s * d, -44.0 * amp), (a2s * d, -18.0 * amp), (w3s * d, -48.0 * amp), (a3s * d, -12.0 * amp), (a3e * d, -12.0 * amp), (rc * d, -16.0), (1.0 * d, -16.0)],
+                "RightHand.rx": [(0.0, 0.0), (w1s * d, 18.0 * amp), (a1s * d, -28.0 * amp), (a2s * d, 24.0 * amp), (w3s * d, 20.0 * amp), (a3s * d, -30.0 * amp), (a3e * d, -30.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftUpperArm.rx": [(0.0, -8.0), (w1s * d, 20.0 * amp), (a1s * d, -32.0 * amp), (a2s * d, 24.0 * amp), (w3s * d, -28.0 * amp), (a3s * d, 26.0 * amp), (rc * d, -8.0), (1.0 * d, -8.0)],
+                "LeftLowerArm.rx": [(0.0, -18.0), (a1s * d, -44.0 * amp), (a2s * d, -28.0 * amp), (a3s * d, -42.0 * amp), (rc * d, -18.0), (1.0 * d, -18.0)],
+                "LeftUpperLeg.rx": [(0.0, 0.0), (w1s * d, 14.0 * amp), (a2s * d, 14.0 * amp), (w3s * d, 20.0 * amp), (a3s * d, 14.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftLowerLeg.rx": [(0.0, 0.0), (w1s * d, -28.0 * amp), (a2s * d, -26.0 * amp), (w3s * d, -38.0 * amp), (a3s * d, -26.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftFoot.rx": [(0.0, 0.0), (w1s * d, 14.0 * amp), (a2s * d, 12.0 * amp), (w3s * d, 18.0 * amp), (a3s * d, 12.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperLeg.rx": [(0.0, 0.0), (w1s * d, 12.0 * amp), (a2s * d, 10.0 * amp), (w3s * d, 16.0 * amp), (a3s * d, 12.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightLowerLeg.rx": [(0.0, 0.0), (w1s * d, -24.0 * amp), (a2s * d, -20.0 * amp), (w3s * d, -32.0 * amp), (a3s * d, -22.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightFoot.rx": [(0.0, 0.0), (w1s * d, 12.0 * amp), (a2s * d, 10.0 * amp), (w3s * d, 16.0 * amp), (a3s * d, 10.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
             }
             markers = [
-                {"t": round(0.18 * d, 4), "name": "HitStart", "value": "slash_1"},
-                {"t": round(0.30 * d, 4), "name": "HitEnd", "value": "slash_1"},
-                {"t": round(0.49 * d, 4), "name": "Hit2Start", "value": "slash_2"},
-                {"t": round(0.61 * d, 4), "name": "Hit2End", "value": "slash_2"},
-                {"t": round(0.76 * d, 4), "name": "Hit3Start", "value": "cleave_3"},
-                {"t": round(0.89 * d, 4), "name": "Hit3End", "value": "cleave_3"},
+                {"t": round(a1s * d, 4), "name": "HitStart", "value": "slash_1"},
+                {"t": round(a1e * d, 4), "name": "HitEnd", "value": "slash_1"},
+                {"t": round(a2s * d, 4), "name": "Hit2Start", "value": "slash_2"},
+                {"t": round(a2e * d, 4), "name": "Hit2End", "value": "slash_2"},
+                {"t": round(a3s * d, 4), "name": "Hit3Start", "value": "cleave_3"},
+                {"t": round(a3e * d, 4), "name": "Hit3End", "value": "cleave_3"},
             ]
             return tracks, markers
 
         if key == "bow_draw_release":
+            d0 = 0.22
+            dh = min(0.62, 0.44 + hold_ratio * 0.72)
+            rel = min(0.74, dh + 0.09)
+            rel_h = min(0.84, rel + hold_ratio * 0.30)
+            rc = 0.93
             tracks = {
-                "LowerTorso.y": [(0.0, 0.0), (0.15 * d, -0.05 * amp), (0.58 * d, -0.04 * amp), (0.72 * d, -0.06 * amp), (0.84 * d, -0.03 * amp), (1.0 * d, 0.0)],
-                "LowerTorso.ry": [(0.0, 0.0), (0.20 * d, 16.0 * amp), (0.62 * d, 18.0 * amp), (0.74 * d, 10.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.ry": [(0.0, 0.0), (0.20 * d, 42.0 * amp), (0.62 * d, 48.0 * amp), (0.74 * d, 20.0 * amp), (0.86 * d, 24.0 * amp), (1.0 * d, 0.0)],
-                "Head.ry": [(0.0, 0.0), (0.20 * d, -54.0 * amp), (0.62 * d, -62.0 * amp), (0.74 * d, -28.0 * amp), (1.0 * d, 0.0)],
-                "LeftUpperArm.rx": [(0.0, -5.0), (0.20 * d, 78.0 * amp), (0.62 * d, 84.0 * amp), (0.74 * d, 92.0 * amp), (0.84 * d, 74.0 * amp), (1.0 * d, -5.0)],
-                "LeftUpperArm.ry": [(0.0, 0.0), (0.20 * d, -36.0 * amp), (0.62 * d, -42.0 * amp), (0.74 * d, -28.0 * amp), (1.0 * d, 0.0)],
-                "LeftLowerArm.rx": [(0.0, -14.0), (0.20 * d, -10.0), (0.62 * d, -8.0), (0.74 * d, -18.0 * amp), (1.0 * d, -14.0)],
-                "RightUpperArm.rx": [(0.0, -5.0), (0.15 * d, 42.0 * amp), (0.58 * d, 66.0 * amp), (0.66 * d, 68.0 * amp), (0.74 * d, 42.0 * amp), (0.84 * d, 22.0 * amp), (1.0 * d, -5.0)],
-                "RightUpperArm.ry": [(0.0, 0.0), (0.20 * d, 24.0 * amp), (0.58 * d, 56.0 * amp), (0.74 * d, 74.0 * amp), (0.85 * d, 42.0 * amp), (1.0 * d, 0.0)],
-                "RightLowerArm.rx": [(0.0, -14.0), (0.22 * d, -58.0 * amp), (0.58 * d, -96.0 * amp), (0.66 * d, -98.0 * amp), (0.74 * d, -52.0 * amp), (1.0 * d, -14.0)],
-                "RightHand.rx": [(0.0, 0.0), (0.58 * d, -18.0 * amp), (0.74 * d, 24.0 * amp), (1.0 * d, 0.0)],
-                "LeftUpperLeg.rx": [(0.0, 0.0), (0.25 * d, 12.0 * amp), (0.74 * d, 14.0 * amp), (1.0 * d, 0.0)],
-                "LeftUpperLeg.ry": [(0.0, 0.0), (0.20 * d, -16.0 * amp), (0.62 * d, -18.0 * amp), (0.74 * d, -10.0 * amp), (1.0 * d, 0.0)],
-                "LeftLowerLeg.rx": [(0.0, 0.0), (0.25 * d, -22.0 * amp), (0.74 * d, -26.0 * amp), (1.0 * d, 0.0)],
-                "LeftFoot.rx": [(0.0, 0.0), (0.25 * d, 10.0 * amp), (0.74 * d, 12.0 * amp), (1.0 * d, 0.0)],
-                "RightUpperLeg.rx": [(0.0, 0.0), (0.25 * d, 10.0 * amp), (0.74 * d, 12.0 * amp), (1.0 * d, 0.0)],
-                "RightUpperLeg.ry": [(0.0, 0.0), (0.20 * d, -16.0 * amp), (0.62 * d, -18.0 * amp), (0.74 * d, -10.0 * amp), (1.0 * d, 0.0)],
-                "RightLowerLeg.rx": [(0.0, 0.0), (0.25 * d, -18.0 * amp), (0.74 * d, -22.0 * amp), (1.0 * d, 0.0)],
-                "RightFoot.rx": [(0.0, 0.0), (0.25 * d, 8.0 * amp), (0.74 * d, 10.0 * amp), (1.0 * d, 0.0)],
+                "LowerTorso.y": [(0.0, 0.0), (d0 * d, -0.05 * amp), (dh * d, -0.05 * amp), (rel * d, -0.06 * amp), (rel_h * d, -0.06 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LowerTorso.ry": [(0.0, 0.0), (d0 * d, 16.0 * amp), (dh * d, 18.0 * amp), (rel * d, 10.0 * amp), (rel_h * d, 10.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "UpperTorso.ry": [(0.0, 0.0), (d0 * d, 42.0 * amp), (0.42 * d, 48.0 * amp), (dh * d, 48.0 * amp), (rel * d, 20.0 * amp), (rel_h * d, 24.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "Head.ry": [(0.0, 0.0), (d0 * d, -54.0 * amp), (0.42 * d, -62.0 * amp), (dh * d, -62.0 * amp), (rel * d, -28.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftUpperArm.rx": [(0.0, -5.0), (d0 * d, 78.0 * amp), (0.42 * d, 84.0 * amp), (dh * d, 84.0 * amp), (rel * d, 92.0 * amp), (rel_h * d, 82.0 * amp), (rc * d, -5.0), (1.0 * d, -5.0)],
+                "LeftUpperArm.ry": [(0.0, 0.0), (d0 * d, -36.0 * amp), (0.42 * d, -42.0 * amp), (dh * d, -42.0 * amp), (rel * d, -28.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftLowerArm.rx": [(0.0, -14.0), (d0 * d, -10.0), (dh * d, -8.0), (rel * d, -18.0 * amp), (rc * d, -14.0), (1.0 * d, -14.0)],
+                "RightUpperArm.rx": [(0.0, -5.0), (d0 * d, 48.0 * amp), (0.42 * d, 66.0 * amp), (dh * d, 66.0 * amp), (rel * d, 38.0 * amp), (rel_h * d, 22.0 * amp), (rc * d, -5.0), (1.0 * d, -5.0)],
+                "RightUpperArm.ry": [(0.0, 0.0), (d0 * d, 24.0 * amp), (0.42 * d, 56.0 * amp), (dh * d, 56.0 * amp), (rel * d, 74.0 * amp), (rel_h * d, 42.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightLowerArm.rx": [(0.0, -14.0), (d0 * d, -58.0 * amp), (0.42 * d, -96.0 * amp), (dh * d, -96.0 * amp), (rel * d, -50.0 * amp), (rel_h * d, -50.0 * amp), (rc * d, -14.0), (1.0 * d, -14.0)],
+                "RightHand.rx": [(0.0, 0.0), (0.42 * d, -18.0 * amp), (dh * d, -18.0 * amp), (rel * d, 24.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftUpperLeg.rx": [(0.0, 0.0), (0.25 * d, 12.0 * amp), (dh * d, 12.0 * amp), (rel * d, 14.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftUpperLeg.ry": [(0.0, 0.0), (d0 * d, -16.0 * amp), (dh * d, -18.0 * amp), (rel * d, -10.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftLowerLeg.rx": [(0.0, 0.0), (0.25 * d, -22.0 * amp), (dh * d, -22.0 * amp), (rel * d, -26.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftFoot.rx": [(0.0, 0.0), (0.25 * d, 10.0 * amp), (dh * d, 10.0 * amp), (rel * d, 12.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperLeg.rx": [(0.0, 0.0), (0.25 * d, 10.0 * amp), (dh * d, 10.0 * amp), (rel * d, 12.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperLeg.ry": [(0.0, 0.0), (d0 * d, -16.0 * amp), (dh * d, -18.0 * amp), (rel * d, -10.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightLowerLeg.rx": [(0.0, 0.0), (0.25 * d, -18.0 * amp), (dh * d, -18.0 * amp), (rel * d, -22.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightFoot.rx": [(0.0, 0.0), (0.25 * d, 8.0 * amp), (dh * d, 8.0 * amp), (rel * d, 10.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
             }
             markers = [
-                {"t": round(0.18 * d, 4), "name": "DrawStart", "value": "bow"},
-                {"t": round(0.58 * d, 4), "name": "FullDraw", "value": "bow"},
-                {"t": round(0.68 * d, 4), "name": "Release", "value": "arrow"},
+                {"t": round(d0 * d, 4), "name": "DrawStart", "value": "bow"},
+                {"t": round(0.42 * d, 4), "name": "FullDraw", "value": "bow"},
+                {"t": round(rel * d, 4), "name": "Release", "value": "arrow"},
             ]
             return tracks, markers
 
         if key == "shield_block":
-            # Braced guard stance: LowerTorso drops & pitches into the shield while knees/ankles
-            # maintain exact sagittal compensation (L1=1.10, L2=0.70) so feet stay planted (<0.01 studs).
+            # Braced guard stance with explicit hold plateau & exact sagittal leg compensation.
+            ant = 0.16
+            g0 = 0.36
+            g1 = min(0.80, g0 + hold_ratio * 1.45)
+            rc = 0.92
+            st_a = _planted_stance_leg(3.0 * amp, 4.0 * amp)
+            st_g = _planted_stance_leg(-5.0 * amp, 12.0 * amp)
+
             tracks = {
-                "LowerTorso.y": [(0.0, 0.0), (0.16 * d, -0.0066 * amp), (0.44 * d, -0.0617 * amp), (0.60 * d, -0.0429 * amp), (0.80 * d, -0.0519 * amp), (1.0 * d, 0.0)],
-                "LowerTorso.rx": [(0.0, 0.0), (0.16 * d, 3.0 * amp), (0.44 * d, -5.0 * amp), (0.60 * d, -3.5 * amp), (0.80 * d, -4.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.rx": [(0.0, 0.0), (0.16 * d, 6.0 * amp), (0.44 * d, -14.0 * amp), (0.60 * d, -10.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.ry": [(0.0, 0.0), (0.16 * d, 12.0 * amp), (0.44 * d, -28.0 * amp), (0.60 * d, -22.0 * amp), (1.0 * d, 0.0)],
-                "Head.ry": [(0.0, 0.0), (0.46 * d, 24.0 * amp), (0.62 * d, 18.0 * amp), (1.0 * d, 0.0)],
-                "LeftUpperArm.rx": [(0.0, -5.0), (0.16 * d, -22.0 * amp), (0.42 * d, 68.0 * amp), (0.54 * d, 56.0 * amp), (0.80 * d, 58.0 * amp), (1.0 * d, -5.0)],
-                "LeftUpperArm.ry": [(0.0, 0.0), (0.42 * d, 38.0 * amp), (0.56 * d, 32.0 * amp), (1.0 * d, 0.0)],
-                "LeftLowerArm.rx": [(0.0, -14.0), (0.16 * d, -32.0 * amp), (0.42 * d, -88.0 * amp), (0.56 * d, -78.0 * amp), (1.0 * d, -14.0)],
-                "LeftHand.ry": [(0.0, 0.0), (0.44 * d, -28.0 * amp), (0.58 * d, -22.0 * amp), (1.0 * d, 0.0)],
-                "RightUpperArm.rx": [(0.0, -5.0), (0.42 * d, -24.0 * amp), (0.80 * d, -18.0 * amp), (1.0 * d, -5.0)],
-                "RightLowerArm.rx": [(0.0, -14.0), (0.42 * d, -52.0 * amp), (1.0 * d, -14.0)],
-                "LeftUpperLeg.rx": [(0.0, 0.0), (0.16 * d, 1.0 * amp), (0.44 * d, 17.0 * amp), (0.60 * d, 13.5 * amp), (0.80 * d, 15.0 * amp), (1.0 * d, 0.0)],
-                "LeftLowerLeg.rx": [(0.0, 0.0), (0.16 * d, -10.29 * amp), (0.44 * d, -31.07 * amp), (0.60 * d, -25.84 * amp), (0.80 * d, -28.45 * amp), (1.0 * d, 0.0)],
-                "LeftFoot.rx": [(0.0, 0.0), (0.16 * d, 6.29 * amp), (0.44 * d, 19.07 * amp), (0.60 * d, 15.84 * amp), (0.80 * d, 17.45 * amp), (1.0 * d, 0.0)],
-                "RightUpperLeg.rx": [(0.0, 0.0), (0.16 * d, 1.0 * amp), (0.44 * d, 17.0 * amp), (0.60 * d, 13.5 * amp), (0.80 * d, 15.0 * amp), (1.0 * d, 0.0)],
-                "RightLowerLeg.rx": [(0.0, 0.0), (0.16 * d, -10.29 * amp), (0.44 * d, -31.07 * amp), (0.60 * d, -25.84 * amp), (0.80 * d, -28.45 * amp), (1.0 * d, 0.0)],
-                "RightFoot.rx": [(0.0, 0.0), (0.16 * d, 6.29 * amp), (0.44 * d, 19.07 * amp), (0.60 * d, 15.84 * amp), (0.80 * d, 17.45 * amp), (1.0 * d, 0.0)],
+                "LowerTorso.y": [(0.0, 0.0), (ant * d, st_a[0]), (g0 * d, st_g[0]), (g1 * d, st_g[0]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LowerTorso.rx": [(0.0, 0.0), (ant * d, 3.0 * amp), (g0 * d, -5.0 * amp), (g1 * d, -5.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "UpperTorso.rx": [(0.0, 0.0), (ant * d, 6.0 * amp), (g0 * d, -14.0 * amp), (g1 * d, -14.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "UpperTorso.ry": [(0.0, 0.0), (ant * d, 12.0 * amp), (g0 * d, -28.0 * amp), (g1 * d, -28.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "Head.ry": [(0.0, 0.0), (g0 * d, 24.0 * amp), (g1 * d, 24.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftUpperArm.rx": [(0.0, -5.0), (ant * d, -22.0 * amp), (g0 * d, 64.0 * amp), (g1 * d, 64.0 * amp), (rc * d, -5.0), (1.0 * d, -5.0)],
+                "LeftUpperArm.ry": [(0.0, 0.0), (g0 * d, 38.0 * amp), (g1 * d, 38.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftLowerArm.rx": [(0.0, -14.0), (ant * d, -32.0 * amp), (g0 * d, -86.0 * amp), (g1 * d, -86.0 * amp), (rc * d, -14.0), (1.0 * d, -14.0)],
+                "LeftHand.ry": [(0.0, 0.0), (g0 * d, -28.0 * amp), (g1 * d, -28.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperArm.rx": [(0.0, -5.0), (g0 * d, -24.0 * amp), (g1 * d, -24.0 * amp), (rc * d, -5.0), (1.0 * d, -5.0)],
+                "RightLowerArm.rx": [(0.0, -14.0), (g0 * d, -52.0 * amp), (g1 * d, -52.0 * amp), (rc * d, -14.0), (1.0 * d, -14.0)],
+                "LeftUpperLeg.rx": [(0.0, 0.0), (ant * d, st_a[1]), (g0 * d, st_g[1]), (g1 * d, st_g[1]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftLowerLeg.rx": [(0.0, 0.0), (ant * d, st_a[2]), (g0 * d, st_g[2]), (g1 * d, st_g[2]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftFoot.rx": [(0.0, 0.0), (ant * d, st_a[3]), (g0 * d, st_g[3]), (g1 * d, st_g[3]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightUpperLeg.rx": [(0.0, 0.0), (ant * d, st_a[1]), (g0 * d, st_g[1]), (g1 * d, st_g[1]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightLowerLeg.rx": [(0.0, 0.0), (ant * d, st_a[2]), (g0 * d, st_g[2]), (g1 * d, st_g[2]), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "RightFoot.rx": [(0.0, 0.0), (ant * d, st_a[3]), (g0 * d, st_g[3]), (g1 * d, st_g[3]), (rc * d, 0.0), (1.0 * d, 0.0)],
             }
             markers = [
-                {"t": round(0.14 * d, 4), "name": "BlockAnticipation", "value": "windup"},
-                {"t": round(0.42 * d, 4), "name": "BlockReady", "value": "active"},
+                {"t": round(ant * d, 4), "name": "BlockAnticipation", "value": "windup"},
+                {"t": round(g0 * d, 4), "name": "BlockReady", "value": "active"},
             ]
             return tracks, markers
 
         if key == "hit_react":
+            imp = 0.14
+            pk0 = 0.34
+            pk1 = min(0.54, pk0 + hold_ratio * 0.65)
+            rc = 0.88
             tracks = {
-                "LowerTorso.y": [(0.0, 0.0), (0.12 * d, -0.08 * amp), (0.34 * d, -0.14 * amp), (0.64 * d, 0.03 * amp), (1.0 * d, 0.0)],
-                "LowerTorso.rx": [(0.0, 0.0), (0.14 * d, 14.0 * amp), (0.38 * d, 18.0 * amp), (0.72 * d, -4.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.rx": [(0.0, 0.0), (0.14 * d, 26.0 * amp), (0.34 * d, 32.0 * amp), (0.68 * d, -8.0 * amp), (1.0 * d, 0.0)],
-                "UpperTorso.ry": [(0.0, 0.0), (0.18 * d, -18.0 * amp), (0.45 * d, -12.0 * amp), (0.75 * d, 6.0 * amp), (1.0 * d, 0.0)],
-                "Head.rx": [(0.0, 0.0), (0.16 * d, 34.0 * amp), (0.40 * d, 38.0 * amp), (0.72 * d, -12.0 * amp), (1.0 * d, 0.0)],
-                "LeftUpperArm.rx": [(0.0, -5.0), (0.18 * d, 24.0 * amp), (0.44 * d, 18.0 * amp), (1.0 * d, -5.0)],
-                "LeftUpperArm.rz": [(0.0, 8.0), (0.18 * d, 36.0 * amp), (0.44 * d, 28.0 * amp), (1.0 * d, 8.0)],
-                "RightUpperArm.rx": [(0.0, -5.0), (0.18 * d, 20.0 * amp), (0.44 * d, 14.0 * amp), (1.0 * d, -5.0)],
-                "RightUpperArm.rz": [(0.0, -8.0), (0.18 * d, -34.0 * amp), (0.44 * d, -26.0 * amp), (1.0 * d, -8.0)],
-                "LeftUpperLeg.rx": [(0.0, 0.0), (0.28 * d, 18.0 * amp), (1.0 * d, 0.0)],
-                "LeftLowerLeg.rx": [(0.0, 0.0), (0.28 * d, -34.0 * amp), (1.0 * d, 0.0)],
-                "LeftFoot.rx": [(0.0, 0.0), (0.28 * d, 16.0 * amp), (1.0 * d, 0.0)],
+                "LowerTorso.y": [(0.0, 0.0), (imp * d, -0.08 * amp), (pk0 * d, -0.14 * amp), (pk1 * d, -0.14 * amp), (0.74 * d, 0.03 * amp), (1.0 * d, 0.0)],
+                "LowerTorso.rx": [(0.0, 0.0), (imp * d, 14.0 * amp), (pk0 * d, 18.0 * amp), (pk1 * d, 18.0 * amp), (0.76 * d, -4.0 * amp), (1.0 * d, 0.0)],
+                "UpperTorso.rx": [(0.0, 0.0), (imp * d, 26.0 * amp), (pk0 * d, 32.0 * amp), (pk1 * d, 32.0 * amp), (0.74 * d, -8.0 * amp), (1.0 * d, 0.0)],
+                "UpperTorso.ry": [(0.0, 0.0), (0.18 * d, -18.0 * amp), (pk1 * d, -14.0 * amp), (0.78 * d, 6.0 * amp), (1.0 * d, 0.0)],
+                "Head.rx": [(0.0, 0.0), (0.18 * d, 34.0 * amp), (pk0 * d, 38.0 * amp), (pk1 * d, 38.0 * amp), (0.76 * d, -12.0 * amp), (1.0 * d, 0.0)],
+                "LeftUpperArm.rx": [(0.0, -5.0), (0.20 * d, 24.0 * amp), (pk1 * d, 20.0 * amp), (rc * d, -5.0), (1.0 * d, -5.0)],
+                "LeftUpperArm.rz": [(0.0, 8.0), (0.20 * d, 36.0 * amp), (pk1 * d, 30.0 * amp), (rc * d, 8.0), (1.0 * d, 8.0)],
+                "RightUpperArm.rx": [(0.0, -5.0), (0.20 * d, 20.0 * amp), (pk1 * d, 16.0 * amp), (rc * d, -5.0), (1.0 * d, -5.0)],
+                "RightUpperArm.rz": [(0.0, -8.0), (0.20 * d, -34.0 * amp), (pk1 * d, -28.0 * amp), (rc * d, -8.0), (1.0 * d, -8.0)],
+                "LeftUpperLeg.rx": [(0.0, 0.0), (0.28 * d, 18.0 * amp), (pk1 * d, 18.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftLowerLeg.rx": [(0.0, 0.0), (0.28 * d, -34.0 * amp), (pk1 * d, -34.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
+                "LeftFoot.rx": [(0.0, 0.0), (0.28 * d, 16.0 * amp), (pk1 * d, 16.0 * amp), (rc * d, 0.0), (1.0 * d, 0.0)],
             }
             markers = [
-                {"t": round(0.12 * d, 4), "name": "Impact", "value": "hit"},
-                {"t": round(0.36 * d, 4), "name": "PeakRecoil", "value": "recoil"},
+                {"t": round(imp * d, 4), "name": "Impact", "value": "hit"},
+                {"t": round(pk0 * d, 4), "name": "PeakRecoil", "value": "recoil"},
             ]
             return tracks, markers
 
         if key == "death":
+            st0 = 0.16
+            st1 = min(0.32, st0 + hold_ratio * 0.45)
             tracks = {
-                "LowerTorso.y": [(0.0, 0.0), (0.16 * d, -0.06 * amp), (0.42 * d, -0.65), (0.72 * d, -1.65), (0.86 * d, -1.52), (1.0 * d, -1.62)],
-                "LowerTorso.rx": [(0.0, 0.0), (0.16 * d, 14.0 * amp), (0.44 * d, 42.0), (0.72 * d, 82.0), (0.86 * d, 76.0), (1.0 * d, 84.0)],
-                "UpperTorso.rx": [(0.0, 0.0), (0.18 * d, 24.0 * amp), (0.48 * d, 28.0), (0.76 * d, 12.0), (0.90 * d, 4.0), (1.0 * d, 8.0)],
-                "UpperTorso.ry": [(0.0, 0.0), (0.25 * d, -14.0), (0.75 * d, 18.0), (1.0 * d, 14.0)],
-                "Head.rx": [(0.0, 0.0), (0.22 * d, 26.0), (0.55 * d, -18.0), (0.82 * d, 22.0), (1.0 * d, 12.0)],
-                "LeftUpperArm.rz": [(0.0, 8.0), (0.25 * d, 42.0), (0.72 * d, 74.0), (0.88 * d, 62.0), (1.0 * d, 68.0)],
-                "RightUpperArm.rz": [(0.0, -8.0), (0.25 * d, -38.0), (0.72 * d, -68.0), (0.88 * d, -56.0), (1.0 * d, -64.0)],
-                "LeftLowerArm.rx": [(0.0, -14.0), (0.50 * d, -32.0), (0.84 * d, -8.0), (1.0 * d, -12.0)],
-                "RightLowerArm.rx": [(0.0, -14.0), (0.50 * d, -28.0), (0.84 * d, -10.0), (1.0 * d, -14.0)],
-                "LeftUpperLeg.rx": [(0.0, 0.0), (0.30 * d, 32.0), (0.72 * d, 14.0), (1.0 * d, 8.0)],
-                "LeftLowerLeg.rx": [(0.0, 0.0), (0.30 * d, -64.0), (0.72 * d, -24.0), (1.0 * d, -12.0)],
-                "RightUpperLeg.rx": [(0.0, 0.0), (0.32 * d, 26.0), (0.72 * d, 10.0), (1.0 * d, 6.0)],
-                "RightLowerLeg.rx": [(0.0, 0.0), (0.32 * d, -52.0), (0.72 * d, -18.0), (1.0 * d, -10.0)],
+                "LowerTorso.y": [(0.0, 0.0), (st0 * d, -0.06 * amp), (st1 * d, -0.06 * amp), (0.50 * d, -0.65), (0.74 * d, -1.65), (0.86 * d, -1.52), (1.0 * d, -1.62)],
+                "LowerTorso.rx": [(0.0, 0.0), (st0 * d, 14.0 * amp), (st1 * d, 14.0 * amp), (0.52 * d, 44.0), (0.74 * d, 82.0), (0.86 * d, 76.0), (1.0 * d, 84.0)],
+                "UpperTorso.rx": [(0.0, 0.0), (0.18 * d, 24.0 * amp), (st1 * d, 24.0 * amp), (0.52 * d, 28.0), (0.78 * d, 12.0), (0.90 * d, 4.0), (1.0 * d, 8.0)],
+                "UpperTorso.ry": [(0.0, 0.0), (0.28 * d, -14.0), (0.76 * d, 18.0), (1.0 * d, 14.0)],
+                "Head.rx": [(0.0, 0.0), (0.22 * d, 26.0), (0.56 * d, -18.0), (0.82 * d, 22.0), (1.0 * d, 12.0)],
+                "LeftUpperArm.rz": [(0.0, 8.0), (0.28 * d, 42.0), (0.74 * d, 74.0), (0.88 * d, 62.0), (1.0 * d, 68.0)],
+                "RightUpperArm.rz": [(0.0, -8.0), (0.28 * d, -38.0), (0.74 * d, -68.0), (0.88 * d, -56.0), (1.0 * d, -64.0)],
+                "LeftLowerArm.rx": [(0.0, -14.0), (0.52 * d, -32.0), (0.84 * d, -8.0), (1.0 * d, -12.0)],
+                "RightLowerArm.rx": [(0.0, -14.0), (0.52 * d, -28.0), (0.84 * d, -10.0), (1.0 * d, -14.0)],
+                "LeftUpperLeg.rx": [(0.0, 0.0), (0.34 * d, 32.0), (0.74 * d, 14.0), (1.0 * d, 8.0)],
+                "LeftLowerLeg.rx": [(0.0, 0.0), (0.34 * d, -64.0), (0.74 * d, -24.0), (1.0 * d, -12.0)],
+                "RightUpperLeg.rx": [(0.0, 0.0), (0.36 * d, 26.0), (0.74 * d, 10.0), (1.0 * d, 6.0)],
+                "RightLowerLeg.rx": [(0.0, 0.0), (0.36 * d, -52.0), (0.74 * d, -18.0), (1.0 * d, -10.0)],
             }
             markers = [
-                {"t": round(0.16 * d, 4), "name": "Stagger", "value": "hit"},
-                {"t": round(0.72 * d, 4), "name": "Grounded", "value": "floor"},
+                {"t": round(st0 * d, 4), "name": "Stagger", "value": "hit"},
+                {"t": round(0.74 * d, 4), "name": "Grounded", "value": "floor"},
             ]
             return tracks, markers
 
@@ -977,10 +1178,10 @@ class RigAnimationEngine:
             "LowerTorso.rz": [(0.0, 0.0), (0.14 * d, 3.0 * amp), (0.36 * d, -4.5 * amp), (0.78 * d, -3.5 * amp), (1.0 * d, 0.0)],
             "UpperTorso.rz": [(0.0, 0.0), (0.14 * d, 5.0 * amp), (0.36 * d, -8.0 * amp), (0.76 * d, -6.0 * amp), (1.0 * d, 0.0)],
             "Head.rz": [(0.0, 0.0), (0.36 * d, 10.0 * amp), (0.76 * d, 8.0 * amp), (1.0 * d, 0.0)],
-            "RightUpperArm.rx": [(0.0, -5.0), (0.14 * d, -18.0 * amp), (0.34 * d, 118.0 * amp), (0.48 * d, 128.0 * amp), (0.78 * d, 118.0 * amp), (1.0 * d, -5.0)],
-            "RightUpperArm.rz": [(0.0, -8.0), (0.14 * d, 4.0 * amp), (0.34 * d, -42.0 * amp), (0.50 * d, -32.0 * amp), (0.65 * d, -48.0 * amp), (0.80 * d, -34.0 * amp), (1.0 * d, -8.0)],
-            "RightLowerArm.rx": [(0.0, -14.0), (0.16 * d, -36.0 * amp), (0.38 * d, -48.0 * amp), (0.52 * d, -20.0 * amp), (0.66 * d, -54.0 * amp), (0.80 * d, -22.0 * amp), (1.0 * d, -14.0)],
-            "RightHand.rz": [(0.0, 0.0), (0.38 * d, -24.0 * amp), (0.52 * d, 26.0 * amp), (0.66 * d, -28.0 * amp), (0.80 * d, 22.0 * amp), (1.0 * d, 0.0)],
+            "RightUpperArm.rx": [(0.0, -5.0), (0.14 * d, -18.0 * amp), (0.34 * d, 118.0 * amp), (0.48 * d, 128.0 * amp), (0.78 * d, 118.0 * amp), (0.94 * d, -5.0), (1.0 * d, -5.0)],
+            "RightUpperArm.rz": [(0.0, -8.0), (0.14 * d, 4.0 * amp), (0.34 * d, -42.0 * amp), (0.50 * d, -32.0 * amp), (0.65 * d, -48.0 * amp), (0.80 * d, -34.0 * amp), (0.94 * d, -8.0), (1.0 * d, -8.0)],
+            "RightLowerArm.rx": [(0.0, -14.0), (0.16 * d, -36.0 * amp), (0.38 * d, -48.0 * amp), (0.52 * d, -20.0 * amp), (0.66 * d, -54.0 * amp), (0.80 * d, -22.0 * amp), (0.94 * d, -14.0), (1.0 * d, -14.0)],
+            "RightHand.rz": [(0.0, 0.0), (0.38 * d, -24.0 * amp), (0.52 * d, 26.0 * amp), (0.66 * d, -28.0 * amp), (0.80 * d, 22.0 * amp), (0.94 * d, 0.0), (1.0 * d, 0.0)],
             "LeftUpperArm.rz": [(0.0, 8.0), (0.45 * d, 14.0 * amp), (1.0 * d, 8.0)],
             "LeftUpperLeg.rz": [(0.0, 0.0), (0.14 * d, -3.0 * amp), (0.36 * d, 4.5 * amp), (0.78 * d, 3.5 * amp), (1.0 * d, 0.0)],
             "RightUpperLeg.rz": [(0.0, 0.0), (0.14 * d, -3.0 * amp), (0.36 * d, 4.5 * amp), (0.78 * d, 3.5 * amp), (1.0 * d, 0.0)],
@@ -996,14 +1197,242 @@ class RigAnimationEngine:
         preset_names: Optional[List[str]] = None,
         fps: float = 30.0,
         intensity: float = 1.0,
+        style: str = "heavy_souls",
+        tempo_scale: float = 1.0,
     ) -> Dict[str, Any]:
         """Generate multiple procedural clips keyed by name (for compile_animation_from_clips_luau)."""
         names = preset_names or list(PROCEDURAL_PRESET_CATALOG.keys())
         clips: Dict[str, Dict[str, Any]] = {}
         for pname in names:
-            clip = self.generate_procedural_preset(pname, fps=fps, intensity=intensity)
+            clip = self.generate_procedural_preset(
+                pname,
+                fps=fps,
+                intensity=intensity,
+                style=style,
+                tempo_scale=tempo_scale,
+            )
             clips[clip["name"]] = clip
-        return {"ok": True, "count": len(clips), "clips": clips}
+        return {"ok": True, "count": len(clips), "style": self._resolve_style_key(style), "clips": clips}
+
+    def compose_custom_clip(
+        self,
+        clip_spec: Dict[str, Any],
+        *,
+        style: str = "heavy_souls",
+        tempo_scale: float = 1.0,
+        fps: float = 30.0,
+        auto_ground_feet: bool = True,
+    ) -> Dict[str, Any]:
+        """Compose a custom expressive R15 clip from keyposes or channel_tracks + markers.
+
+        Accepts:
+        - `keyposes`: `[{t, hold?, poses: {Joint: {pos?, rot?|rot_deg?}}}]`
+        - OR `channel_tracks`: `{"UpperTorso.rx": [(t, v), ...], ...}`
+        Applies Catmull-Rom/Hermite spline interpolation with flat hold plateaus,
+        style-driven secondary joint phase lag, optional automatic foot grounding,
+        and runs `analyze_clip`, returning the full clip dict + `"analysis"`.
+        """
+        if not isinstance(clip_spec, dict):
+            raise ValueError("clip_spec must be a dictionary.")
+
+        style_key = self._resolve_style_key(style)
+        profile = ANIMATION_STYLE_PROFILES[style_key]
+        eff_tempo = max(0.25, min(4.0, float(tempo_scale))) * float(profile["default_tempo_scale"])
+        fps_val = max(12.0, min(120.0, float(clip_spec.get("fps", fps))))
+
+        name = str(clip_spec.get("name", "CustomAnimation"))
+        loop = bool(clip_spec.get("loop", clip_spec.get("looped", False)))
+        priority = str(clip_spec.get("priority", "Action"))
+        root_name = str(clip_spec.get("rootName", "HumanoidRootPart"))
+        parents = dict(clip_spec.get("parents") or DEFAULT_R15_PARENTS)
+        expected_kind = clip_spec.get("expected_kind") or clip_spec.get("kind")
+
+        tracks: Dict[str, List[Tuple[float, float]]] = {}
+        raw_markers = list(clip_spec.get("markers") or [])
+        markers: List[Dict[str, Any]] = []
+        for m in raw_markers:
+            if isinstance(m, dict) and m.get("name"):
+                markers.append({
+                    "t": round(max(0.0, float(m.get("t", 0.0))) * eff_tempo, 4),
+                    "name": str(m["name"]),
+                    "value": str(m.get("value", "")),
+                })
+
+        raw_channel_tracks = clip_spec.get("channel_tracks")
+        raw_keyposes = clip_spec.get("keyposes") or clip_spec.get("keyframes")
+
+        def _extract_pos_rot_deg(p_spec: Dict[str, Any]) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+            pos_raw = p_spec.get("pos", [0.0, 0.0, 0.0])
+            pos_t = (float(pos_raw[0]), float(pos_raw[1]), float(pos_raw[2])) if len(pos_raw) == 3 else (0.0, 0.0, 0.0)
+            if "rot_deg" in p_spec and len(p_spec["rot_deg"]) == 3:
+                rot_t = (float(p_spec["rot_deg"][0]), float(p_spec["rot_deg"][1]), float(p_spec["rot_deg"][2]))
+            elif "rot" in p_spec and len(p_spec["rot"]) == 3:
+                rot_t = (float(p_spec["rot"][0]), float(p_spec["rot"][1]), float(p_spec["rot"][2]))
+            elif "rot" in p_spec and len(p_spec["rot"]) == 9:
+                rot_t = _mat3_to_euler_deg(p_spec["rot"])
+            else:
+                rot_t = (
+                    float(p_spec.get("rx", 0.0)),
+                    float(p_spec.get("ry", 0.0)),
+                    float(p_spec.get("rz", 0.0)),
+                )
+            return pos_t, rot_t
+
+        duration = 0.0
+        if isinstance(raw_channel_tracks, dict) and raw_channel_tracks:
+            for ch_name, raw_pts in raw_channel_tracks.items():
+                if not isinstance(raw_pts, (list, tuple)) or not raw_pts:
+                    continue
+                pts: List[Tuple[float, float]] = []
+                shift = 0.0
+                for pt in raw_pts:
+                    if isinstance(pt, dict):
+                        t_pt = float(pt.get("t", pt.get("time", 0.0))) * eff_tempo + shift
+                        v_pt = float(pt.get("v", pt.get("value", 0.0)))
+                        h_pt = max(0.0, float(pt.get("hold", 0.0))) * eff_tempo
+                    else:
+                        t_pt = float(pt[0]) * eff_tempo + shift
+                        v_pt = float(pt[1])
+                        h_pt = 0.0
+                    if pts and t_pt <= pts[-1][0]:
+                        t_pt = pts[-1][0] + 0.02
+                    pts.append((t_pt, v_pt))
+                    if h_pt > 1e-5:
+                        pts.append((t_pt + h_pt, v_pt))
+                    duration = max(duration, pts[-1][0])
+                tracks[str(ch_name)] = pts
+            if clip_spec.get("duration") is not None:
+                duration = max(duration, float(clip_spec["duration"]) * eff_tempo)
+
+        elif isinstance(raw_keyposes, (list, tuple)) and raw_keyposes:
+            sorted_kps = sorted(
+                raw_keyposes,
+                key=lambda kp: float(kp.get("t", kp.get("time", 0.0))),
+            )
+            expanded_kps: List[Tuple[float, float, Dict[str, Any]]] = []
+            prev_end = -1e-6
+            extra_shift = 0.0
+            for kp in sorted_kps:
+                t_raw = float(kp.get("t", kp.get("time", 0.0))) * eff_tempo + extra_shift
+                if t_raw <= prev_end:
+                    delta = (prev_end + 0.025) - t_raw
+                    t_raw += delta
+                    extra_shift += delta
+                hold_val = max(0.0, float(kp.get("hold", 0.0))) * eff_tempo
+                prev_end = t_raw + hold_val
+                expanded_kps.append((t_raw, hold_val, kp.get("poses") or {}))
+                duration = max(duration, prev_end)
+
+            if clip_spec.get("duration") is not None:
+                duration = max(duration, float(clip_spec["duration"]) * eff_tempo)
+            duration = max(0.25, duration)
+
+            used_bones: set[str] = set()
+            for _, _, pose_map in expanded_kps:
+                for bname in pose_map:
+                    used_bones.add(bname)
+                    if bname not in parents:
+                        parents[bname] = root_name
+
+            for bname in sorted(used_bones):
+                axis_pts: Dict[str, List[Tuple[float, float]]] = {ax: [] for ax in ("x", "y", "z", "rx", "ry", "rz")}
+                for t_kp, hold_val, pose_map in expanded_kps:
+                    if bname not in pose_map:
+                        continue
+                    pos_t, rot_t = _extract_pos_rot_deg(pose_map[bname])
+                    vals = {"x": pos_t[0], "y": pos_t[1], "z": pos_t[2], "rx": rot_t[0], "ry": rot_t[1], "rz": rot_t[2]}
+                    for ax, val in vals.items():
+                        axis_pts[ax].append((t_kp, val))
+                        if hold_val > 1e-5:
+                            axis_pts[ax].append((t_kp + hold_val, val))
+                for ax, pts in axis_pts.items():
+                    if not pts:
+                        continue
+                    if any(abs(v) > 1e-6 for _, v in pts):
+                        if pts[0][0] > 1e-5:
+                            pts.insert(0, (0.0, 0.0))
+                        if pts[-1][0] < duration - 1e-5:
+                            end_v = pts[0][1] if loop else 0.0
+                            pts.append((duration, end_v))
+                        tracks[f"{bname}.{ax}"] = pts
+        else:
+            raise ValueError("clip_spec must provide non-empty 'keyposes' or 'channel_tracks'.")
+
+        duration = max(0.25, duration)
+        n_frames = max(12, int(round(duration * fps_val)) + 1)
+        times = [round(duration * i / (n_frames - 1), 5) for i in range(n_frames)]
+
+        lag_mul = max(0.4, min(1.6, float(profile.get("lag_scale", 1.0)))) * min(1.0, duration / 0.95)
+        bone_lags: Dict[str, float] = {
+            "UpperTorso": 0.032 * lag_mul,
+            "Head": 0.068 * lag_mul,
+            "LeftUpperArm": 0.050 * lag_mul,
+            "RightUpperArm": 0.050 * lag_mul,
+            "LeftLowerArm": 0.082 * lag_mul,
+            "RightLowerArm": 0.082 * lag_mul,
+            "LeftHand": 0.110 * lag_mul,
+            "RightHand": 0.110 * lag_mul,
+        }
+
+        all_bones = sorted(set(parents.keys()) | {k.split(".", 1)[0] for k in tracks})
+        inferred_kind = self._infer_expected_kind(name, str(expected_kind) if expected_kind else None)
+        lt_y_track = tracks.get("LowerTorso.y", [(0.0, 0.0)])
+        is_airborne_or_collapse = (
+            inferred_kind in ("jump", "death")
+            or (max((v for _, v in lt_y_track), default=0.0) > 0.25)
+            or (min((v for _, v in lt_y_track), default=0.0) < -0.55)
+        )
+
+        frames: List[Dict[str, Any]] = []
+        for idx, t in enumerate(times):
+            eval_t_base = 0.0 if (loop and idx == n_frames - 1) else t
+            env = 1.0 if loop else math.sin(math.pi * max(0.0, min(1.0, eval_t_base / max(1e-5, duration))))
+            poses: Dict[str, Dict[str, List[float]]] = {}
+            for bname in all_bones:
+                lag = bone_lags.get(bname, 0.0) * env
+                bt = _clamp_phase_lag(eval_t_base, lag, duration, loop)
+                px = _sample_channel(tracks.get(f"{bname}.x", []), bt)
+                py = _sample_channel(tracks.get(f"{bname}.y", []), bt)
+                pz = _sample_channel(tracks.get(f"{bname}.z", []), bt)
+                rx = _sample_channel(tracks.get(f"{bname}.rx", []), bt)
+                ry = _sample_channel(tracks.get(f"{bname}.ry", []), bt)
+                rz = _sample_channel(tracks.get(f"{bname}.rz", []), bt)
+                poses[bname] = {
+                    "pos": [round(px, 6), round(py, 6), round(pz, 6)],
+                    "rot": self._euler_deg_to_rot9(rx, ry, rz),
+                }
+
+            if auto_ground_feet and "LowerTorso" in poses:
+                world_f = _solve_r15_world_frames(poses)
+                min_foot_y = min(world_f["LeftFoot"][0][1], world_f["RightFoot"][0][1])
+                if is_airborne_or_collapse:
+                    ground_corr = max(0.0, 0.15 - min_foot_y)
+                else:
+                    ground_corr = 0.15 - min_foot_y
+                if abs(ground_corr) > 1e-5:
+                    poses["LowerTorso"]["pos"][1] = round(float(poses["LowerTorso"]["pos"][1]) + ground_corr, 6)
+
+            frames.append({"t": t, "poses": poses})
+
+        clip: Dict[str, Any] = {
+            "name": name,
+            "loop": loop,
+            "priority": priority,
+            "fps": fps_val,
+            "rootName": root_name,
+            "parents": parents,
+            "frames": frames,
+            "markers": markers,
+        }
+        analysis = self.analyze_clip(clip, expected_kind=str(expected_kind) if expected_kind else None)
+        return {
+            "ok": True,
+            **clip,
+            "style": style_key,
+            "tempo_scale": round(eff_tempo, 4),
+            "duration_sec": round(duration, 4),
+            "analysis": analysis,
+        }
 
     # ------------------------------------------------------------------
     # Animation Quality Analyzer
@@ -1541,6 +1970,546 @@ return HttpService:JSONEncode({{
 	priority = tostring(track.Priority),
 	looped = track.Looped,
 	evaluationThrottled = animator.EvaluationThrottled,
+}})
+"""
+
+    @staticmethod
+    def _pose_eval_luau_helpers() -> str:
+        """Return shared --!strict Luau helpers for Edit-mode AnimationClip evaluation & Motor6D.Transform preview."""
+        return """local function resolveInstance(pathStr: string): Instance?
+	if pathStr == "" then
+		return nil
+	end
+	local curr: Instance = game
+	local first = true
+	for seg in string.gmatch(pathStr, "[^%.]+") do
+		if first and seg == "game" then
+			first = false
+			continue
+		end
+		local nxt: Instance? = nil
+		if first and curr == game then
+			local okSvc, svc = pcall(function()
+				return game:GetService(seg)
+			end)
+			nxt = if okSvc then svc else curr:FindFirstChild(seg)
+		else
+			nxt = curr:FindFirstChild(seg)
+		end
+		first = false
+		if not nxt then
+			return nil
+		end
+		curr = nxt
+	end
+	return curr
+end
+
+local function findClipInstance(clipName: string, folderName: string): AnimationClip
+	local animFolder = ReplicatedStorage:FindFirstChild(folderName)
+	if animFolder then
+		local found = animFolder:FindFirstChild(clipName)
+		if found and found:IsA("AnimationClip") then
+			return found
+		end
+	end
+	local animSaves = ServerStorage:FindFirstChild("RBX_ANIMSAVES")
+	if animSaves then
+		local desc = animSaves:FindFirstChild(clipName, true)
+		if desc and desc:IsA("AnimationClip") then
+			return desc
+		end
+	end
+	error("AnimationClip '" .. clipName .. "' not found in ReplicatedStorage." .. folderName .. " or ServerStorage.RBX_ANIMSAVES")
+end
+
+local function collectKeyframePoseMap(kf: Keyframe): ({ [string]: CFrame }, { [string]: Enum.PoseEasingStyle })
+	local poseMap: { [string]: CFrame } = {}
+	local easeMap: { [string]: Enum.PoseEasingStyle } = {}
+	for _, desc in ipairs(kf:GetDescendants()) do
+		if desc:IsA("Pose") and desc.Weight > 0 then
+			poseMap[desc.Name] = desc.CFrame
+			easeMap[desc.Name] = desc.EasingStyle
+		end
+	end
+	return poseMap, easeMap
+end
+
+local function evalEaseAlpha(rawU: number, style: Enum.PoseEasingStyle?): number
+	local u = math.clamp(rawU, 0, 1)
+	if style == Enum.PoseEasingStyle.Constant then
+		return 0
+	elseif style == Enum.PoseEasingStyle.Linear then
+		return u
+	end
+	return u * u * (3 - 2 * u)
+end
+
+local function evaluateClipAtFraction(clipInst: AnimationClip, fraction: number): ({ [string]: CFrame }, number, number)
+	local frac = math.clamp(fraction, 0, 1)
+	local poses: { [string]: CFrame } = {}
+
+	if clipInst:IsA("KeyframeSequence") then
+		local kfsRaw = clipInst:GetKeyframes()
+		local kfs: { Keyframe } = {}
+		for _, item in ipairs(kfsRaw) do
+			if item:IsA("Keyframe") then
+				table.insert(kfs, item)
+			end
+		end
+		table.sort(kfs, function(a: Keyframe, b: Keyframe)
+			return a.Time < b.Time
+		end)
+		if #kfs == 0 then
+			return poses, 0, 0
+		end
+		local duration = math.max(1e-4, kfs[#kfs].Time)
+		local targetTime = frac * duration
+		local kf0: Keyframe = kfs[1]
+		local kf1: Keyframe = kfs[#kfs]
+		for _, kf in ipairs(kfs) do
+			if kf.Time <= targetTime then
+				kf0 = kf
+			end
+			if kf.Time >= targetTime then
+				kf1 = kf
+				break
+			end
+		end
+		local map0, _ = collectKeyframePoseMap(kf0)
+		local map1, ease1 = collectKeyframePoseMap(kf1)
+		local span = kf1.Time - kf0.Time
+		local rawU = if span > 1e-5 then math.clamp((targetTime - kf0.Time) / span, 0, 1) else 0
+		local seen: { [string]: boolean } = {}
+		for bName in pairs(map0) do
+			seen[bName] = true
+		end
+		for bName in pairs(map1) do
+			seen[bName] = true
+		end
+		for bName in pairs(seen) do
+			local cf0 = map0[bName] or CFrame.identity
+			local cf1 = map1[bName] or CFrame.identity
+			local alpha = evalEaseAlpha(rawU, ease1[bName])
+			poses[bName] = cf0:Lerp(cf1, alpha)
+		end
+		return poses, targetTime, duration
+	end
+
+	if clipInst:IsA("CurveAnimation") then
+		local maxTime = 0
+		for _, desc in ipairs(clipInst:GetDescendants()) do
+			if desc:IsA("FloatCurve") and desc.Length > 0 then
+				local k = desc:GetKeyAtIndex(desc.Length)
+				if k.Time > maxTime then
+					maxTime = k.Time
+				end
+			elseif desc:IsA("RotationCurve") and desc.Length > 0 then
+				local k = desc:GetKeyAtIndex(desc.Length)
+				if k.Time > maxTime then
+					maxTime = k.Time
+				end
+			end
+		end
+		local duration = math.max(1e-4, maxTime)
+		local targetTime = frac * duration
+		for _, desc in ipairs(clipInst:GetDescendants()) do
+			if desc:IsA("Folder") then
+				local posInst = desc:FindFirstChild("Position")
+				local rotInst = desc:FindFirstChild("Rotation")
+				if posInst or rotInst then
+					local px, py, pz = 0, 0, 0
+					if posInst and posInst:IsA("Vector3Curve") then
+						local okP, vx, vy, vz = pcall(function()
+							return posInst:X():GetValueAtTime(targetTime), posInst:Y():GetValueAtTime(targetTime), posInst:Z():GetValueAtTime(targetTime)
+						end)
+						if okP then
+							px = if typeof(vx) == "number" then vx else 0
+							py = if typeof(vy) == "number" then vy else 0
+							pz = if typeof(vz) == "number" then vz else 0
+						end
+					end
+					local rotCf = CFrame.identity
+					if rotInst and rotInst:IsA("RotationCurve") then
+						local okR, rVal = pcall(function()
+							return rotInst:GetValueAtTime(targetTime)
+						end)
+						if okR and typeof(rVal) == "CFrame" then
+							rotCf = (rVal :: CFrame).Rotation
+						end
+					end
+					poses[desc.Name] = CFrame.new(px, py, pz) * rotCf
+				end
+			end
+		end
+		return poses, targetTime, duration
+	end
+
+	return poses, 0, 0
+end
+
+local function applyPosesToRig(rigModel: Model, poses: { [string]: CFrame }, explicitBaseRootCf: CFrame?): number
+	local rootPart = rigModel.PrimaryPart or rigModel:FindFirstChild("HumanoidRootPart") or rigModel:FindFirstChildWhichIsA("BasePart")
+	if not (rootPart and rootPart:IsA("BasePart")) then
+		return 0
+	end
+
+	local baseRootCf: CFrame
+	if explicitBaseRootCf ~= nil then
+		baseRootCf = explicitBaseRootCf
+	else
+		local saved = rigModel:GetAttribute("__SharpRestRootCF")
+		if typeof(saved) == "CFrame" then
+			baseRootCf = saved :: CFrame
+		else
+			baseRootCf = rootPart.CFrame
+			rigModel:SetAttribute("__SharpRestRootCF", baseRootCf)
+		end
+	end
+
+	local rootPose = poses[rootPart.Name] or CFrame.identity
+	rootPart.CFrame = baseRootCf * rootPose
+
+	local motorByParent: { [BasePart]: { Motor6D } } = {}
+	local animConByParent: { [BasePart]: { AnimationConstraint } } = {}
+	local rigidByParent: { [BasePart]: { { part1: BasePart, att0: Attachment, att1: Attachment } } } = {}
+	local weldByParent: { [BasePart]: { Weld } } = {}
+
+	for _, desc in ipairs(rigModel:GetDescendants()) do
+		if desc:IsA("Motor6D") and desc.Part0 and desc.Part1 then
+			local list = motorByParent[desc.Part0]
+			if not list then
+				list = {}
+				motorByParent[desc.Part0] = list
+			end
+			table.insert(list, desc)
+		elseif desc:IsA("AnimationConstraint") and desc.Attachment0 and desc.Attachment1 then
+			local p0 = desc.Attachment0.Parent
+			local p1 = desc.Attachment1.Parent
+			if p0 and p1 and p0:IsA("BasePart") and p1:IsA("BasePart") then
+				local list = animConByParent[p0]
+				if not list then
+					list = {}
+					animConByParent[p0] = list
+				end
+				table.insert(list, desc)
+			end
+		elseif desc:IsA("RigidConstraint") and desc.Enabled and desc.Attachment0 and desc.Attachment1 then
+			local p0 = desc.Attachment0.Parent
+			local p1 = desc.Attachment1.Parent
+			if p0 and p1 and p0:IsA("BasePart") and p1:IsA("BasePart") then
+				local l1 = rigidByParent[p1]
+				if not l1 then
+					l1 = {}
+					rigidByParent[p1] = l1
+				end
+				table.insert(l1, { part1 = p0, att0 = desc.Attachment1, att1 = desc.Attachment0 })
+			end
+		elseif desc:IsA("Weld") and desc.Part0 and desc.Part1 then
+			local list = weldByParent[desc.Part0]
+			if not list then
+				list = {}
+				weldByParent[desc.Part0] = list
+			end
+			table.insert(list, desc)
+		end
+	end
+
+	local queue: { BasePart } = { rootPart }
+	local visited: { [BasePart]: boolean } = { [rootPart] = true }
+	local posedCount = 0
+	local idx = 1
+	while idx <= #queue do
+		local parentPart = queue[idx]
+		idx += 1
+
+		local motors = motorByParent[parentPart]
+		if motors then
+			for _, motor in ipairs(motors) do
+				local childPart = motor.Part1
+				if childPart and not visited[childPart] then
+					local poseCf = poses[childPart.Name] or CFrame.identity
+					motor.Transform = poseCf
+					childPart.CFrame = parentPart.CFrame * motor.C0 * poseCf * motor.C1:Inverse()
+					posedCount += 1
+					visited[childPart] = true
+					table.insert(queue, childPart)
+				end
+			end
+		end
+
+		local animCons = animConByParent[parentPart]
+		if animCons then
+			for _, ac in ipairs(animCons) do
+				local a0 = ac.Attachment0
+				local a1 = ac.Attachment1
+				local childPart = if a1 then a1.Parent else nil
+				if a0 and a1 and childPart and childPart:IsA("BasePart") and not visited[childPart] then
+					local poseCf = poses[childPart.Name] or CFrame.identity
+					ac.Transform = poseCf
+					childPart.CFrame = parentPart.CFrame * a0.CFrame * poseCf * a1.CFrame:Inverse()
+					posedCount += 1
+					visited[childPart] = true
+					table.insert(queue, childPart)
+				end
+			end
+		end
+
+		local rigids = rigidByParent[parentPart]
+		if rigids then
+			for _, rInfo in ipairs(rigids) do
+				if not visited[rInfo.part1] then
+					rInfo.part1.CFrame = parentPart.CFrame * rInfo.att0.CFrame * rInfo.att1.CFrame:Inverse()
+					visited[rInfo.part1] = true
+					table.insert(queue, rInfo.part1)
+				end
+			end
+		end
+
+		local welds = weldByParent[parentPart]
+		if welds then
+			for _, w in ipairs(welds) do
+				local childPart = w.Part1
+				if childPart and not visited[childPart] then
+					childPart.CFrame = parentPart.CFrame * w.C0 * w.C1:Inverse()
+					visited[childPart] = true
+					table.insert(queue, childPart)
+				end
+			end
+		end
+	end
+
+	return posedCount
+end"""
+
+    def compile_pose_at_time_luau(
+        self,
+        rig_path: str = "Workspace.Rig",
+        clip_name: str = "SharpAnimation",
+        folder_name: str = "Animations",
+        time_fraction: float = 0.5,
+        reset: bool = False,
+    ) -> str:
+        """Compile Edit-mode Luau evaluating a clip at `time_fraction` onto `Motor6D.Transform` + World CFrames for `screen_capture`."""
+        frac = max(0.0, min(1.0, float(time_fraction)))
+        helpers = self._pose_eval_luau_helpers()
+        return f"""--!strict
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+
+local TARGET_RIG_PATH = {json.dumps(rig_path)}
+local TARGET_CLIP_NAME = {json.dumps(clip_name)}
+local ANIM_FOLDER_NAME = {json.dumps(folder_name)}
+local TIME_FRACTION = {frac:.6g}
+local RESET_POSE = {"true" if reset else "false"}
+
+{helpers}
+
+local activePluginRec = ChangeHistoryService:GetAttribute("__SharpActiveRecordingId")
+local recId = if activePluginRec then nil else ChangeHistoryService:TryBeginRecording("SharpPosePreview", "Sharp MCP: Preview Pose At Time")
+local ok, resOrErr = xpcall(function()
+	local rig = resolveInstance(TARGET_RIG_PATH)
+	assert(rig ~= nil and rig:IsA("Model"), "Target rig Model not found: " .. TARGET_RIG_PATH)
+
+	if RESET_POSE then
+		local posedCount = applyPosesToRig(rig, {{}}, nil)
+		return {{
+			rigPath = rig:GetFullName(),
+			clipName = TARGET_CLIP_NAME,
+			reset = true,
+			posedJoints = posedCount,
+		}}
+	end
+
+	local clipInst = findClipInstance(TARGET_CLIP_NAME, ANIM_FOLDER_NAME)
+	local poses, targetTime, duration = evaluateClipAtFraction(clipInst, TIME_FRACTION)
+	local posedCount = applyPosesToRig(rig, poses, nil)
+
+	local samplePoses: {{ [string]: {{ number }} }} = {{}}
+	for jointName, cf in pairs(poses) do
+		local rx, ry, rz = cf:ToEulerAnglesXYZ()
+		samplePoses[jointName] = {{
+			math.round(math.deg(rx) * 100) / 100,
+			math.round(math.deg(ry) * 100) / 100,
+			math.round(math.deg(rz) * 100) / 100,
+		}}
+	end
+
+	return {{
+		rigPath = rig:GetFullName(),
+		clipName = clipInst.Name,
+		clipClass = clipInst.ClassName,
+		timeFraction = TIME_FRACTION,
+		timeSec = math.round(targetTime * 10000) / 10000,
+		durationSec = math.round(duration * 10000) / 10000,
+		posedJoints = posedCount,
+		samplePoses = samplePoses,
+	}}
+end, debug.traceback)
+
+if recId then
+	pcall(function()
+		ChangeHistoryService:FinishRecording(
+			recId,
+			if ok then Enum.FinishRecordingOperation.Commit else Enum.FinishRecordingOperation.Cancel
+		)
+	end)
+end
+
+if not ok then
+	error(resOrErr)
+end
+
+return HttpService:JSONEncode({{
+	ok = true,
+	recordingStatus = if (recId or activePluginRec) then "Committed" else "NoRecording",
+	result = resOrErr,
+}})
+"""
+
+    def compile_pose_strip_luau(
+        self,
+        rig_path: str = "Workspace.Rig",
+        clip_name: str = "SharpAnimation",
+        folder_name: str = "Animations",
+        sample_fractions: Tuple[float, ...] | List[float] = (0.0, 0.25, 0.55, 0.78, 1.0),
+        spacing_studs: float = 5.5,
+        cleanup: bool = False,
+    ) -> str:
+        """Compile Edit-mode Luau spawning a side-by-side pose strip across `sample_fractions` for single-screenshot QA."""
+        fracs = [max(0.0, min(1.0, float(f))) for f in (sample_fractions or (0.0, 0.25, 0.55, 0.78, 1.0))]
+        fracs_luau = "{ " + ", ".join(f"{f:.6g}" for f in fracs) + " }"
+        helpers = self._pose_eval_luau_helpers()
+        return f"""--!strict
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local Workspace = game:GetService("Workspace")
+
+local TARGET_RIG_PATH = {json.dumps(rig_path)}
+local TARGET_CLIP_NAME = {json.dumps(clip_name)}
+local ANIM_FOLDER_NAME = {json.dumps(folder_name)}
+local SAMPLE_FRACTIONS: {{ number }} = {fracs_luau}
+local SPACING_STUDS = {max(2.5, float(spacing_studs)):.4g}
+local CLEANUP_ONLY = {"true" if cleanup else "false"}
+
+{helpers}
+
+local activePluginRec = ChangeHistoryService:GetAttribute("__SharpActiveRecordingId")
+local recId = if activePluginRec then nil else ChangeHistoryService:TryBeginRecording("SharpPoseStrip", "Sharp MCP: Pose Strip Visual Preview")
+local ok, resOrErr = xpcall(function()
+	local stripName = "SharpPoseStrip_" .. TARGET_CLIP_NAME
+	local existingStrip = Workspace:FindFirstChild(stripName)
+	if existingStrip then
+		existingStrip:Destroy()
+	end
+	if CLEANUP_ONLY then
+		return {{
+			cleaned = true,
+			stripName = stripName,
+		}}
+	end
+
+	local rig = resolveInstance(TARGET_RIG_PATH)
+	assert(rig ~= nil and rig:IsA("Model"), "Target rig Model not found: " .. TARGET_RIG_PATH)
+
+	local clipInst = findClipInstance(TARGET_CLIP_NAME, ANIM_FOLDER_NAME)
+	local baseRootPart = rig.PrimaryPart or rig:FindFirstChild("HumanoidRootPart") or rig:FindFirstChildWhichIsA("BasePart")
+	assert(baseRootPart ~= nil and baseRootPart:IsA("BasePart"), "Rig must contain a root BasePart.")
+	local originCf = baseRootPart.CFrame
+
+	local stripModel = Instance.new("Model")
+	stripModel.Name = stripName
+	stripModel.Parent = Workspace
+
+	local prevArchivable = rig.Archivable
+	rig.Archivable = true
+
+	local samples: {{ any }} = {{}}
+	local count = #SAMPLE_FRACTIONS
+	local durationSec = 0
+
+	for idx, frac in ipairs(SAMPLE_FRACTIONS) do
+		local cloneInst = rig:Clone()
+		assert(cloneInst ~= nil and cloneInst:IsA("Model"), "Failed to clone rig for pose strip.")
+		cloneInst.Name = string.format("Pose_%02d_%.0fPct", idx, frac * 100)
+		for _, desc in ipairs(cloneInst:GetDescendants()) do
+			if desc:IsA("LuaSourceContainer") then
+				desc:Destroy()
+			elseif desc:IsA("BasePart") then
+				desc.Anchored = true
+			end
+		end
+		cloneInst.Parent = stripModel
+
+		local offsetX = (idx - (count + 1) * 0.5) * SPACING_STUDS
+		local slotRootCf = originCf * CFrame.new(offsetX, 0, -SPACING_STUDS * 1.1)
+		local poses, targetTime, dur = evaluateClipAtFraction(clipInst, frac)
+		durationSec = dur
+		local posedCount = applyPosesToRig(cloneInst, poses, slotRootCf)
+
+		local labelHost = cloneInst:FindFirstChild("Head") or cloneInst.PrimaryPart or cloneInst:FindFirstChildWhichIsA("BasePart")
+		if labelHost and labelHost:IsA("BasePart") then
+			local bb = Instance.new("BillboardGui")
+			bb.Name = "SharpPoseBadge"
+			bb.Size = UDim2.fromOffset(120, 32)
+			bb.StudsOffset = Vector3.new(0, 2.2, 0)
+			bb.AlwaysOnTop = true
+			bb.Parent = labelHost
+
+			local lbl = Instance.new("TextLabel")
+			lbl.Size = UDim2.fromScale(1, 1)
+			lbl.BackgroundColor3 = Color3.fromRGB(16, 20, 32)
+			lbl.BackgroundTransparency = 0.25
+			lbl.TextColor3 = Color3.fromRGB(248, 250, 252)
+			lbl.TextScaled = true
+			lbl.FontFace = Font.fromName("BuilderSans", Enum.FontWeight.Bold)
+			lbl.Text = string.format("%.0f%% (%.2fs)", frac * 100, targetTime)
+			lbl.Parent = bb
+		end
+
+		table.insert(samples, {{
+			index = idx,
+			fraction = frac,
+			timeSec = math.round(targetTime * 10000) / 10000,
+			modelPath = cloneInst:GetFullName(),
+			posedJoints = posedCount,
+		}})
+	end
+
+	rig.Archivable = prevArchivable
+
+	return {{
+		rigPath = rig:GetFullName(),
+		clipName = clipInst.Name,
+		clipClass = clipInst.ClassName,
+		durationSec = math.round(durationSec * 10000) / 10000,
+		stripPath = stripModel:GetFullName(),
+		sampleCount = #samples,
+		samples = samples,
+	}}
+end, debug.traceback)
+
+if recId then
+	pcall(function()
+		ChangeHistoryService:FinishRecording(
+			recId,
+			if ok then Enum.FinishRecordingOperation.Commit else Enum.FinishRecordingOperation.Cancel
+		)
+	end)
+end
+
+if not ok then
+	error(resOrErr)
+end
+
+return HttpService:JSONEncode({{
+	ok = true,
+	recordingStatus = if (recId or activePluginRec) then "Committed" else "NoRecording",
+	result = resOrErr,
 }})
 """
 

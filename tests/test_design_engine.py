@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import sys
@@ -8,14 +9,19 @@ import unittest
 from pathlib import Path
 from typing import Dict, List
 
+import numpy as np
 from PIL import Image, ImageDraw
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from sharp_mcp.domain_engines.art_creation_engine import ArtCreationEngine  # noqa: E402
+from sharp_mcp.domain_engines.critical_audit_engine import tokenize_luau  # noqa: E402
 from sharp_mcp.domain_engines.design_engine import (  # noqa: E402
+    ASSET_STYLE_PROFILES,
     DESIGN_PRESETS,
+    TEXTURE_STYLE_PROFILES,
     DesignEngine,
     delta_e_cie76,
     hex_to_hsl,
@@ -23,11 +29,16 @@ from sharp_mcp.domain_engines.design_engine import (  # noqa: E402
     hue_distance_deg,
     wcag_contrast_ratio,
 )
-from sharp_mcp.domain_engines.gui_engine import GuiDomainEngine  # noqa: E402
+from sharp_mcp.domain_engines.gui_engine import (  # noqa: E402
+    LAYOUT_PARADIGM_BLUEPRINTS,
+    GuiDomainEngine,
+)
+from tests.test_attachment_engine import assert_valid_luau_sanity  # noqa: E402
 
 
 SKILLS_DIR = REPO_ROOT / "sharp_mcp" / "bundled_skills"
 LIVE_SKILL_DIR = Path(os.path.expanduser("~")) / ".gemini" / "config" / "skills" / "roblox-gui"
+DESKTOP_GUI_SKILL_DIR = REPO_ROOT.parent / "02_roblox_gui" / "skill"
 
 
 def _strip_luau_comments_and_strings(src: str) -> str:
@@ -593,6 +604,208 @@ class DesignEngineTests(unittest.TestCase):
             block = builder_src[i0:i1]
             self.assertNotIn("Color3.fromRGB(", block, f"Hardcoded Color3.fromRGB found in {fn_start}")
             self.assertIn("themeColors.", block, f"Expected themeColors in {fn_start}")
+
+    def test_texture_and_asset_style_profiles_and_theme_luau(self) -> None:
+        expected_tex = {
+            "clean_vector_cel",
+            "stylized_gradient_atlas",
+            "pbr_metallic_roughness",
+            "pixel_retro_crisp",
+            "arcane_emissive_runes",
+        }
+        expected_asset = {
+            "lowpoly_flat_stylized",
+            "handpainted_fantasy_rpg",
+            "hard_surface_scifi_mecha",
+            "chibi_chunky_toon",
+            "dark_gothic_souls",
+        }
+        self.assertEqual(set(TEXTURE_STYLE_PROFILES.keys()), expected_tex)
+        self.assertEqual(set(ASSET_STYLE_PROFILES.keys()), expected_asset)
+
+        presets_res = self.engine.list_presets()
+        self.assertIn("texture_styles", presets_res)
+        self.assertIn("asset_styles", presets_res)
+        styles_res = self.engine.list_style_profiles()
+        self.assertTrue(styles_res["ok"])
+        self.assertEqual(set(styles_res["texture_styles"].keys()), expected_tex)
+        self.assertEqual(set(styles_res["asset_styles"].keys()), expected_asset)
+
+        # Auto-selection from presets
+        for pid in DESIGN_PRESETS:
+            ds = self.engine.generate_design_system(f"StyleTest {pid}", genre=pid, seed=101)
+            self.assertIn(ds["texture_style"], expected_tex)
+            self.assertIn(ds["asset_style"], expected_asset)
+            self.assertEqual(ds["texture_style_profile"]["style_id"], ds["texture_style"])
+            self.assertEqual(ds["asset_style_profile"]["style_id"], ds["asset_style"])
+
+        # Explicit override + keyword auto-selection + Luau emission
+        ds_explicit = self.engine.generate_design_system(
+            "Citadel of Eternity",
+            genre="rpg_arcane",
+            mood="dark gothic",
+            seed=202,
+            texture_style="pixel_retro_crisp",
+            asset_style="dark_gothic_souls",
+        )
+        self.assertEqual(ds_explicit["texture_style"], "pixel_retro_crisp")
+        self.assertEqual(ds_explicit["asset_style"], "dark_gothic_souls")
+
+        for mod_mode in (True, False):
+            theme_luau = self.engine.compile_theme_luau(ds_explicit, module_mode=mod_mode)
+            self.assertIn('TextureStyle = "pixel_retro_crisp"', theme_luau)
+            self.assertIn('AssetStyle = "dark_gothic_souls"', theme_luau)
+            assert_valid_luau_sanity(theme_luau, f"theme_styles_{mod_mode}")
+            toks, _ = tokenize_luau(theme_luau)
+            self.assertFalse(any(t.value == ";" for t in toks))
+
+    def test_create_pbr_texture_set_all_styles_determinism_and_luau(self) -> None:
+        art = ArtCreationEngine(design_engine=self.engine, gui_engine=self.gui_engine)
+        ds = self.engine.generate_design_system("Aether Bastion", genre="rpg_arcane", seed=303)
+
+        with tempfile.TemporaryDirectory(prefix="sharp_pbr_test_") as td:
+            root = Path(td)
+            means_metallic: Dict[str, float] = {}
+            for style_id in TEXTURE_STYLE_PROFILES:
+                out_a = root / f"{style_id}_a"
+                out_b = root / f"{style_id}_b"
+                res_a = art.create_pbr_texture_set(
+                    output_dir=str(out_a),
+                    design_system=ds,
+                    texture_style=style_id,
+                    resolution=128,
+                )
+                res_b = art.create_pbr_texture_set(
+                    output_dir=str(out_b),
+                    design_system=ds,
+                    texture_style=style_id,
+                    resolution=128,
+                )
+                self.assertTrue(res_a["ok"])
+                self.assertEqual(res_a["texture_style"], style_id)
+                self.assertEqual(res_a["resolution"], 128)
+                self.assertEqual(res_a["texture_style_profile"]["style_id"], style_id)
+
+                for map_key in ("albedo", "normal", "roughness", "metallic"):
+                    pa = Path(res_a["maps"][map_key])
+                    pb = Path(res_b["maps"][map_key])
+                    self.assertTrue(pa.is_file(), f"Missing {map_key} for {style_id}")
+                    # Deterministic byte-for-byte output
+                    self.assertEqual(
+                        hashlib.sha256(pa.read_bytes()).hexdigest(),
+                        hashlib.sha256(pb.read_bytes()).hexdigest(),
+                        f"Non-deterministic {map_key} for {style_id}",
+                    )
+                    with Image.open(pa) as im:
+                        self.assertEqual(im.size, (128, 128))
+                        if map_key == "albedo":
+                            self.assertEqual(im.mode, "RGBA")
+                        elif map_key == "normal":
+                            self.assertEqual(im.mode, "RGB")
+                            arr = np.asarray(im)
+                            self.assertGreater(int(arr[:, :, 2].mean()), 180)
+                        else:
+                            self.assertEqual(im.mode, "L")
+
+                means_metallic[style_id] = float(res_a["stats"]["mean_metallic"])
+                luau_src = Path(res_a["luau_module_path"]).read_text(encoding="utf-8")
+                self.assertTrue(luau_src.startswith("--!strict"))
+                self.assertIn("SharpSurfaceAppearance.Apply", luau_src)
+                self.assertIn(style_id, luau_src)
+                assert_valid_luau_sanity(luau_src, f"surface_appearance_{style_id}")
+                toks, dirs = tokenize_luau(luau_src)
+                self.assertEqual(dirs, ["--!strict"])
+                self.assertFalse(any(t.value == ";" for t in toks))
+
+            self.assertGreater(means_metallic["pbr_metallic_roughness"], means_metallic["clean_vector_cel"] + 0.4)
+
+    def test_uikit_composable_primitives_strict_no_semicolons_and_mirror_parity(self) -> None:
+        bundled_uikit = SKILLS_DIR / "roblox-gui" / "scripts" / "ui_theme_and_components.luau"
+        src = bundled_uikit.read_text(encoding="utf-8")
+        self.assertTrue(src.startswith("--!strict"))
+        for fn_name in (
+            "function UIKit.CreateArcGauge",
+            "function UIKit.CreateRadialWheel",
+            "function UIKit.CreateCardFan",
+            "function UIKit.CreateBookSpread",
+        ):
+            self.assertIn(fn_name, src)
+        assert_valid_luau_sanity(src, "ui_theme_and_components.luau")
+        toks, dirs = tokenize_luau(src)
+        self.assertIn("--!strict", dirs)
+        self.assertEqual([t for t in toks if t.value == ";"], [], "Semicolons are forbidden in ui_theme_and_components.luau")
+
+        # Verify 3-way SHA-256 parity and zero __pycache__ in roblox-gui mirrors
+        for mirror_root in (DESKTOP_GUI_SKILL_DIR, LIVE_SKILL_DIR):
+            if mirror_root.is_dir():
+                self.assertEqual(list(mirror_root.rglob("__pycache__")), [], f"Unexpected __pycache__ in {mirror_root}")
+                mirror_file = mirror_root / "scripts" / "ui_theme_and_components.luau"
+                self.assertTrue(mirror_file.is_file())
+                self.assertEqual(
+                    hashlib.sha256(bundled_uikit.read_bytes()).hexdigest(),
+                    hashlib.sha256(mirror_file.read_bytes()).hexdigest(),
+                    f"ui_theme_and_components.luau parity mismatch at {mirror_file}",
+                )
+
+    def test_custom_ui_authoring_guide_and_compile_custom_gui_build_luau(self) -> None:
+        expected_paradigms = {
+            "arpg_orbs",
+            "scifi_visor_radial",
+            "cozy_book_journal",
+            "card_battler_fan",
+            "street_racer_cockpit",
+            "minimal_horror_cam",
+        }
+        self.assertEqual(set(LAYOUT_PARADIGM_BLUEPRINTS.keys()), expected_paradigms)
+
+        ds = self.engine.generate_design_system("Valkyrie Horizon", genre="scifi_holo", seed=404)
+        all_guide = self.gui_engine.get_custom_ui_authoring_guide(paradigm="all", design_system=ds)
+        self.assertTrue(all_guide["ok"])
+        self.assertEqual(set(all_guide["blueprints"].keys()), expected_paradigms)
+        self.assertEqual(all_guide["design_tokens_summary"]["texture_style"], ds["texture_style"])
+
+        bad_guide = self.gui_engine.get_custom_ui_authoring_guide(paradigm="nonexistent_paradigm")
+        self.assertFalse(bad_guide["ok"])
+        self.assertEqual(set(bad_guide["available_paradigms"]), expected_paradigms)
+
+        for p_id in expected_paradigms:
+            guide = self.gui_engine.get_custom_ui_authoring_guide(paradigm=p_id, design_system=ds)
+            self.assertTrue(guide["ok"], f"Guide failed for {p_id}")
+            starter_luau = guide["starter_luau"]
+            assert_valid_luau_sanity(starter_luau, f"starter_{p_id}")
+
+            compiled = self.gui_engine.compile_custom_gui_build_luau(
+                starter_luau,
+                panel_asset_id="rbxassetid://701",
+                button_asset_id="rbxassetid://702",
+                atlas_asset_id="rbxassetid://703",
+                run_audit_after=True,
+                design_system=ds,
+                clear_previous_sharp_guis=True,
+            )
+            self.assertIn("UIThemeAndComponents", compiled)
+            self.assertIn("UIKit.BuildStyleSheet(ReplicatedStorage)", compiled)
+            self.assertIn("UIKit.ApplyDesignSystem(DesignTheme)", compiled)
+            self.assertIn("SharpManagedGui", compiled)
+            self.assertIn("__SharpActiveRecordingId", compiled)
+            self.assertIn("auditReport", compiled)
+            self.assertIn("rbxassetid://701", compiled)
+            assert_valid_luau_sanity(compiled, f"compile_custom_gui_build_luau({p_id})")
+            toks, _ = tokenize_luau(compiled)
+            self.assertGreater(len(toks), 100)
+            self.assertEqual([t for t in toks if t.value == ";"], [])
+
+        no_clear_no_audit = self.gui_engine.compile_custom_gui_build_luau(
+            LAYOUT_PARADIGM_BLUEPRINTS["arpg_orbs"]["starter_luau_example"],
+            run_audit_after=False,
+            clear_previous_sharp_guis=False,
+        )
+        self.assertIn("local clearPrev = false", no_clear_no_audit)
+        self.assertIn("if false then", no_clear_no_audit)
+        assert_valid_luau_sanity(no_clear_no_audit, "compile_custom_no_clear_no_audit")
+
+        with self.assertRaises(ValueError):
+            self.gui_engine.compile_custom_gui_build_luau("   ")
 
 
 if __name__ == "__main__":

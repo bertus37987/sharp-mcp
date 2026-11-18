@@ -15,6 +15,98 @@ from sharp_mcp.blender_installer import (
 )
 
 
+BLENDER_ASSET_STYLE_PROFILES: Dict[str, Dict[str, Any]] = {
+    "lowpoly_flat_stylized": {
+        "default_primary": "#4B9CD3",
+        "default_secondary": "#F59E0B",
+        "default_accent": "#34D399",
+        "leather_rgba": (0.20, 0.12, 0.08, 1.0),
+        "metal_metallic": 0.18,
+        "metal_roughness": 0.52,
+        "trim_metallic": 0.30,
+        "trim_roughness": 0.42,
+        "emissive_strength": 0.35,
+        "flat_shading": True,
+    },
+    "handpainted_fantasy_rpg": {
+        "default_primary": "#6E7F91",
+        "default_secondary": "#D9A441",
+        "default_accent": "#38BDF8",
+        "leather_rgba": (0.14, 0.08, 0.05, 1.0),
+        "metal_metallic": 0.72,
+        "metal_roughness": 0.34,
+        "trim_metallic": 0.88,
+        "trim_roughness": 0.24,
+        "emissive_strength": 0.60,
+        "flat_shading": False,
+    },
+    "hard_surface_scifi_mecha": {
+        "default_primary": "#334155",
+        "default_secondary": "#E2E8F0",
+        "default_accent": "#22D3EE",
+        "leather_rgba": (0.07, 0.08, 0.10, 1.0),
+        "metal_metallic": 0.92,
+        "metal_roughness": 0.22,
+        "trim_metallic": 0.90,
+        "trim_roughness": 0.18,
+        "emissive_strength": 0.95,
+        "flat_shading": False,
+    },
+    "chibi_chunky_toon": {
+        "default_primary": "#FF5E7E",
+        "default_secondary": "#FFD166",
+        "default_accent": "#06D6A0",
+        "leather_rgba": (0.22, 0.14, 0.10, 1.0),
+        "metal_metallic": 0.22,
+        "metal_roughness": 0.30,
+        "trim_metallic": 0.42,
+        "trim_roughness": 0.26,
+        "emissive_strength": 0.45,
+        "flat_shading": False,
+    },
+    "dark_gothic_souls": {
+        "default_primary": "#2D313A",
+        "default_secondary": "#9C7A3C",
+        "default_accent": "#E11D48",
+        "leather_rgba": (0.08, 0.05, 0.04, 1.0),
+        "metal_metallic": 0.84,
+        "metal_roughness": 0.42,
+        "trim_metallic": 0.86,
+        "trim_roughness": 0.36,
+        "emissive_strength": 0.70,
+        "flat_shading": False,
+    },
+}
+
+BLENDER_TEXTURE_STYLE_PROFILES: Dict[str, Dict[str, Any]] = {
+    "clean_vector_cel": {"roughness_bias": -0.04, "emissive_mul": 0.90},
+    "stylized_gradient_atlas": {"roughness_bias": 0.00, "emissive_mul": 1.00},
+    "pbr_metallic_roughness": {"roughness_bias": -0.06, "emissive_mul": 1.05},
+    "pixel_retro_crisp": {"roughness_bias": 0.12, "emissive_mul": 0.80},
+    "arcane_emissive_runes": {"roughness_bias": -0.02, "emissive_mul": 1.35},
+}
+
+_CUSTOM_SLOT_TARGETS: Dict[str, tuple[str, str, str]] = {
+    "right_hand": ("RightHand", "RightGripAttachment", "GripAttachment"),
+    "left_hand": ("LeftHand", "LeftGripAttachment", "GripAttachment"),
+    "back": ("UpperTorso", "BodyBackAttachment", "BodyBackAttachment"),
+    "front": ("UpperTorso", "BodyFrontAttachment", "BodyFrontAttachment"),
+    "chest": ("UpperTorso", "BodyFrontAttachment", "BodyFrontAttachment"),
+    "head": ("Head", "HatAttachment", "HatAttachment"),
+    "helmet": ("Head", "HatAttachment", "HatAttachment"),
+    "face": ("Head", "FaceFrontAttachment", "FaceFrontAttachment"),
+    "waist": ("LowerTorso", "WaistCenterAttachment", "WaistCenterAttachment"),
+    "hip_left": ("LowerTorso", "WaistCenterAttachment", "HolsterHipAttachment"),
+    "hip_right": ("LowerTorso", "WaistCenterAttachment", "HolsterHipAttachment"),
+    "left_shoulder": ("LeftUpperArm", "LeftShoulderAttachment", "LeftShoulderAttachment"),
+    "right_shoulder": ("RightUpperArm", "RightShoulderAttachment", "RightShoulderAttachment"),
+    "left_pauldron": ("LeftUpperArm", "LeftShoulderAttachment", "LeftShoulderAttachment"),
+    "right_pauldron": ("RightUpperArm", "RightShoulderAttachment", "RightShoulderAttachment"),
+    "left_foot": ("LeftFoot", "LeftFootAttachment", "LeftFootAttachment"),
+    "right_foot": ("RightFoot", "RightFootAttachment", "RightFootAttachment"),
+}
+
+
 def _hex_to_linear_rgba(hex_color: Optional[str], default_rgba=(0.14, 0.62, 0.96, 1.0)) -> tuple[float, float, float, float]:
     """Convert `#RRGGBB` hex string into linearized RGBA 4-tuple for Principled BSDF."""
     raw = (hex_color or "").strip().lstrip("#")
@@ -1562,5 +1654,667 @@ _run_sharp_asset_attach_pipeline()
                     paths=reg_paths,
                     description=f"Blender rigged/socketed {kind_key} ({effective_mode})",
                     tags=["blender", "equipment", kind_key, effective_mode],
+                )
+        return result
+
+    def compile_custom_bmesh_asset_bpy(
+        self,
+        *,
+        asset_name: str = "SharpCustomAsset",
+        custom_bpy_code: str = "",
+        asset_style: str = "handpainted_fantasy_rpg",
+        texture_style: str = "stylized_gradient_atlas",
+        attach_mode: str = "motor6d_weapon",
+        slot: str = "right_hand",
+        primary_hex: Optional[str] = None,
+        secondary_hex: Optional[str] = None,
+        accent_hex: Optional[str] = None,
+        output_dir: str = "",
+        export_fbx: bool = True,
+        export_glb: bool = True,
+        render_preview: bool = True,
+        execute: bool = False,
+        auto_install: bool = False,
+        execution_mode: str = "auto",
+        timeout_sec: float = 90.0,
+        project_library: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Compile & optionally execute a custom Blender 5.2 bmesh asset builder with 4 PBR slots, UV audit & preview."""
+        if custom_bpy_code and custom_bpy_code.strip():
+            try:
+                compile(custom_bpy_code, "<custom_bpy_code>", "exec")
+            except SyntaxError as exc:
+                raise ValueError(f"Invalid custom_bpy_code syntax: {exc}") from exc
+
+        anim_helpers_src = _strip_future_and_main(
+            self._read_skill_script("roblox-animation", "blender_anim_helpers.py", "01_roblox_animation/skill")
+        )
+
+        out_dir = self._resolve_output_dir(output_dir, project_library=project_library)
+        safe_asset = re.sub(r"[^a-zA-Z0-9_\-]", "_", asset_name or "SharpCustomAsset") or "SharpCustomAsset"
+
+        style_key = (asset_style or "handpainted_fantasy_rpg").strip().lower().replace("-", "_").replace(" ", "_")
+        if style_key not in BLENDER_ASSET_STYLE_PROFILES:
+            style_key = "handpainted_fantasy_rpg"
+        style_cfg = BLENDER_ASSET_STYLE_PROFILES[style_key]
+
+        tex_key = (texture_style or "stylized_gradient_atlas").strip().lower().replace("-", "_").replace(" ", "_")
+        if tex_key not in BLENDER_TEXTURE_STYLE_PROFILES:
+            tex_key = "stylized_gradient_atlas"
+        tex_cfg = BLENDER_TEXTURE_STYLE_PROFILES[tex_key]
+
+        ds_palette: Dict[str, Any] = {}
+        if project_library is not None and hasattr(project_library, "get_design_system"):
+            ds = project_library.get_design_system() or {}
+            ds_palette = ds.get("palette") or {}
+
+        p_hex = (primary_hex or str(ds_palette.get("primary") or "") or style_cfg["default_primary"]).strip()
+        s_hex = (secondary_hex or str(ds_palette.get("secondary") or "") or style_cfg["default_secondary"]).strip()
+        a_hex = (accent_hex or str(ds_palette.get("accent") or "") or style_cfg["default_accent"]).strip()
+
+        p_rgba = _hex_to_linear_rgba(p_hex, (0.42, 0.48, 0.56, 1.0))
+        s_rgba = _hex_to_linear_rgba(s_hex, (0.82, 0.62, 0.16, 1.0))
+        a_rgba = _hex_to_linear_rgba(a_hex, (0.14, 0.62, 0.96, 1.0))
+        l_rgba = tuple(float(v) for v in style_cfg["leather_rgba"])
+
+        r_bias = float(tex_cfg["roughness_bias"])
+        metal_rough = max(0.08, min(0.95, float(style_cfg["metal_roughness"]) + r_bias))
+        trim_rough = max(0.08, min(0.95, float(style_cfg["trim_roughness"]) + r_bias))
+        emit_str = round(float(style_cfg["emissive_strength"]) * float(tex_cfg["emissive_mul"]), 4)
+        flat_shading = bool(style_cfg.get("flat_shading", False))
+
+        slot_key = (slot or "right_hand").strip().lower().replace("-", "_")
+        target_limb, target_limb_att, default_item_att = _CUSTOM_SLOT_TARGETS.get(
+            slot_key, ("RightHand", "RightGripAttachment", "GripAttachment")
+        )
+        norm_attach_mode = (attach_mode or "motor6d_weapon").strip().lower()
+        sidecar_att_mode = "skinned_armor" if norm_attach_mode in ("armor_set", "skinned", "skinned_armor") else "rigid"
+
+        sidecar_file = out_dir / f"{safe_asset}_attachments.json"
+        fbx_file = out_dir / f"{safe_asset}.fbx"
+        glb_file = out_dir / f"{safe_asset}.glb"
+        preview_file = out_dir / f"{safe_asset}_preview.png"
+        generic_preview_file = out_dir / "preview.png"
+
+        compiled_py = f'''# ==============================================================================
+# Sharp MCP Compiled Blender 5.2+ Custom BMesh Asset Pipeline
+# Asset: {safe_asset} | Style: {style_key} / {tex_key} | Slot: {slot_key}
+# ==============================================================================
+from __future__ import annotations
+
+import json
+import math
+import shutil
+from pathlib import Path
+import bmesh
+import bpy
+from mathutils import Euler, Matrix, Vector
+
+# ---- blender_anim_helpers.py ----
+{anim_helpers_src}
+
+
+def _sharp_create_styled_materials():
+    specs = [
+        ("PrimaryMetal", {repr(p_rgba)}, {float(style_cfg["metal_metallic"])}, {metal_rough}, 0.0),
+        ("TrimAccent", {repr(s_rgba)}, {float(style_cfg["trim_metallic"])}, {trim_rough}, 0.0),
+        ("LeatherGrip", {repr(l_rgba)}, 0.05, 0.72, 0.0),
+        ("CoreEmblem", {repr(a_rgba)}, 0.18, 0.18, {emit_str}),
+    ]
+    mats = {{}}
+    mat_list = []
+    for slot_name, rgba, met, rough, emit in specs:
+        mat = bpy.data.materials.get(slot_name) or bpy.data.materials.new(name=slot_name)
+        mat.use_nodes = True
+        bsdf = None
+        for node in mat.node_tree.nodes:
+            if node.type == "BSDF_PRINCIPLED":
+                bsdf = node
+                break
+        if bsdf is None:
+            bsdf = mat.node_tree.nodes.new(type="ShaderNodeBsdfPrincipled")
+        bsdf.inputs["Base Color"].default_value = tuple(rgba)
+        if "Metallic" in bsdf.inputs:
+            bsdf.inputs["Metallic"].default_value = float(met)
+        if "Roughness" in bsdf.inputs:
+            bsdf.inputs["Roughness"].default_value = float(rough)
+        if emit > 0.0:
+            if "Emission Color" in bsdf.inputs:
+                bsdf.inputs["Emission Color"].default_value = tuple(rgba)
+            if "Emission Strength" in bsdf.inputs:
+                bsdf.inputs["Emission Strength"].default_value = float(emit)
+        mats[slot_name] = mat
+        mat_list.append(mat)
+    return mats, mat_list
+
+
+def _sharp_merge_sub_bm(bm, sub_bm, mat_idx: int = 0, rot_deg=(0.0, 0.0, 0.0), loc=(0.0, 0.0, 0.0)):
+    sub_bm.verts.index_update()
+    rot_mat = Euler(
+        (math.radians(float(rot_deg[0])), math.radians(float(rot_deg[1])), math.radians(float(rot_deg[2]))),
+        "XYZ",
+    ).to_matrix()
+    offset = Vector((float(loc[0]), float(loc[1]), float(loc[2])))
+    vmap = [bm.verts.new((rot_mat @ v.co) + offset) for v in sub_bm.verts]
+    for f in sub_bm.faces:
+        try:
+            nf = bm.faces.new([vmap[v.index] for v in f.verts])
+            nf.material_index = int(mat_idx)
+        except ValueError:
+            pass
+    sub_bm.free()
+
+
+def _sharp_add_box(bm, size_xyz, center_xyz=(0.0, 0.0, 0.0), rot_deg=(0.0, 0.0, 0.0), bevel_ratio: float = 0.08, mat_idx: int = 0):
+    sx, sy, sz = [max(1e-4, float(v)) for v in size_xyz]
+    sub = bmesh.new()
+    bmesh.ops.create_cube(sub, size=1.0)
+    bmesh.ops.scale(sub, vec=(sx, sy, sz), verts=sub.verts)
+    if bevel_ratio > 0.0:
+        bev = min(sx, sy, sz) * min(0.32, float(bevel_ratio))
+        if bev > 1e-4:
+            bmesh.ops.bevel(sub, geom=list(sub.edges), offset=bev, segments=1, affect="EDGES", clamp_overlap=True)
+    _sharp_merge_sub_bm(bm, sub, mat_idx=mat_idx, rot_deg=rot_deg, loc=center_xyz)
+
+
+def _sharp_add_cylinder(bm, r1: float, r2: float, depth: float, segs: int = 12, loc=(0.0, 0.0, 0.0), rot_deg=(0.0, 0.0, 0.0), mat_idx: int = 0):
+    sub = bmesh.new()
+    bmesh.ops.create_cone(
+        sub,
+        cap_ends=True,
+        cap_tris=False,
+        segments=max(4, int(segs)),
+        radius1=max(1e-4, float(r1)),
+        radius2=max(1e-4, float(r2)),
+        depth=max(1e-4, float(depth)),
+    )
+    _sharp_merge_sub_bm(bm, sub, mat_idx=mat_idx, rot_deg=rot_deg, loc=loc)
+
+
+def _sharp_add_sphere(bm, radius: float, scale_xyz=(1.0, 1.0, 1.0), segs: int = 12, rings: int = 6, loc=(0.0, 0.0, 0.0), rot_deg=(0.0, 0.0, 0.0), mat_idx: int = 0):
+    sub = bmesh.new()
+    bmesh.ops.create_uvsphere(sub, u_segments=max(6, int(segs)), v_segments=max(4, int(rings)), radius=max(1e-4, float(radius)))
+    bmesh.ops.scale(sub, vec=(float(scale_xyz[0]), float(scale_xyz[1]), float(scale_xyz[2])), verts=sub.verts)
+    _sharp_merge_sub_bm(bm, sub, mat_idx=mat_idx, rot_deg=rot_deg, loc=loc)
+
+
+def _sharp_add_tapered_blade(bm, width: float, thickness: float, length: float, tip_len: float, loc=(0.0, 0.0, 0.0), rot_deg=(0.0, 0.0, 0.0), mat_idx: int = 0):
+    sub = bmesh.new()
+    hw = max(0.01, float(width) * 0.5)
+    ht = max(0.008, float(thickness) * 0.5)
+    sh_z = max(0.05, float(length) - float(tip_len))
+    v0 = sub.verts.new((-hw, 0.0, 0.0))
+    v1 = sub.verts.new((0.0, -ht, 0.0))
+    v2 = sub.verts.new((hw, 0.0, 0.0))
+    v3 = sub.verts.new((0.0, ht, 0.0))
+    s0 = sub.verts.new((-hw * 0.72, 0.0, sh_z))
+    s1 = sub.verts.new((0.0, -ht * 0.78, sh_z))
+    s2 = sub.verts.new((hw * 0.72, 0.0, sh_z))
+    s3 = sub.verts.new((0.0, ht * 0.78, sh_z))
+    apex = sub.verts.new((0.0, 0.0, float(length)))
+    sub.faces.new([v3, v2, v1, v0])
+    for a0, a1, b1, b0 in ((v0, v1, s1, s0), (v1, v2, s2, s1), (v2, v3, s3, s2), (v3, v0, s0, s3)):
+        sub.faces.new([a0, a1, b1, b0])
+    for t0, t1 in ((s0, s1), (s1, s2), (s2, s3), (s3, s0)):
+        sub.faces.new([t0, t1, apex])
+    _sharp_merge_sub_bm(bm, sub, mat_idx=mat_idx, rot_deg=rot_deg, loc=loc)
+
+
+def _sharp_add_faceted_gem(bm, rx: float, ry: float, rz: float, loc=(0.0, 0.0, 0.0), rot_deg=(0.0, 0.0, 0.0), mat_idx: int = 3):
+    sub = bmesh.new()
+    bmesh.ops.create_icosphere(sub, subdivisions=1, radius=1.0)
+    bmesh.ops.scale(sub, vec=(float(rx), float(ry), float(rz)), verts=sub.verts)
+    _sharp_merge_sub_bm(bm, sub, mat_idx=mat_idx, rot_deg=rot_deg, loc=loc)
+
+
+def _sharp_add_curved_shell(bm, width: float, height: float, curve_depth: float, thickness: float, segs: int = 5, taper_bottom: float = 0.65, loc=(0.0, 0.0, 0.0), rot_deg=(0.0, 0.0, 0.0), mat_idx: int = 0):
+    half_segs = max(1, int(segs) // 2)
+    seg_w = float(width) / max(1, int(segs))
+    for idx in range(-half_segs, half_segs + 1):
+        u = float(idx) / max(1, half_segs)
+        px = idx * (seg_w * 0.92)
+        py = -float(curve_depth) * (1.0 - u * u * 0.85)
+        yaw = u * 26.0
+        h_local = float(height) * (1.0 - abs(u) * (1.0 - float(taper_bottom)) * 0.35)
+        _sharp_add_box(bm, (seg_w * 1.05, thickness, h_local), (loc[0] + px, loc[1] + py, loc[2]), (rot_deg[0], rot_deg[1], rot_deg[2] + yaw), bevel_ratio=0.14, mat_idx=mat_idx)
+
+
+def _sharp_rot_mat9_to_euler_deg(m9) -> list:
+    r00, r01, r02, r10, r11, r12, _r20, _r21, r22 = [float(v) for v in m9]
+    if r02 >= 0.99999:
+        ry = math.pi * 0.5
+        rx = math.atan2(r10, r11)
+        rz = 0.0
+    elif r02 <= -0.99999:
+        ry = -math.pi * 0.5
+        rx = math.atan2(-r10, r11)
+        rz = 0.0
+    else:
+        ry = math.asin(max(-1.0, min(1.0, r02)))
+        rx = math.atan2(-r12, r22)
+        rz = math.atan2(-r01, r00)
+    return [round(math.degrees(rx), 4), round(math.degrees(ry), 4), round(math.degrees(rz), 4)]
+
+
+def _sharp_build_default_custom_bm(bm):
+    # Default multi-slot stylized blade/crest artifact when custom_bpy_code is empty
+    _sharp_add_cylinder(bm, 0.068, 0.062, 0.72, segs=10, loc=(0.0, 0.0, -0.02), mat_idx=2)
+    _sharp_add_cylinder(bm, 0.11, 0.08, 0.11, segs=8, loc=(0.0, 0.0, -0.42), mat_idx=1)
+    _sharp_add_faceted_gem(bm, 0.08, 0.08, 0.10, loc=(0.0, 0.0, -0.52), mat_idx=3)
+    _sharp_add_box(bm, (0.68, 0.16, 0.14), (0.0, 0.0, 0.36), bevel_ratio=0.18, mat_idx=1)
+    _sharp_add_faceted_gem(bm, 0.09, 0.11, 0.09, loc=(0.0, 0.0, 0.36), mat_idx=3)
+    _sharp_add_tapered_blade(bm, width=0.28, thickness=0.11, length=2.45, tip_len=0.48, loc=(0.0, 0.0, 0.42), mat_idx=0)
+
+
+def _run_sharp_custom_bmesh_pipeline():
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    scene = bpy.context.scene
+    scene.unit_settings.system = "NONE"
+    scene.unit_settings.scale_length = 1.0
+
+    out_dir = Path({json.dumps(out_dir.as_posix())})
+    out_dir.mkdir(parents=True, exist_ok=True)
+    asset_name = {json.dumps(safe_asset)}
+    asset_style = {json.dumps(style_key)}
+    texture_style = {json.dumps(tex_key)}
+    attach_mode_str = {json.dumps(norm_attach_mode)}
+    slot_name = {json.dumps(slot_key)}
+    target_limb = {json.dumps(target_limb)}
+    target_limb_att = {json.dumps(target_limb_att)}
+    default_item_att = {json.dumps(default_item_att)}
+
+    mats_by_name, mat_list = _sharp_create_styled_materials()
+    user_code = {json.dumps(custom_bpy_code)}
+
+    bm = bmesh.new()
+    exec_ns = {{
+        "__name__": "__sharp_custom_bmesh__",
+        "bpy": bpy,
+        "bmesh": bmesh,
+        "math": math,
+        "Vector": Vector,
+        "Matrix": Matrix,
+        "Euler": Euler,
+        "ASSET_NAME": asset_name,
+        "ASSET_STYLE": asset_style,
+        "TEXTURE_STYLE": texture_style,
+        "ATTACH_MODE": attach_mode_str,
+        "SLOT": slot_name,
+        "PRIMARY_RGBA": {repr(p_rgba)},
+        "SECONDARY_RGBA": {repr(s_rgba)},
+        "ACCENT_RGBA": {repr(a_rgba)},
+        "SHARP_MATERIALS": mats_by_name,
+        "SHARP_MAT_LIST": mat_list,
+        "PRIMARY_MAT": mats_by_name["PrimaryMetal"],
+        "TRIM_MAT": mats_by_name["TrimAccent"],
+        "LEATHER_MAT": mats_by_name["LeatherGrip"],
+        "CORE_MAT": mats_by_name["CoreEmblem"],
+        "bm": bm,
+        "merge_sub_bm": _sharp_merge_sub_bm,
+        "add_box": _sharp_add_box,
+        "add_cylinder": _sharp_add_cylinder,
+        "add_sphere": _sharp_add_sphere,
+        "add_tapered_blade": _sharp_add_tapered_blade,
+        "add_faceted_gem": _sharp_add_faceted_gem,
+        "add_curved_shell": _sharp_add_curved_shell,
+    }}
+
+    if user_code.strip():
+        exec(compile(user_code, "<custom_bpy_code>", "exec"), exec_ns, exec_ns)
+    else:
+        _sharp_build_default_custom_bm(bm)
+
+    mesh_objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
+    if not mesh_objs:
+        if len(bm.verts) == 0:
+            raise RuntimeError("custom_bpy_code produced no MESH objects and bm has 0 vertices.")
+        mesh_data = bpy.data.meshes.new(asset_name + "_Mesh")
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(mesh_data)
+        asset_obj = bpy.data.objects.new(asset_name, mesh_data)
+        bpy.context.collection.objects.link(asset_obj)
+        for m in mat_list:
+            mesh_data.materials.append(m)
+        mesh_objs = [asset_obj]
+    bm.free()
+
+    bpy.context.view_layer.update()
+    saved_empty_worlds = [(e, e.matrix_world.copy()) for e in bpy.context.scene.objects if e.type == "EMPTY"]
+    for m_obj in mesh_objs:
+        if not m_obj.data.materials:
+            for m in mat_list:
+                m_obj.data.materials.append(m)
+
+    bpy.ops.object.select_all(action="DESELECT")
+    for m_obj in mesh_objs:
+        m_obj.select_set(True)
+    asset_obj = mesh_objs[0]
+    bpy.context.view_layer.objects.active = asset_obj
+    if len(mesh_objs) > 1:
+        bpy.ops.object.join()
+        asset_obj = bpy.context.view_layer.objects.active
+
+    asset_obj.name = asset_name
+    asset_obj.data.name = asset_name + "_Mesh"
+    bpy.ops.object.select_all(action="DESELECT")
+    asset_obj.select_set(True)
+    bpy.context.view_layer.objects.active = asset_obj
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+    bpy.context.view_layer.update()
+    for emp_obj, w_mat in saved_empty_worlds:
+        if emp_obj.parent != asset_obj:
+            emp_obj.parent = asset_obj
+            emp_obj.matrix_parent_inverse = Matrix.Identity(4)
+        emp_obj.matrix_world = w_mat
+
+    existing_mat_names = {{m.name for m in asset_obj.data.materials if m is not None}}
+    for m in mat_list:
+        if m.name not in existing_mat_names:
+            asset_obj.data.materials.append(m)
+
+    max_mat_idx = max(0, len(asset_obj.data.materials) - 1)
+    for poly in asset_obj.data.polygons:
+        if poly.material_index < 0 or poly.material_index > max_mat_idx:
+            poly.material_index = 0
+        if {repr(flat_shading)}:
+            poly.use_smooth = False
+
+    # Audit & recalculate normals
+    bm_audit = bmesh.new()
+    bm_audit.from_mesh(asset_obj.data)
+    bmesh.ops.recalc_face_normals(bm_audit, faces=bm_audit.faces)
+    non_manifold_edges = sum(1 for e in bm_audit.edges if not e.is_manifold)
+    loose_vertices = sum(1 for v in bm_audit.verts if len(v.link_edges) == 0)
+    tri_count = sum(max(1, len(f.verts) - 2) for f in bm_audit.faces)
+    vert_count = len(bm_audit.verts)
+    poly_count = len(bm_audit.faces)
+    bm_audit.to_mesh(asset_obj.data)
+    bm_audit.free()
+    asset_obj.data.update()
+
+    if tri_count <= 0:
+        raise RuntimeError("Asset mesh has 0 triangles after compilation.")
+
+    # Smart-UV fallback if UVs missing
+    uv_method = "existing"
+    if not asset_obj.data.uv_layers:
+        asset_obj.data.uv_layers.new(name="UVMap")
+        try:
+            bpy.ops.object.select_all(action="DESELECT")
+            asset_obj.select_set(True)
+            bpy.context.view_layer.objects.active = asset_obj
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_all(action="SELECT")
+            bpy.ops.uv.smart_project(angle_limit=math.radians(66.0), island_margin=0.02)
+            bpy.ops.object.mode_set(mode="OBJECT")
+            uv_method = "smart_project"
+        except Exception:
+            if bpy.context.mode != "OBJECT":
+                bpy.ops.object.mode_set(mode="OBJECT")
+            uv_data = asset_obj.data.uv_layers[0].data
+            for poly in asset_obj.data.polygons:
+                nrm = poly.normal
+                ax, ay, az = abs(float(nrm.x)), abs(float(nrm.y)), abs(float(nrm.z))
+                for loop_idx in poly.loop_indices:
+                    v_co = asset_obj.data.vertices[asset_obj.data.loops[loop_idx].vertex_index].co
+                    if az >= ax and az >= ay:
+                        uv_data[loop_idx].uv = (0.5 + 0.25 * float(v_co.x), 0.5 + 0.25 * float(v_co.y))
+                    elif ay >= ax:
+                        uv_data[loop_idx].uv = (0.5 + 0.25 * float(v_co.x), 0.5 + 0.25 * float(v_co.z))
+                    else:
+                        uv_data[loop_idx].uv = (0.5 + 0.25 * float(v_co.y), 0.5 + 0.25 * float(v_co.z))
+            uv_method = "triplanar_fallback"
+
+    # Collect or create socket empties for _attachments.json
+    socket_empties = [o for o in bpy.context.scene.objects if o.type == "EMPTY"]
+    if not socket_empties:
+        emp = bpy.data.objects.new(default_item_att, None)
+        emp.empty_display_type = "PLAIN_AXES"
+        emp.empty_display_size = 0.25
+        bpy.context.collection.objects.link(emp)
+        emp.parent = asset_obj
+        emp.matrix_parent_inverse = Matrix.Identity(4)
+        emp["roblox_attachment_role"] = "primary"
+        emp["roblox_target_limb"] = target_limb
+        emp["roblox_target_limb_attachment"] = target_limb_att
+        socket_empties = [emp]
+
+    bpy.context.view_layer.update()
+    prop_world_inv = asset_obj.matrix_world.inverted()
+    attachments_json = []
+    for idx, emp in enumerate(socket_empties):
+        rel_mat = prop_world_inv @ emp.matrix_world
+        pos_rbx, rot_mat9_rbx = matrix_to_roblox_cf(rel_mat, unit_scale=1.0)
+        rot_deg_rbx = _sharp_rot_mat9_to_euler_deg(rot_mat9_rbx)
+        attachments_json.append({{
+            "name": emp.name,
+            "role": str(emp.get("roblox_attachment_role", "primary" if idx == 0 else "secondary")),
+            "target_limb": emp.get("roblox_target_limb") or target_limb,
+            "target_limb_attachment": emp.get("roblox_target_limb_attachment") or target_limb_att,
+            "pos": [round(float(v), 5) for v in pos_rbx],
+            "rot_deg": rot_deg_rbx,
+            "rot_matrix": [round(float(v), 6) for v in rot_mat9_rbx],
+            "cframe": [round(float(v), 5) for v in (list(pos_rbx) + list(rot_mat9_rbx))],
+        }})
+
+    bbox_local = [Vector(corner) for corner in asset_obj.bound_box]
+    xs = [c.x for c in bbox_local]
+    ys = [c.y for c in bbox_local]
+    zs = [c.z for c in bbox_local]
+    dims_studs = [
+        round(max(xs) - min(xs), 4),
+        round(max(zs) - min(zs), 4),
+        round(max(ys) - min(ys), 4),
+    ]
+
+    sidecar_path = Path({json.dumps(sidecar_file.as_posix())})
+    fbx_path = Path({json.dumps(fbx_file.as_posix())})
+    glb_path = Path({json.dumps(glb_file.as_posix())})
+    preview_path = Path({json.dumps(preview_file.as_posix())})
+    generic_preview_path = Path({json.dumps(generic_preview_file.as_posix())})
+
+    # Export FBX & GLB before adding render Camera/Lights
+    if {repr(bool(export_fbx))}:
+        bpy.ops.object.select_all(action="DESELECT")
+        asset_obj.select_set(True)
+        for emp in socket_empties:
+            emp.select_set(True)
+        bpy.context.view_layer.objects.active = asset_obj
+        bpy.ops.export_scene.fbx(
+            filepath=str(fbx_path),
+            use_selection=True,
+            object_types={{"MESH", "EMPTY"}},
+            apply_scale_options="FBX_SCALE_ALL",
+            axis_forward="-Z",
+            axis_up="Y",
+            add_leaf_bones=False,
+            bake_anim=False,
+        )
+
+    if {repr(bool(export_glb))}:
+        bpy.ops.object.select_all(action="DESELECT")
+        asset_obj.select_set(True)
+        for emp in socket_empties:
+            emp.select_set(True)
+        bpy.context.view_layer.objects.active = asset_obj
+        bpy.ops.export_scene.gltf(
+            filepath=str(glb_path),
+            use_selection=True,
+            export_format="GLB",
+            export_yup=True,
+        )
+
+    # Orthographic preview render
+    preview_written = False
+    if {repr(bool(render_preview))}:
+        world = bpy.data.worlds.new("SharpPreviewWorld")
+        world.use_nodes = True
+        bg_node = next((n for n in world.node_tree.nodes if n.type == "BACKGROUND"), None)
+        if bg_node:
+            bg_node.inputs[0].default_value = (0.11, 0.13, 0.18, 1.0)
+            bg_node.inputs[1].default_value = 1.1
+        scene.world = world
+
+        bbox_world = [asset_obj.matrix_world @ Vector(c) for c in asset_obj.bound_box]
+        wxs = [c.x for c in bbox_world]
+        wys = [c.y for c in bbox_world]
+        wzs = [c.z for c in bbox_world]
+        center = Vector(((min(wxs) + max(wxs)) * 0.5, (min(wys) + max(wys)) * 0.5, (min(wzs) + max(wzs)) * 0.5))
+        max_span = max(max(wxs) - min(wxs), max(wys) - min(wys), max(wzs) - min(wzs), 0.5)
+
+        cam_data = bpy.data.cameras.new("SharpPreviewCam")
+        cam_data.type = "ORTHO"
+        cam_data.ortho_scale = max(0.6, max_span * 1.45)
+        cam_data.clip_start = 0.05
+        cam_data.clip_end = max(100.0, max_span * 20.0)
+        cam_obj = bpy.data.objects.new("SharpPreviewCam", cam_data)
+        bpy.context.collection.objects.link(cam_obj)
+        view_dir = Vector((1.0, -1.25, 0.72)).normalized()
+        cam_obj.location = center + view_dir * (max_span * 3.0 + 2.0)
+        cam_obj.rotation_euler = (center - cam_obj.location).to_track_quat("-Z", "Y").to_euler()
+        scene.camera = cam_obj
+
+        key_light_data = bpy.data.lights.new("SharpKeySun", type="SUN")
+        key_light_data.energy = 3.2
+        key_light = bpy.data.objects.new("SharpKeySun", key_light_data)
+        bpy.context.collection.objects.link(key_light)
+        key_light.rotation_euler = (math.radians(42.0), math.radians(15.0), math.radians(-35.0))
+
+        rim_light_data = bpy.data.lights.new("SharpRimSun", type="SUN")
+        rim_light_data.energy = 1.6
+        rim_light = bpy.data.objects.new("SharpRimSun", rim_light_data)
+        bpy.context.collection.objects.link(rim_light)
+        rim_light.rotation_euler = (math.radians(55.0), math.radians(-20.0), math.radians(140.0))
+
+        avail_engines = [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items]
+        for eng_cand in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT", "BLENDER_WORKBENCH", "CYCLES"):
+            if eng_cand in avail_engines:
+                scene.render.engine = eng_cand
+                break
+        scene.render.resolution_x = 512
+        scene.render.resolution_y = 512
+        scene.render.resolution_percentage = 100
+        scene.render.image_settings.file_format = "PNG"
+        scene.render.filepath = str(preview_path)
+        bpy.ops.render.render(write_still=True)
+        if preview_path.is_file():
+            shutil.copy2(preview_path, generic_preview_path)
+            preview_written = True
+
+    mat_slots = [m.name for m in asset_obj.data.materials if m is not None]
+    within_budget = bool(tri_count <= 10000)
+    is_manifold = bool(non_manifold_edges == 0)
+    audit_warnings = []
+    if not within_budget:
+        audit_warnings.append(f"Triangle count {{tri_count}} exceeds 10k Roblox MeshPart budget.")
+    if not is_manifold:
+        audit_warnings.append(f"Detected {{non_manifold_edges}} non-manifold edge(s).")
+    if loose_vertices > 0:
+        audit_warnings.append(f"Detected {{loose_vertices}} loose vertex(ices).")
+
+    mesh_stats = {{
+        "triangle_count": int(tri_count),
+        "vertex_count": int(vert_count),
+        "polygon_count": int(poly_count),
+        "non_manifold_edges": int(non_manifold_edges),
+        "loose_vertices": int(loose_vertices),
+        "material_slots": mat_slots,
+        "material_count": len(mat_slots),
+        "uv_present": bool(asset_obj.data.uv_layers),
+        "uv_method": uv_method,
+        "within_roblox_10k_budget": within_budget,
+        "is_manifold": is_manifold,
+        "warnings": audit_warnings,
+    }}
+
+    sidecar_payload = {{
+        "schema": "sharp.attachment_sidecar.v1",
+        "prop_name": asset_name,
+        "prop_kind": "custom_bmesh",
+        "asset_style": asset_style,
+        "texture_style": texture_style,
+        "attachment_mode": {json.dumps(sidecar_att_mode)},
+        "attach_mode": attach_mode_str,
+        "slot": slot_name,
+        "rig_height_studs": 5.0,
+        "prop_dimensions_studs": dims_studs,
+        "target_limb": target_limb,
+        "target_limb_attachment": target_limb_att,
+        "mesh_stats": mesh_stats,
+        "fbx_path": str(fbx_path) if {repr(bool(export_fbx))} else None,
+        "glb_path": str(glb_path) if {repr(bool(export_glb))} else None,
+        "preview_path": str(preview_path) if preview_written else None,
+        "attachments": attachments_json,
+    }}
+    sidecar_path.write_text(json.dumps(sidecar_payload, indent=2), encoding="utf-8")
+    print("SHARP_CUSTOM_BMESH_OK", json.dumps({{
+        "sidecar": str(sidecar_path),
+        "triangles": int(tri_count),
+        "non_manifold_edges": int(non_manifold_edges),
+        "preview_written": preview_written,
+    }}))
+    return sidecar_payload
+
+
+_run_sharp_custom_bmesh_pipeline()
+'''
+
+        result: Dict[str, Any] = {
+            "ok": True,
+            "pipeline": "blender_custom_bmesh_asset",
+            "asset_name": safe_asset,
+            "asset_style": style_key,
+            "texture_style": tex_key,
+            "attach_mode": norm_attach_mode,
+            "slot": slot_key,
+            "target_limb": target_limb,
+            "target_limb_attachment": target_limb_att,
+            "primary_hex": p_hex,
+            "secondary_hex": s_hex,
+            "accent_hex": a_hex,
+            "output_dir": str(out_dir),
+            "sidecar_path": str(sidecar_file),
+            "fbx_path": str(fbx_file) if export_fbx else None,
+            "glb_path": str(glb_file) if export_glb else None,
+            "preview_path": str(preview_file) if render_preview else None,
+            "compiled_bpy_code": compiled_py,
+            "executed": False,
+        }
+
+        if execute:
+            exec_res = execute_bpy_over_socket_or_headless(
+                code=compiled_py,
+                host=self.blender_host,
+                port=self.blender_port,
+                mode=execution_mode,
+                auto_install=auto_install,
+                timeout_sec=timeout_sec,
+            )
+            result["execution"] = exec_res
+            result["executed"] = bool(exec_res.get("ok"))
+            result["ok"] = bool(exec_res.get("ok"))
+            if result["executed"] and sidecar_file.is_file():
+                sidecar_obj = json.loads(sidecar_file.read_text(encoding="utf-8"))
+                ms = sidecar_obj.get("mesh_stats") or {}
+                result["sidecar"] = sidecar_obj
+                result["mesh_stats"] = ms
+                result["audit"] = {
+                    "passed": bool(ms.get("within_roblox_10k_budget")) and int(ms.get("triangle_count", 0)) > 0,
+                    "within_roblox_10k_budget": bool(ms.get("within_roblox_10k_budget")),
+                    "is_manifold": bool(ms.get("is_manifold")),
+                    "triangle_count": int(ms.get("triangle_count", 0)),
+                    "non_manifold_edges": int(ms.get("non_manifold_edges", 0)),
+                    "uv_present": bool(ms.get("uv_present")),
+                    "material_slots": ms.get("material_slots", []),
+                    "warnings": ms.get("warnings", []),
+                }
+                reg_paths = [p for p in (fbx_file, glb_file, sidecar_file, preview_file) if p.is_file()]
+                result["registered_asset_keys"] = self._register_outputs_if_present(
+                    project_library=project_library,
+                    asset_name=safe_asset,
+                    category="mesh",
+                    paths=reg_paths,
+                    description=f"Blender custom bmesh {style_key} asset ({slot_key})",
+                    tags=["blender", "custom_bmesh", style_key, tex_key, slot_key],
                 )
         return result

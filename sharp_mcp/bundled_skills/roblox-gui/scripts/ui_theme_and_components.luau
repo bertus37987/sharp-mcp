@@ -66,6 +66,8 @@ UIKit.Tokens = {
 		SurfaceMode = "dark",
 		Harmony = "triadic",
 		SeedHash = "00000000",
+		TextureStyle = "arcane_emissive_runes",
+		AssetStyle = "handpainted_fantasy_rpg",
 	},
 	Colors = {
 		BgDeep = Color3.fromRGB(22, 16, 36),
@@ -543,6 +545,12 @@ function UIKit.ApplyDesignSystem(dsOrPreset: any): { [string]: any }
 		for k, v in pairs(ds.Meta) do
 			tMeta[k] = v
 		end
+	end
+	if typeof(ds.TextureStyle) == "string" and ds.TextureStyle ~= "" then
+		(UIKit.Tokens.Meta :: any).TextureStyle = ds.TextureStyle
+	end
+	if typeof(ds.AssetStyle) == "string" and ds.AssetStyle ~= "" then
+		(UIKit.Tokens.Meta :: any).AssetStyle = ds.AssetStyle
 	end
 
 	if typeof(ds.Colors) == "table" then
@@ -1212,7 +1220,11 @@ export type StackedStrokeOptions = {
 
 function UIKit.AttachStackedStrokes(target: GuiObject, opts: StackedStrokeOptions?): (UIStroke, Instance)
 	local o = opts or ({} :: StackedStrokeOptions)
-	local lineJoin = o.LineJoin or UIKit.Tokens.Strokes.LineJoin
+	local targetCorner = target:FindFirstChildOfClass("UICorner")
+	local resolvedRadius = o.CornerRadius or (if targetCorner then targetCorner.CornerRadius else UIKit.Tokens.Radii.Button)
+	-- Roblox Miter joins on circular/pill UICorners draw solid bounding corner wedges; always use Round on circles/pills.
+	local isCircular = (resolvedRadius.Scale >= 0.49 or resolvedRadius.Offset >= 24)
+	local lineJoin = if isCircular then Enum.LineJoinMode.Round else (o.LineJoin or UIKit.Tokens.Strokes.LineJoin)
 
 	local outer = Instance.new("UIStroke")
 	outer.Name = "OuterStroke"
@@ -1223,7 +1235,7 @@ function UIKit.AttachStackedStrokes(target: GuiObject, opts: StackedStrokeOption
 	outer.LineJoinMode = lineJoin
 	pcall(function()
 		local outerAny = outer :: any
-		outerAny.BorderStrokePosition = Enum.BorderStrokePosition.Outer
+		outerAny.BorderStrokePosition = if isCircular then Enum.BorderStrokePosition.Center else Enum.BorderStrokePosition.Outer
 	end)
 	outer.Parent = target
 
@@ -1456,7 +1468,7 @@ function UIKit.ApplyGlossySurface(target: GuiObject, opts: GlossySurfaceOptions?
 		outer.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		outer.Color = o.StrokeColor or UIKit.Tokens.Colors.OutlineInk
 		outer.Thickness = o.StrokeThickness or UIKit.Tokens.Strokes.Panel
-		outer.LineJoinMode = UIKit.Tokens.Strokes.LineJoin
+		outer.LineJoinMode = if (corner.CornerRadius.Scale >= 0.49 or corner.CornerRadius.Offset >= 24) then Enum.LineJoinMode.Round else UIKit.Tokens.Strokes.LineJoin
 		outer.Parent = target
 	end
 end
@@ -2093,8 +2105,17 @@ function UIKit.CreateButton(opts: ButtonOptions): GuiButton
 	btn.Position = opts.Position or UDim2.new()
 	btn.AnchorPoint = opts.AnchorPoint or Vector2.zero
 	btn.LayoutOrder = opts.LayoutOrder or 0
-	-- Leave BackgroundColor3 unmodified when styled via UIStyles so :Hover/:Press and tag swaps apply.
-	if opts.Color ~= nil or ReplicatedStorage:FindFirstChild("UIStyles") == nil then
+	-- Leave BackgroundColor3 unmodified only when an ancestor StyleLink binds UIStyles so :Hover/:Press apply.
+	local hasStyleLink = false
+	local curAnc: Instance? = opts.Parent
+	while curAnc do
+		if curAnc:FindFirstChildOfClass("StyleLink") ~= nil then
+			hasStyleLink = true
+			break
+		end
+		curAnc = curAnc.Parent
+	end
+	if opts.Color ~= nil or ReplicatedStorage:FindFirstChild("UIStyles") == nil or not hasStyleLink then
 		btn.BackgroundColor3 = fillColor
 		btn.TextColor3 = textColor
 	end
@@ -3355,6 +3376,1177 @@ function UIKit.BindResponsiveScale(gui: ScreenGui, minScale: number?, maxScale: 
 	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(refresh)
 	refresh()
 	return uiScale
+end
+
+-- =========================================================================
+-- Composable Non-Template Layout Primitives (v0.5)
+-- =========================================================================
+
+export type ArcGaugeOptions = {
+	Name: string?,
+	Parent: Instance?,
+	Size: UDim2?,
+	Position: UDim2?,
+	AnchorPoint: Vector2?,
+	Label: string?,
+	Unit: string?,
+	Value: number?,
+	Max: number?,
+	Min: number?,
+	StartAngleDeg: number?,
+	SweepAngleDeg: number?,
+	TickCount: number?,
+	SegmentCount: number?,
+	FillColor: Color3?,
+	SecondaryColor: Color3?,
+	TrackColor: Color3?,
+	GlowEnabled: boolean?,
+	ShowTicks: boolean?,
+	ShowNeedle: boolean?,
+	OrbMode: boolean?,
+	ZIndex: number?,
+}
+
+function UIKit.CreateArcGauge(opts: ArcGaugeOptions?)
+	local o = (opts or {}) :: ArcGaugeOptions
+	local baseZ = o.ZIndex or 4
+	local minVal = o.Min or 0
+	local maxVal = math.max(minVal + 1e-4, o.Max or 100)
+	local currentVal = math.clamp(o.Value or 75, minVal, maxVal)
+	local startDeg = if o.StartAngleDeg ~= nil then o.StartAngleDeg else -135
+	local sweepDeg = if o.SweepAngleDeg ~= nil then o.SweepAngleDeg else 270
+	local tickCount = math.clamp(o.TickCount or 11, 3, 24)
+	local segCount = math.clamp(o.SegmentCount or 24, 8, 40)
+	local fillCol = o.FillColor or UIKit.Tokens.Colors.Primary
+	local secCol = o.SecondaryColor or UIKit.Tokens.Colors.Accent
+	local trackCol = o.TrackColor or UIKit.Tokens.Colors.BgInput
+	local orbMode = o.OrbMode == true
+	local showTicks = o.ShowTicks ~= false
+	local showNeedle = if o.ShowNeedle ~= nil then o.ShowNeedle else (not orbMode)
+	local glowEnabled = o.GlowEnabled ~= false
+
+	local root = Instance.new("Frame")
+	root.Name = o.Name or "ArcGauge"
+	root.Size = o.Size or UDim2.fromOffset(148, 148)
+	root.Position = o.Position or UDim2.fromScale(0.5, 0.5)
+	root.AnchorPoint = o.AnchorPoint or Vector2.new(0.5, 0.5)
+	root.BackgroundTransparency = 1
+	root.BorderSizePixel = 0
+	root.ZIndex = baseZ
+	root.Parent = o.Parent
+
+	local aspect = Instance.new("UIAspectRatioConstraint")
+	aspect.AspectRatio = 1
+	aspect.Parent = root
+
+	local glowFrame: Frame? = nil
+	if glowEnabled then
+		local glow = Instance.new("Frame")
+		glow.Name = "GlowRing"
+		glow.Size = UDim2.fromScale(0.98, 0.98)
+		glow.Position = UDim2.fromScale(0.5, 0.5)
+		glow.AnchorPoint = Vector2.new(0.5, 0.5)
+		glow.BackgroundColor3 = fillCol
+		glow.BackgroundTransparency = 0.84
+		glow.BorderSizePixel = 0
+		glow.Active = false
+		glow.ZIndex = baseZ
+		glow.Parent = root
+
+		local gCorner = Instance.new("UICorner")
+		gCorner.CornerRadius = UDim.new(1, 0)
+		gCorner.Parent = glow
+
+		local gStroke = Instance.new("UIStroke")
+		gStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		gStroke.Color = fillCol
+		gStroke.Thickness = 4
+		gStroke.Transparency = 0.45
+		gStroke.Parent = glow
+		glowFrame = glow
+	end
+
+	local dial = Instance.new("Frame")
+	dial.Name = "Dial"
+	dial.Size = UDim2.fromScale(0.88, 0.88)
+	dial.Position = UDim2.fromScale(0.5, 0.5)
+	dial.AnchorPoint = Vector2.new(0.5, 0.5)
+	dial.BackgroundColor3 = UIKit.Tokens.Colors.BgPanel
+	dial.BackgroundTransparency = 0.04
+	dial.BorderSizePixel = 0
+	dial.ZIndex = baseZ + 1
+	dial.Parent = root
+
+	local dCorner = Instance.new("UICorner")
+	dCorner.CornerRadius = UDim.new(0.5, 0)
+	dCorner.Parent = dial
+
+	UIKit.AttachStackedStrokes(dial, {
+		OuterColor = UIKit.Tokens.Colors.OutlineInk,
+		OuterThickness = math.max(2.5, UIKit.Tokens.Strokes.OuterInk * 0.75),
+		InnerColor = UIKit.Tokens.Colors.BorderBright,
+		InnerThickness = 1.5,
+		InnerTransparency = 0.55,
+		CornerRadius = UDim.new(0.5, 0),
+	})
+
+	local orbCore = Instance.new("Frame")
+	orbCore.Name = "OrbFill"
+	orbCore.Size = UDim2.fromScale(0.76, 0.76)
+	orbCore.Position = UDim2.fromScale(0.5, 0.5)
+	orbCore.AnchorPoint = Vector2.new(0.5, 0.5)
+	orbCore.BackgroundColor3 = fillCol
+	orbCore.BackgroundTransparency = if orbMode then 0.05 else 0.92
+	orbCore.BorderSizePixel = 0
+	orbCore.Visible = orbMode
+	orbCore.ZIndex = baseZ + 2
+	orbCore.Parent = dial
+
+	local oCorner = Instance.new("UICorner")
+	oCorner.CornerRadius = UDim.new(1, 0)
+	oCorner.Parent = orbCore
+
+	local orbGrad = Instance.new("UIGradient")
+	orbGrad.Name = "OrbLiquidGradient"
+	orbGrad.Rotation = -90
+	orbGrad.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, fillCol:Lerp(Color3.fromRGB(16, 12, 24), 0.25)),
+		ColorSequenceKeypoint.new(0.65, fillCol),
+		ColorSequenceKeypoint.new(1, secCol),
+	})
+	orbGrad.Parent = orbCore
+
+	local segFrames: { Frame } = {}
+	for i = 1, segCount do
+		local frac = (i - 1) / math.max(1, segCount - 1)
+		local deg = startDeg + frac * sweepDeg
+		local rad = math.rad(deg)
+		local rx = 0.5 + math.sin(rad) * 0.41
+		local ry = 0.5 - math.cos(rad) * 0.41
+
+		local seg = Instance.new("Frame")
+		seg.Name = string.format("ArcSeg_%02d", i)
+		seg.Size = UDim2.fromScale(0.085, 0.055)
+		seg.Position = UDim2.fromScale(rx, ry)
+		seg.AnchorPoint = Vector2.new(0.5, 0.5)
+		seg.Rotation = deg
+		seg.BackgroundColor3 = trackCol
+		seg.BorderSizePixel = 0
+		seg.ZIndex = baseZ + 3
+		seg.Parent = dial
+
+		local sCorner = Instance.new("UICorner")
+		sCorner.CornerRadius = UDim.new(1, 0)
+		sCorner.Parent = seg
+		table.insert(segFrames, seg)
+	end
+
+	if showTicks then
+		for i = 1, tickCount do
+			local frac = (i - 1) / math.max(1, tickCount - 1)
+			local deg = startDeg + frac * sweepDeg
+			local rad = math.rad(deg)
+			local rx = 0.5 + math.sin(rad) * 0.31
+			local ry = 0.5 - math.cos(rad) * 0.31
+
+			local tick = Instance.new("Frame")
+			tick.Name = string.format("Tick_%02d", i)
+			tick.Size = UDim2.fromOffset(2, if (i == 1 or i == tickCount or i == math.ceil(tickCount / 2)) then 8 else 5)
+			tick.Position = UDim2.fromScale(rx, ry)
+			tick.AnchorPoint = Vector2.new(0.5, 0.5)
+			tick.Rotation = deg
+			tick.BackgroundColor3 = UIKit.Tokens.Colors.TextMuted
+			tick.BackgroundTransparency = 0.25
+			tick.BorderSizePixel = 0
+			tick.ZIndex = baseZ + 3
+			tick.Parent = dial
+		end
+	end
+
+	local needlePivot = Instance.new("Frame")
+	needlePivot.Name = "NeedlePivot"
+	needlePivot.Size = UDim2.fromScale(1, 1)
+	needlePivot.Position = UDim2.fromScale(0.5, 0.5)
+	needlePivot.AnchorPoint = Vector2.new(0.5, 0.5)
+	needlePivot.BackgroundTransparency = 1
+	needlePivot.Visible = showNeedle
+	needlePivot.ZIndex = baseZ + 4
+	needlePivot.Parent = dial
+
+	local needleArm = Instance.new("Frame")
+	needleArm.Name = "NeedleArm"
+	needleArm.Size = UDim2.new(0, 3, 0.34, 0)
+	needleArm.Position = UDim2.fromScale(0.5, 0.5)
+	needleArm.AnchorPoint = Vector2.new(0.5, 1)
+	needleArm.BackgroundColor3 = secCol
+	needleArm.BorderSizePixel = 0
+	needleArm.ZIndex = baseZ + 4
+	needleArm.Parent = needlePivot
+
+	local nCorner = Instance.new("UICorner")
+	nCorner.CornerRadius = UDim.new(1, 0)
+	nCorner.Parent = needleArm
+
+	local valueLbl = Instance.new("TextLabel")
+	valueLbl.Name = "ValueLabel"
+	valueLbl.Size = UDim2.new(0.76, 0, 0.28, 0)
+	valueLbl.Position = UDim2.fromScale(0.5, 0.44)
+	valueLbl.AnchorPoint = Vector2.new(0.5, 0.5)
+	valueLbl.BackgroundTransparency = 1
+	valueLbl.TextColor3 = UIKit.Tokens.Colors.TextPrimary
+	valueLbl.TextSize = 20
+	valueLbl.TextScaled = true
+	valueLbl.FontFace = UIKit.Tokens.Fonts.Mono
+	valueLbl.ZIndex = baseZ + 5
+	valueLbl.Parent = dial
+	UIKit.AttachTextStroke(valueLbl, UIKit.Tokens.Colors.OutlineInk, 1.8, 0.1)
+
+	local vConstraint = Instance.new("UITextSizeConstraint")
+	vConstraint.MinTextSize = 11
+	vConstraint.MaxTextSize = 24
+	vConstraint.Parent = valueLbl
+
+	local titleLbl = Instance.new("TextLabel")
+	titleLbl.Name = "TitleLabel"
+	titleLbl.Size = UDim2.new(0.72, 0, 0.18, 0)
+	titleLbl.Position = UDim2.fromScale(0.5, 0.67)
+	titleLbl.AnchorPoint = Vector2.new(0.5, 0.5)
+	titleLbl.BackgroundTransparency = 1
+	titleLbl.Text = o.Label or "GAUGE"
+	titleLbl.TextColor3 = UIKit.Tokens.Colors.TextSecondary
+	titleLbl.TextSize = 12
+	titleLbl.TextTruncate = Enum.TextTruncate.AtEnd
+	titleLbl.FontFace = UIKit.Tokens.Fonts.Title
+	titleLbl.ZIndex = baseZ + 5
+	titleLbl.Parent = dial
+	UIKit.AttachTextStroke(titleLbl, UIKit.Tokens.Colors.OutlineInk, 1.4, 0.15)
+
+	local function refreshVisuals()
+		local span = math.max(1e-4, maxVal - minVal)
+		local ratio = math.clamp((currentVal - minVal) / span, 0, 1)
+		local activeSegs = ratio * segCount
+		for idx, seg in ipairs(segFrames) do
+			local segT = (idx - 1) / math.max(1, segCount - 1)
+			local segColor = fillCol:Lerp(secCol, segT)
+			if idx <= math.floor(activeSegs) then
+				seg.BackgroundColor3 = segColor
+				seg.BackgroundTransparency = 0
+			elseif idx - 1 < activeSegs then
+				seg.BackgroundColor3 = segColor
+				seg.BackgroundTransparency = 0.35
+			else
+				seg.BackgroundColor3 = trackCol
+				seg.BackgroundTransparency = 0.25
+			end
+		end
+
+		local targetAngle = startDeg + ratio * sweepDeg
+		if showNeedle then
+			if UIKit.IsReducedMotion() then
+				needlePivot.Rotation = targetAngle
+			else
+				UIKit.Tween(needlePivot, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Rotation = targetAngle })
+			end
+		end
+
+		if orbMode then
+			if ratio <= 0.01 then
+				orbGrad.Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0.0, 0.88),
+					NumberSequenceKeypoint.new(1.0, 0.88),
+				})
+			elseif ratio >= 0.99 then
+				orbGrad.Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0.0, 0.06),
+					NumberSequenceKeypoint.new(1.0, 0.06),
+				})
+			else
+				local cut = math.clamp(ratio, 0.02, 0.96)
+				orbGrad.Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0.0, 0.06),
+					NumberSequenceKeypoint.new(cut, 0.14),
+					NumberSequenceKeypoint.new(math.min(0.985, cut + 0.02), 0.88),
+					NumberSequenceKeypoint.new(1.0, 0.88),
+				})
+			end
+		end
+
+		local numTxt = tostring(math.floor(currentVal + 0.5))
+		local unitSuffix = if o.Unit and o.Unit ~= "" then (" " .. o.Unit) else ""
+		valueLbl.Text = numTxt .. unitSuffix
+	end
+
+	refreshVisuals()
+
+	local api = {
+		Root = root,
+		Dial = dial,
+		OrbFill = orbCore,
+		Glow = glowFrame,
+		ValueLabel = valueLbl,
+		TitleLabel = titleLbl,
+	} :: any
+
+	function api:SetValue(value: number, nextMax: number?)
+		if nextMax ~= nil then
+			maxVal = math.max(minVal + 1e-4, nextMax)
+		end
+		currentVal = math.clamp(value, minVal, maxVal)
+		refreshVisuals()
+	end
+
+	function api:GetValue(): number
+		return currentVal
+	end
+
+	function api:SetMax(nextMax: number)
+		maxVal = math.max(minVal + 1e-4, nextMax)
+		currentVal = math.clamp(currentVal, minVal, maxVal)
+		refreshVisuals()
+	end
+
+	function api:SetColors(nextFill: Color3, nextSecondary: Color3?)
+		fillCol = nextFill
+		if nextSecondary then
+			secCol = nextSecondary
+		end
+		orbCore.BackgroundColor3 = fillCol
+		orbGrad.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, fillCol:Lerp(Color3.fromRGB(16, 12, 24), 0.25)),
+			ColorSequenceKeypoint.new(0.65, fillCol),
+			ColorSequenceKeypoint.new(1, secCol),
+		})
+		needleArm.BackgroundColor3 = secCol
+		refreshVisuals()
+	end
+
+	return api
+end
+
+export type RadialWheelItem = {
+	Id: string?,
+	Label: string,
+	IconKey: string?,
+	IconFallback: string?,
+	Color: Color3?,
+	Description: string?,
+}
+
+export type RadialWheelOptions = {
+	Name: string?,
+	Parent: Instance?,
+	Position: UDim2?,
+	AnchorPoint: Vector2?,
+	RadiusPx: number?,
+	SegmentSizePx: number?,
+	HubSizePx: number?,
+	StartAngleDeg: number?,
+	CenterTitle: string?,
+	Items: { RadialWheelItem }?,
+	ZIndex: number?,
+	OnSelect: ((index: number, item: RadialWheelItem) -> ())?,
+	OnCenterClick: (() -> ())?,
+}
+
+function UIKit.CreateRadialWheel(opts: RadialWheelOptions?)
+	local o = (opts or {}) :: RadialWheelOptions
+	local baseZ = o.ZIndex or 8
+	local segSize = math.max(44, o.SegmentSizePx or 58)
+	local hubSize = math.max(48, o.HubSizePx or 72)
+	local radiusPx = math.max(math.ceil(hubSize * 0.5 + segSize * 0.5 + 12), o.RadiusPx or 108)
+	local startDeg = if o.StartAngleDeg ~= nil then o.StartAngleDeg else -90
+	local centerDefault = o.CenterTitle or "SELECT"
+
+	local wheelDim = (radiusPx + math.ceil(segSize * 0.5) + 14) * 2
+	local root = Instance.new("Frame")
+	root.Name = o.Name or "RadialWheel"
+	root.Size = UDim2.fromOffset(wheelDim, wheelDim)
+	root.Position = o.Position or UDim2.fromScale(0.5, 0.5)
+	root.AnchorPoint = o.AnchorPoint or Vector2.new(0.5, 0.5)
+	root.BackgroundTransparency = 1
+	root.BorderSizePixel = 0
+	root.ZIndex = baseZ
+	root.Parent = o.Parent
+
+	local ringBack = Instance.new("Frame")
+	ringBack.Name = "RingBackdrop"
+	ringBack.Size = UDim2.fromOffset(radiusPx * 2 + segSize + 12, radiusPx * 2 + segSize + 12)
+	ringBack.Position = UDim2.fromScale(0.5, 0.5)
+	ringBack.AnchorPoint = Vector2.new(0.5, 0.5)
+	ringBack.BackgroundColor3 = UIKit.Tokens.Colors.BgDeep
+	ringBack.BackgroundTransparency = 0.22
+	ringBack.BorderSizePixel = 0
+	ringBack.Active = false
+	ringBack.ZIndex = baseZ
+	ringBack.Parent = root
+
+	local rbCorner = Instance.new("UICorner")
+	rbCorner.CornerRadius = UDim.new(1, 0)
+	rbCorner.Parent = ringBack
+
+	local rbStroke = Instance.new("UIStroke")
+	rbStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	rbStroke.Color = UIKit.Tokens.Colors.BorderBright
+	rbStroke.Thickness = 2
+	rbStroke.Transparency = 0.35
+	rbStroke.Parent = ringBack
+
+	local hub = Instance.new("TextButton")
+	hub.Name = "CenterHub"
+	hub.Size = UDim2.fromOffset(hubSize, hubSize)
+	hub.Position = UDim2.fromScale(0.5, 0.5)
+	hub.AnchorPoint = Vector2.new(0.5, 0.5)
+	hub.BackgroundColor3 = UIKit.Tokens.Colors.BgPanel
+	hub.Text = ""
+	hub.AutoButtonColor = false
+	hub.BorderSizePixel = 0
+	hub.ZIndex = baseZ + 4
+	hub.Parent = root
+	UIKit.EnsureMinTouchTarget(hub, 44)
+
+	local hubCorner = Instance.new("UICorner")
+	hubCorner.CornerRadius = UDim.new(1, 0)
+	hubCorner.Parent = hub
+
+	UIKit.AttachStackedStrokes(hub, {
+		OuterColor = UIKit.Tokens.Colors.OutlineInk,
+		OuterThickness = math.max(2.5, UIKit.Tokens.Strokes.OuterInk * 0.7),
+		InnerColor = UIKit.Tokens.Colors.Accent,
+		InnerThickness = 1.6,
+		InnerTransparency = 0.25,
+		CornerRadius = UDim.new(1, 0),
+	})
+
+	local hubLabel = Instance.new("TextLabel")
+	hubLabel.Name = "HubLabel"
+	hubLabel.Size = UDim2.new(1, -10, 1, -10)
+	hubLabel.Position = UDim2.fromScale(0.5, 0.5)
+	hubLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+	hubLabel.BackgroundTransparency = 1
+	hubLabel.Text = centerDefault
+	hubLabel.TextColor3 = UIKit.Tokens.Colors.TextPrimary
+	hubLabel.TextSize = 12
+	hubLabel.TextWrapped = true
+	hubLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	hubLabel.FontFace = UIKit.Tokens.Fonts.Title
+	hubLabel.ZIndex = baseZ + 5
+	hubLabel.Parent = hub
+	UIKit.AttachTextStroke(hubLabel, UIKit.Tokens.Colors.OutlineInk, 1.4, 0.1)
+
+	UIKit.AttachButtonJuice(hub, hub, function()
+		if o.OnCenterClick then
+			o.OnCenterClick()
+		end
+	end)
+
+	local defaultItems: { RadialWheelItem } = {
+		{ Id = "scan", Label = "Scan", IconKey = "gem", IconFallback = "S", Color = UIKit.Tokens.Colors.Accent },
+		{ Id = "shield", Label = "Shield", IconKey = "shield", IconFallback = "D", Color = UIKit.Tokens.Colors.Primary },
+		{ Id = "pulse", Label = "Pulse", IconKey = "bolt", IconFallback = "P", Color = UIKit.Tokens.Colors.Warning },
+		{ Id = "repair", Label = "Repair", IconKey = "heart", IconFallback = "+", Color = UIKit.Tokens.Colors.Success },
+		{ Id = "boost", Label = "Boost", IconKey = "star", IconFallback = "B", Color = UIKit.Tokens.Colors.Secondary },
+		{ Id = "comms", Label = "Comms", IconKey = "crown", IconFallback = "C", Color = UIKit.Tokens.Colors.Gold },
+	}
+	local items: { RadialWheelItem } = if o.Items and #o.Items > 0 then o.Items else defaultItems
+	local segments: { TextButton } = {}
+	local selectedIdx: number? = nil
+
+	local function updateSelectionVisuals()
+		for idx, seg in ipairs(segments) do
+			local itemData = items[idx]
+			local active = (selectedIdx == idx)
+			local segColor = (itemData and itemData.Color) or UIKit.Tokens.Colors.Primary
+			seg.BackgroundColor3 = if active then segColor else UIKit.Tokens.Colors.BgPanel
+			local outer = seg:FindFirstChild("OuterStroke")
+			if outer and outer:IsA("UIStroke") then
+				outer.Color = if active then UIKit.Tokens.Colors.Gold else UIKit.Tokens.Colors.OutlineInk
+				outer.Thickness = if active then 3.5 else 2.5
+			end
+		end
+		if selectedIdx and items[selectedIdx] then
+			hubLabel.Text = items[selectedIdx].Label
+		else
+			hubLabel.Text = centerDefault
+		end
+	end
+
+	local function rebuildSegments(nextItems: { RadialWheelItem })
+		for _, oldSeg in ipairs(segments) do
+			oldSeg:Destroy()
+		end
+		table.clear(segments)
+		items = if #nextItems > 0 then nextItems else defaultItems
+		local count = #items
+		for i = 1, count do
+			local item = items[i]
+			local deg = startDeg + (i - 1) * (360 / count)
+			local rad = math.rad(deg)
+			local px = math.round(math.cos(rad) * radiusPx)
+			local py = math.round(math.sin(rad) * radiusPx)
+			local itemCol = item.Color or UIKit.Tokens.Colors.Primary
+
+			local segBtn = Instance.new("TextButton")
+			segBtn.Name = "Sector_" .. tostring(i)
+			segBtn.Size = UDim2.fromOffset(segSize, segSize)
+			segBtn.Position = UDim2.new(0.5, px, 0.5, py)
+			segBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+			segBtn.BackgroundColor3 = UIKit.Tokens.Colors.BgPanel
+			segBtn.Text = ""
+			segBtn.AutoButtonColor = false
+			segBtn.BorderSizePixel = 0
+			segBtn.ZIndex = baseZ + 2
+			segBtn:SetAttribute("SectorId", item.Id or item.Label)
+			segBtn.Parent = root
+			UIKit.EnsureMinTouchTarget(segBtn, 44)
+
+			local corner = Instance.new("UICorner")
+			corner.CornerRadius = UIKit.Tokens.Radii.Button
+			corner.Parent = segBtn
+
+			UIKit.AttachStackedStrokes(segBtn, {
+				OuterColor = UIKit.Tokens.Colors.OutlineInk,
+				OuterThickness = 2.5,
+				InnerColor = itemCol,
+				InnerThickness = 1.5,
+				InnerTransparency = 0.25,
+				CornerRadius = UIKit.Tokens.Radii.Button,
+			})
+
+			local icon = UIKit.CreateBadgeIcon(segBtn, item.IconKey or "star", item.IconFallback or "*", itemCol, math.max(20, math.floor(segSize * 0.40)))
+			icon.Position = UDim2.fromScale(0.5, 0.34)
+			icon.AnchorPoint = Vector2.new(0.5, 0.5)
+			icon.ZIndex = baseZ + 3
+
+			local lbl = Instance.new("TextLabel")
+			lbl.Name = "Label"
+			lbl.Size = UDim2.new(1, -6, 0, 16)
+			lbl.Position = UDim2.new(0.5, 0, 1, -4)
+			lbl.AnchorPoint = Vector2.new(0.5, 1)
+			lbl.BackgroundTransparency = 1
+			lbl.Text = item.Label
+			lbl.TextColor3 = UIKit.Tokens.Colors.TextPrimary
+			lbl.TextSize = 10
+			lbl.TextTruncate = Enum.TextTruncate.AtEnd
+			lbl.FontFace = UIKit.Tokens.Fonts.Heading
+			lbl.ZIndex = baseZ + 3
+			lbl.Parent = segBtn
+			UIKit.AttachTextStroke(lbl, UIKit.Tokens.Colors.OutlineInk, 1.2, 0.12)
+
+			segBtn.MouseEnter:Connect(function()
+				hubLabel.Text = item.Label
+			end)
+			segBtn.MouseLeave:Connect(function()
+				updateSelectionVisuals()
+			end)
+			UIKit.AttachButtonJuice(segBtn, segBtn, function()
+				selectedIdx = i
+				updateSelectionVisuals()
+				if o.OnSelect then
+					o.OnSelect(i, item)
+				end
+			end)
+
+			table.insert(segments, segBtn)
+		end
+		selectedIdx = nil
+		updateSelectionVisuals()
+	end
+
+	rebuildSegments(items)
+
+	local api = {
+		Root = root,
+		Hub = hub,
+		Segments = segments,
+	} :: any
+
+	function api:SetSelected(index: number?)
+		if index ~= nil and index >= 1 and index <= #items then
+			selectedIdx = index
+		else
+			selectedIdx = nil
+		end
+		updateSelectionVisuals()
+	end
+
+	function api:GetSelected(): number?
+		return selectedIdx
+	end
+
+	function api:SetItems(nextItems: { RadialWheelItem })
+		rebuildSegments(nextItems)
+	end
+
+	return api
+end
+
+export type CardFanItem = {
+	Id: string?,
+	Title: string,
+	Cost: (number | string)?,
+	Body: string?,
+	RarityColor: Color3?,
+	IconKey: string?,
+	IconFallback: string?,
+}
+
+export type CardFanOptions = {
+	Name: string?,
+	Parent: Instance?,
+	Size: UDim2?,
+	Position: UDim2?,
+	AnchorPoint: Vector2?,
+	CardSize: Vector2?,
+	MaxAngleDeg: number?,
+	ArcDropPx: number?,
+	HoverLiftPx: number?,
+	Cards: { CardFanItem }?,
+	ZIndex: number?,
+	OnCardClick: ((index: number, card: CardFanItem, button: GuiButton) -> ())?,
+}
+
+function UIKit.CreateCardFan(opts: CardFanOptions?)
+	local o = (opts or {}) :: CardFanOptions
+	local baseZ = o.ZIndex or 6
+	local cardSize = o.CardSize or Vector2.new(112, 152)
+	local cardW = math.max(52, cardSize.X)
+	local cardH = math.max(64, cardSize.Y)
+	local maxAngle = math.clamp(o.MaxAngleDeg or 22, 0, 45)
+	local arcDrop = math.max(0, o.ArcDropPx or 24)
+	local hoverLift = math.max(8, o.HoverLiftPx or 22)
+	local minHeight = cardH + arcDrop + hoverLift + 16
+
+	local root = Instance.new("Frame")
+	root.Name = o.Name or "CardFan"
+	root.Size = o.Size or UDim2.fromOffset(560, math.max(214, minHeight))
+	root.Position = o.Position or UDim2.new(0.5, 0, 1, -12)
+	root.AnchorPoint = o.AnchorPoint or Vector2.new(0.5, 1)
+	root.BackgroundTransparency = 1
+	root.BorderSizePixel = 0
+	root.ZIndex = baseZ
+	root.Parent = o.Parent
+
+	local defaultCards: { CardFanItem } = {
+		{ Id = "strike", Title = "Sun Strike", Cost = 1, Body = "Deal 12 DMG", RarityColor = UIKit.Tokens.Rarity.Common, IconKey = "sword", IconFallback = "S" },
+		{ Id = "guard", Title = "Iron Ward", Cost = 1, Body = "Gain 10 Block", RarityColor = UIKit.Tokens.Rarity.Uncommon, IconKey = "shield", IconFallback = "G" },
+		{ Id = "nova", Title = "Arc Nova", Cost = 2, Body = "18 AoE + Burn", RarityColor = UIKit.Tokens.Rarity.Rare, IconKey = "bolt", IconFallback = "N" },
+		{ Id = "surge", Title = "Mana Surge", Cost = 0, Body = "Draw 2 Cards", RarityColor = UIKit.Tokens.Rarity.Epic, IconKey = "gem", IconFallback = "M" },
+		{ Id = "crown", Title = "Royal Decree", Cost = 3, Body = "Double Buffs", RarityColor = UIKit.Tokens.Rarity.Legendary, IconKey = "crown", IconFallback = "R" },
+	}
+	local cards: { CardFanItem } = if o.Cards and #o.Cards > 0 then o.Cards else defaultCards
+	local cardButtons: { GuiButton } = {}
+	local selectedIdx: number? = nil
+
+	local function rebuildCards(nextCards: { CardFanItem })
+		for _, oldBtn in ipairs(cardButtons) do
+			oldBtn:Destroy()
+		end
+		table.clear(cardButtons)
+		cards = if #nextCards > 0 then nextCards else defaultCards
+		local count = #cards
+		local totalSpan = math.min(420, math.max(0, (count - 1) * math.floor(cardW * 0.78)))
+		local halfSpan = totalSpan * 0.5
+
+		for i = 1, count do
+			local card = cards[i]
+			local t = if count <= 1 then 0 else (-1 + 2 * (i - 1) / (count - 1))
+			local angleDeg = t * maxAngle
+			local arcY = math.round((t * t) * arcDrop)
+			local xOff = math.round(t * halfSpan)
+			local baseYOff = -(8 + arcDrop) + arcY
+			local restPos = UDim2.new(0.5, xOff, 1, baseYOff)
+			local liftPos = UDim2.new(0.5, xOff, 1, baseYOff - hoverLift)
+			local restZ = baseZ + i
+			local rarityCol = card.RarityColor or UIKit.Tokens.Colors.Primary
+
+			local btn = Instance.new("TextButton")
+			btn.Name = "Card_" .. tostring(i)
+			btn.Size = UDim2.fromOffset(cardW, cardH)
+			btn.Position = restPos
+			btn.AnchorPoint = Vector2.new(0.5, 1)
+			btn.Rotation = angleDeg
+			btn.BackgroundColor3 = UIKit.Tokens.Colors.BgPanel
+			btn.Text = ""
+			btn.AutoButtonColor = false
+			btn.BorderSizePixel = 0
+			btn.ZIndex = restZ
+			btn:SetAttribute("CardId", card.Id or card.Title)
+			btn.Parent = root
+			UIKit.EnsureMinTouchTarget(btn, 44)
+
+			local corner = Instance.new("UICorner")
+			corner.CornerRadius = UIKit.Tokens.Radii.Button
+			corner.Parent = btn
+
+			UIKit.ApplyGlossySurface(btn, {
+				GradientKey = "Panel",
+				BaseColor = UIKit.Tokens.Colors.BgPanel,
+				CornerRadius = UIKit.Tokens.Radii.Button,
+				StrokeColor = UIKit.Tokens.Colors.OutlineInk,
+				StrokeThickness = 2.6,
+				InnerHighlight = true,
+			})
+
+			local stripe = Instance.new("Frame")
+			stripe.Name = "RarityHeader"
+			stripe.Size = UDim2.new(1, -10, 0, 24)
+			stripe.Position = UDim2.fromOffset(5, 6)
+			stripe.BackgroundColor3 = rarityCol
+			stripe.BorderSizePixel = 0
+			stripe.ZIndex = restZ + 1
+			stripe.Parent = btn
+
+			local stCorner = Instance.new("UICorner")
+			stCorner.CornerRadius = UIKit.Tokens.Radii.Xs
+			stCorner.Parent = stripe
+
+			local titleLbl = Instance.new("TextLabel")
+			titleLbl.Name = "Title"
+			titleLbl.Size = UDim2.new(1, -28, 1, 0)
+			titleLbl.Position = UDim2.fromOffset(24, 0)
+			titleLbl.BackgroundTransparency = 1
+			titleLbl.Text = card.Title
+			titleLbl.TextColor3 = UIKit.PickReadableTextColor(rarityCol)
+			titleLbl.TextSize = 11
+			titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+			titleLbl.TextTruncate = Enum.TextTruncate.AtEnd
+			titleLbl.FontFace = UIKit.Tokens.Fonts.Title
+			titleLbl.ZIndex = restZ + 2
+			titleLbl.Parent = stripe
+
+			local costBadge = Instance.new("Frame")
+			costBadge.Name = "CostBadge"
+			costBadge.Size = UDim2.fromOffset(24, 24)
+			costBadge.Position = UDim2.fromOffset(2, 2)
+			costBadge.BackgroundColor3 = UIKit.Tokens.Colors.Gold
+			costBadge.BorderSizePixel = 0
+			costBadge.ZIndex = restZ + 3
+			costBadge.Parent = btn
+
+			local cbCorner = Instance.new("UICorner")
+			cbCorner.CornerRadius = UDim.new(1, 0)
+			cbCorner.Parent = costBadge
+
+			local cbStroke = Instance.new("UIStroke")
+			cbStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+			cbStroke.Color = UIKit.Tokens.Colors.OutlineInk
+			cbStroke.Thickness = 1.6
+			cbStroke.Parent = costBadge
+
+			local costLbl = Instance.new("TextLabel")
+			costLbl.Name = "CostText"
+			costLbl.Size = UDim2.fromScale(1, 1)
+			costLbl.BackgroundTransparency = 1
+			costLbl.Text = tostring(if card.Cost ~= nil then card.Cost else 1)
+			costLbl.TextColor3 = UIKit.PickReadableTextColor(UIKit.Tokens.Colors.Gold)
+			costLbl.TextSize = 12
+			costLbl.FontFace = UIKit.Tokens.Fonts.Mono
+			costLbl.ZIndex = restZ + 4
+			costLbl.Parent = costBadge
+
+			local artBox = Instance.new("Frame")
+			artBox.Name = "ArtMedallion"
+			artBox.Size = UDim2.new(1, -16, 0, math.max(36, math.floor(cardH * 0.34)))
+			artBox.Position = UDim2.fromOffset(8, 34)
+			artBox.BackgroundColor3 = UIKit.Tokens.Colors.BgCard
+			artBox.BorderSizePixel = 0
+			artBox.ZIndex = restZ + 1
+			artBox.Parent = btn
+
+			local artCorner = Instance.new("UICorner")
+			artCorner.CornerRadius = UIKit.Tokens.Radii.Xs
+			artCorner.Parent = artBox
+
+			local icon = UIKit.CreateBadgeIcon(artBox, card.IconKey or "star", card.IconFallback or "*", rarityCol, 28)
+			icon.Position = UDim2.fromScale(0.5, 0.5)
+			icon.AnchorPoint = Vector2.new(0.5, 0.5)
+			icon.ZIndex = restZ + 2
+
+			local bodyLbl = Instance.new("TextLabel")
+			bodyLbl.Name = "Body"
+			bodyLbl.Size = UDim2.new(1, -14, 1, -(42 + math.max(36, math.floor(cardH * 0.34))))
+			bodyLbl.Position = UDim2.fromOffset(7, 38 + math.max(36, math.floor(cardH * 0.34)))
+			bodyLbl.BackgroundTransparency = 1
+			bodyLbl.Text = card.Body or ""
+			bodyLbl.TextColor3 = UIKit.Tokens.Colors.TextSecondary
+			bodyLbl.TextSize = 11
+			bodyLbl.TextWrapped = true
+			bodyLbl.TextTruncate = Enum.TextTruncate.AtEnd
+			bodyLbl.FontFace = UIKit.Tokens.Fonts.Body
+			bodyLbl.ZIndex = restZ + 2
+			bodyLbl.Parent = btn
+
+			local scale = Instance.new("UIScale")
+			scale.Name = "HoverScale"
+			scale.Scale = 1
+			scale.Parent = btn
+
+			local liftTween = TweenInfo.new(0.14, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+			local restTween = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+			local function setHovered(hovering: boolean)
+				if hovering then
+					btn.ZIndex = baseZ + count + 10
+					UIKit.Tween(btn, liftTween, { Position = liftPos, Rotation = angleDeg * 0.25 })
+					UIKit.Tween(scale, liftTween, { Scale = 1.06 })
+				else
+					btn.ZIndex = restZ
+					UIKit.Tween(btn, restTween, { Position = restPos, Rotation = angleDeg })
+					UIKit.Tween(scale, restTween, { Scale = 1.0 })
+				end
+			end
+
+			btn.MouseEnter:Connect(function()
+				setHovered(true)
+			end)
+			btn.MouseLeave:Connect(function()
+				if selectedIdx ~= i then
+					setHovered(false)
+				end
+			end)
+			btn.SelectionGained:Connect(function()
+				setHovered(true)
+			end)
+			btn.SelectionLost:Connect(function()
+				if selectedIdx ~= i then
+					setHovered(false)
+				end
+			end)
+			btn.Activated:Connect(function()
+				selectedIdx = i
+				if o.OnCardClick then
+					o.OnCardClick(i, card, btn)
+				end
+			end)
+
+			table.insert(cardButtons, btn)
+		end
+	end
+
+	rebuildCards(cards)
+
+	local api = {
+		Root = root,
+		Cards = cardButtons,
+	} :: any
+
+	function api:SetCards(nextCards: { CardFanItem })
+		selectedIdx = nil
+		rebuildCards(nextCards)
+	end
+
+	function api:SetSelected(index: number?)
+		selectedIdx = index
+	end
+
+	return api
+end
+
+export type BookTabItem = {
+	Id: string?,
+	Label: string,
+	Color: Color3?,
+	IconKey: string?,
+	IconFallback: string?,
+}
+
+export type BookSpreadOptions = {
+	Name: string?,
+	Parent: Instance?,
+	Size: UDim2?,
+	Position: UDim2?,
+	AnchorPoint: Vector2?,
+	BookTitle: string?,
+	Tabs: { BookTabItem }?,
+	PageColor: Color3?,
+	CoverColor: Color3?,
+	ShowClose: boolean?,
+	ZIndex: number?,
+	OnTabChanged: ((index: number, tabId: string, leftPage: Frame, rightPage: Frame) -> ())?,
+	OnClose: (() -> ())?,
+}
+
+function UIKit.CreateBookSpread(opts: BookSpreadOptions?)
+	local o = (opts or {}) :: BookSpreadOptions
+	local baseZ = o.ZIndex or 12
+	local tabWidth = 64
+	local isLight = UIKit.Tokens.Meta.SurfaceMode == "light"
+	local pageColor = o.PageColor or (if isLight then UIKit.Tokens.Colors.BgPanel else UIKit.Tokens.Colors.BgCard)
+	local coverColor = o.CoverColor or UIKit.Tokens.Colors.Primary:Lerp(UIKit.Tokens.Colors.OutlineInk, 0.45)
+	local pageInk = UIKit.PickReadableTextColor(pageColor)
+
+	local root = Instance.new("Frame")
+	root.Name = o.Name or "BookSpread"
+	root.Size = o.Size or UDim2.fromOffset(680, 420)
+	root.Position = o.Position or UDim2.fromScale(0.5, 0.5)
+	root.AnchorPoint = o.AnchorPoint or Vector2.new(0.5, 0.5)
+	root.BackgroundTransparency = 1
+	root.BorderSizePixel = 0
+	root.ZIndex = baseZ
+	root.Parent = o.Parent
+
+	local tabColumn = Instance.new("Frame")
+	tabColumn.Name = "BookmarkTabs"
+	tabColumn.Size = UDim2.new(0, tabWidth + 6, 1, -48)
+	tabColumn.Position = UDim2.new(1, -(tabWidth + 6), 0, 28)
+	tabColumn.BackgroundTransparency = 1
+	tabColumn.BorderSizePixel = 0
+	tabColumn.ZIndex = baseZ + 1
+	tabColumn.Parent = root
+
+	local tabList = Instance.new("UIListLayout")
+	tabList.FillDirection = Enum.FillDirection.Vertical
+	tabList.HorizontalAlignment = Enum.HorizontalAlignment.Right
+	tabList.SortOrder = Enum.SortOrder.LayoutOrder
+	tabList.Padding = UDim.new(0, 8)
+	tabList.Parent = tabColumn
+
+	local cover = Instance.new("Frame")
+	cover.Name = "BookCover"
+	cover.Size = UDim2.new(1, -(tabWidth - 6), 1, 0)
+	cover.Position = UDim2.fromOffset(0, 0)
+	cover.BackgroundColor3 = coverColor
+	cover.BorderSizePixel = 0
+	cover.ZIndex = baseZ + 2
+	cover.Parent = root
+
+	local cCorner = Instance.new("UICorner")
+	cCorner.CornerRadius = UIKit.Tokens.Radii.Panel
+	cCorner.Parent = cover
+
+	UIKit.AttachStackedStrokes(cover, {
+		OuterColor = UIKit.Tokens.Colors.OutlineInk,
+		OuterThickness = UIKit.Tokens.Strokes.Panel,
+		InnerColor = UIKit.Tokens.Colors.Gold,
+		InnerThickness = 1.6,
+		InnerTransparency = 0.45,
+		CornerRadius = UIKit.Tokens.Radii.Panel,
+	})
+
+	local spread = Instance.new("Frame")
+	spread.Name = "Spread"
+	spread.Size = UDim2.new(1, -20, 1, -20)
+	spread.Position = UDim2.fromOffset(10, 10)
+	spread.BackgroundTransparency = 1
+	spread.BorderSizePixel = 0
+	spread.ZIndex = baseZ + 3
+	spread.Parent = cover
+
+	local function buildPage(pageName: string, posXScale: number, posXOffset: number): Frame
+		local page = Instance.new("Frame")
+		page.Name = pageName
+		page.Size = UDim2.new(0.5, -3, 1, 0)
+		page.Position = UDim2.new(posXScale, posXOffset, 0, 0)
+		page.BackgroundColor3 = pageColor
+		page.BorderSizePixel = 0
+		page.ZIndex = baseZ + 3
+		page.Parent = spread
+
+		local pCorner = Instance.new("UICorner")
+		pCorner.CornerRadius = UIKit.Tokens.Radii.Small
+		pCorner.Parent = page
+
+		local pStroke = Instance.new("UIStroke")
+		pStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		pStroke.Color = UIKit.Tokens.Colors.BorderSubtle
+		pStroke.Thickness = 1.5
+		pStroke.Transparency = 0.2
+		pStroke.Parent = page
+
+		local pad = Instance.new("UIPadding")
+		pad.PaddingTop = UDim.new(0, 14)
+		pad.PaddingBottom = UDim.new(0, 14)
+		pad.PaddingLeft = UDim.new(0, 16)
+		pad.PaddingRight = UDim.new(0, 16)
+		pad.Parent = page
+
+		return page
+	end
+
+	local leftPage = buildPage("LeftPage", 0, 0)
+	local rightPage = buildPage("RightPage", 0.5, 3)
+
+	if o.BookTitle and o.BookTitle ~= "" then
+		local titleHdr = Instance.new("TextLabel")
+		titleHdr.Name = "BookTitle"
+		titleHdr.Size = UDim2.new(1, 0, 0, 26)
+		titleHdr.BackgroundTransparency = 1
+		titleHdr.Text = o.BookTitle
+		titleHdr.TextColor3 = pageInk
+		titleHdr.TextSize = 18
+		titleHdr.TextXAlignment = Enum.TextXAlignment.Left
+		titleHdr.TextTruncate = Enum.TextTruncate.AtEnd
+		titleHdr.FontFace = UIKit.Tokens.Fonts.Title
+		titleHdr.ZIndex = baseZ + 4
+		titleHdr.Parent = leftPage
+	end
+
+	local spineShadow = Instance.new("Frame")
+	spineShadow.Name = "SpineShadow"
+	spineShadow.Size = UDim2.new(0, 24, 1, 4)
+	spineShadow.Position = UDim2.fromScale(0.5, 0.5)
+	spineShadow.AnchorPoint = Vector2.new(0.5, 0.5)
+	spineShadow.BackgroundColor3 = UIKit.Tokens.Colors.OutlineInk
+	spineShadow.BackgroundTransparency = 0
+	spineShadow.BorderSizePixel = 0
+	spineShadow.Active = false
+	spineShadow.ZIndex = baseZ + 5
+	spineShadow.Parent = spread
+
+	local spineGrad = Instance.new("UIGradient")
+	spineGrad.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0.0, 1.0),
+		NumberSequenceKeypoint.new(0.35, 0.72),
+		NumberSequenceKeypoint.new(0.50, 0.30),
+		NumberSequenceKeypoint.new(0.65, 0.72),
+		NumberSequenceKeypoint.new(1.0, 1.0),
+	})
+	spineGrad.Parent = spineShadow
+
+	local spineCrease = Instance.new("Frame")
+	spineCrease.Name = "SpineCrease"
+	spineCrease.Size = UDim2.new(0, 2, 1, -8)
+	spineCrease.Position = UDim2.fromScale(0.5, 0.5)
+	spineCrease.AnchorPoint = Vector2.new(0.5, 0.5)
+	spineCrease.BackgroundColor3 = UIKit.Tokens.Colors.OutlineInk
+	spineCrease.BackgroundTransparency = 0.25
+	spineCrease.BorderSizePixel = 0
+	spineCrease.Active = false
+	spineCrease.ZIndex = baseZ + 6
+	spineCrease.Parent = spineShadow
+
+	local closeBtn: GuiButton? = nil
+	if o.ShowClose ~= false then
+		closeBtn = UIKit.CreateButton({
+			Name = "CloseButton",
+			Parent = cover,
+			Text = "X",
+			Variant = "Danger",
+			Size = UDim2.fromOffset(44, 44),
+			Position = UDim2.new(1, -8, 0, 8),
+			AnchorPoint = Vector2.new(1, 0),
+			TextSize = 15,
+			OnClick = function()
+				if o.OnClose then
+					o.OnClose()
+				else
+					root.Visible = false
+				end
+			end,
+		})
+		if closeBtn then
+			closeBtn.ZIndex = baseZ + 8
+		end
+	end
+
+	local defaultTabs: { BookTabItem } = {
+		{ Id = "quests", Label = "Quests", Color = UIKit.Tokens.Colors.Primary },
+		{ Id = "bestiary", Label = "Index", Color = UIKit.Tokens.Colors.Secondary },
+		{ Id = "recipes", Label = "Craft", Color = UIKit.Tokens.Colors.Success },
+		{ Id = "map", Label = "Map", Color = UIKit.Tokens.Colors.Accent },
+	}
+	local tabs: { BookTabItem } = if o.Tabs and #o.Tabs > 0 then o.Tabs else defaultTabs
+	local tabButtons: { TextButton } = {}
+	local activeIndex = 1
+
+	local function refreshTabs()
+		for idx, btn in ipairs(tabButtons) do
+			local tData = tabs[idx]
+			local isActive = (idx == activeIndex)
+			local tCol = (tData and tData.Color) or UIKit.Tokens.Colors.Primary
+			btn.BackgroundColor3 = if isActive then tCol else UIKit.Tokens.Colors.BgPanel
+			btn.Size = if isActive then UDim2.fromOffset(tabWidth + 6, 48) else UDim2.fromOffset(tabWidth - 2, 46)
+			local txt = btn:FindFirstChild("TabLabel")
+			if txt and txt:IsA("TextLabel") then
+				txt.TextColor3 = if isActive then UIKit.PickReadableTextColor(tCol) else UIKit.Tokens.Colors.TextSecondary
+			end
+		end
+	end
+
+	for idx, tab in ipairs(tabs) do
+		local tCol = tab.Color or UIKit.Tokens.Colors.Primary
+		local tabBtn = Instance.new("TextButton")
+		tabBtn.Name = "Tab_" .. tostring(tab.Id or idx)
+		tabBtn.LayoutOrder = idx
+		tabBtn.Size = UDim2.fromOffset(tabWidth, 46)
+		tabBtn.BackgroundColor3 = tCol
+		tabBtn.Text = ""
+		tabBtn.AutoButtonColor = false
+		tabBtn.BorderSizePixel = 0
+		tabBtn.ZIndex = baseZ + 1
+		tabBtn:SetAttribute("TabId", tab.Id or tab.Label)
+		tabBtn.Parent = tabColumn
+		UIKit.EnsureMinTouchTarget(tabBtn, 44)
+
+		local tCorner = Instance.new("UICorner")
+		tCorner.CornerRadius = UIKit.Tokens.Radii.Small
+		tCorner.Parent = tabBtn
+
+		local tStroke = Instance.new("UIStroke")
+		tStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		tStroke.Color = UIKit.Tokens.Colors.OutlineInk
+		tStroke.Thickness = 2.4
+		tStroke.Parent = tabBtn
+
+		local tLbl = Instance.new("TextLabel")
+		tLbl.Name = "TabLabel"
+		tLbl.Size = UDim2.new(1, -8, 1, 0)
+		tLbl.Position = UDim2.fromOffset(6, 0)
+		tLbl.BackgroundTransparency = 1
+		tLbl.Text = tab.Label
+		tLbl.TextColor3 = UIKit.Tokens.Colors.TextPrimary
+		tLbl.TextSize = 11
+		tLbl.TextTruncate = Enum.TextTruncate.AtEnd
+		tLbl.FontFace = UIKit.Tokens.Fonts.Title
+		tLbl.ZIndex = baseZ + 2
+		tLbl.Parent = tabBtn
+
+		UIKit.AttachButtonJuice(tabBtn, tabBtn, function()
+			activeIndex = idx
+			refreshTabs()
+			if o.OnTabChanged then
+				o.OnTabChanged(idx, tab.Id or tab.Label, leftPage, rightPage)
+			end
+		end)
+
+		table.insert(tabButtons, tabBtn)
+	end
+
+	refreshTabs()
+
+	local api = {
+		Root = root,
+		Cover = cover,
+		LeftPage = leftPage,
+		RightPage = rightPage,
+		SpineShadow = spineShadow,
+		TabButtons = tabButtons,
+		CloseButton = closeBtn,
+	} :: any
+
+	function api:SetActiveTab(indexOrId: number | string)
+		if typeof(indexOrId) == "number" then
+			activeIndex = math.clamp(indexOrId, 1, #tabs)
+		else
+			for i, t in ipairs(tabs) do
+				if t.Id == indexOrId or t.Label == indexOrId then
+					activeIndex = i
+					break
+				end
+			end
+		end
+		refreshTabs()
+		local chosen = tabs[activeIndex]
+		if chosen and o.OnTabChanged then
+			o.OnTabChanged(activeIndex, chosen.Id or chosen.Label, leftPage, rightPage)
+		end
+	end
+
+	function api:GetActiveTab(): number
+		return activeIndex
+	end
+
+	return api
 end
 
 return UIKit

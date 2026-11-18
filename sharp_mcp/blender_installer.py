@@ -165,15 +165,23 @@ def _collect_blender_candidates() -> List[Tuple[str, Path]]:
     return deduped
 
 
+def _run_subprocess(cmd: List[str], *, timeout_sec: float) -> subprocess.CompletedProcess[str]:
+    """Run a child command detached from parent MCP stdio so Windows pipes never deadlock."""
+    kwargs: Dict[str, Any] = {
+        "stdin": subprocess.DEVNULL,
+        "capture_output": True,
+        "text": True,
+        "timeout": float(timeout_sec),
+        "check": False,
+    }
+    if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    return subprocess.run(cmd, **kwargs)
+
+
 def _probe_blender_version(executable: Path, timeout_sec: float = 10.0) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     try:
-        proc = subprocess.run(
-            [str(executable), "--version"],
-            capture_output=True,
-            text=True,
-            timeout=timeout_sec,
-            check=False,
-        )
+        proc = _run_subprocess([str(executable), "--version"], timeout_sec=timeout_sec)
         out = (proc.stdout or proc.stderr or "").strip()
         first_line = out.splitlines()[0].strip() if out else ""
         match = re.search(r"Blender\s+(\d+\.\d+(?:\.\d+)?)", out)
@@ -416,13 +424,7 @@ def ensure_blender_installed(
                     "was not found to auto-install Blender."
                 ),
             }
-        proc = subprocess.run(
-            install_cmd,
-            capture_output=True,
-            text=True,
-            timeout=600,
-            check=False,
-        )
+        proc = _run_subprocess(install_cmd, timeout_sec=600)
         executed_steps.append({
             "step": "install_blender",
             "command": install_cmd,
@@ -465,13 +467,7 @@ def ensure_blender_installed(
                 "detected": detect,
                 "message": "`uvx` is required to run `uvx mcp-for-blender install-addon`.",
             }
-        proc = subprocess.run(
-            addon_cmd,
-            capture_output=True,
-            text=True,
-            timeout=180,
-            check=False,
-        )
+        proc = _run_subprocess(addon_cmd, timeout_sec=180)
         executed_steps.append({
             "step": "install_addon",
             "command": addon_cmd,
@@ -489,13 +485,7 @@ def ensure_blender_installed(
         detect = detect_blender_installation()
 
     if enable_addon and detect["installed"]:
-        proc = subprocess.run(
-            enable_cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
+        proc = _run_subprocess(enable_cmd, timeout_sec=60)
         executed_steps.append({
             "step": "enable_addon",
             "command": enable_cmd,
@@ -657,13 +647,7 @@ def execute_bpy_over_socket_or_headless(
             str(script_path),
         ]
         try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=float(timeout_sec),
-                check=False,
-            )
+            proc = _run_subprocess(cmd, timeout_sec=float(timeout_sec))
         except subprocess.TimeoutExpired as exc:
             return {
                 "ok": False,

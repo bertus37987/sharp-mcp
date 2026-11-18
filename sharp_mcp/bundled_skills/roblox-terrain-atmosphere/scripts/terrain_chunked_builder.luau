@@ -5,6 +5,7 @@
 --   * 4x4x4 stud grid alignment (:ExpandToGrid(4)) & automatic <= 4,194,304 voxel chunking
 --   * fBM + ridged multifractal noise (native math.noise) with compact seed offsets
 --   * Smoothstep circular & box flatten plateaus for buildings, spawns, and roads
+--   * Custom prompt height layers (crater, river, ridge, terrace, plateau) & material rules
 --   * Slope- & altitude-based biome material painting (Alpine, Meadow, Desert, Volcanic, Arctic, Coast)
 --   * Modern WriteVoxelChannels (SolidMaterial / SolidMaterialIndex + SolidOccupancy + LiquidOccupancy)
 --     with optional WriteVoxels fallback and task.wait() yielding between chunks
@@ -32,6 +33,47 @@ export type FlattenZone = {
 	material: Enum.Material?,
 }
 
+export type Vec2Point = {
+	x: number,
+	z: number,
+}
+
+export type HeightLayer = {
+	type: string,
+	x: number?,
+	z: number?,
+	x1: number?,
+	z1: number?,
+	x2: number?,
+	z2: number?,
+	radius: number?,
+	depth: number?,
+	height: number?,
+	rimHeight: number?,
+	rimWidth: number?,
+	width: number?,
+	stepHeight: number?,
+	blend: number?,
+	minY: number?,
+	maxY: number?,
+	waterFill: boolean?,
+	waterLevel: number?,
+	material: Enum.Material?,
+	points: { Vec2Point }?,
+}
+
+export type MaterialRule = {
+	minY: number?,
+	maxY: number?,
+	minSlope: number?,
+	maxSlope: number?,
+	x: number?,
+	z: number?,
+	minRadius: number?,
+	maxRadius: number?,
+	material: Enum.Material,
+}
+
 export type BiomePalette = {
 	low: Enum.Material,
 	shore: Enum.Material,
@@ -51,6 +93,7 @@ export type BuildConfig = {
 	palette: BiomePalette?,
 	baseHeight: number?,
 	mountainHeight: number?,
+	noiseWeight: number?,
 	noiseScale: number?,
 	octaves: number?,
 	lacunarity: number?,
@@ -58,6 +101,8 @@ export type BuildConfig = {
 	ridgeWeight: number?,
 	waterLevel: number?,
 	flattenZones: { FlattenZone }?,
+	heightLayers: { HeightLayer }?,
+	materialRules: { MaterialRule }?,
 	chunkCellsXZ: number?,
 	useVoxelChannels: boolean?,
 	yieldPerChunk: boolean?,
@@ -135,6 +180,49 @@ end
 local function smoothstep01(t: number): number
 	local c = math.clamp(t, 0, 1)
 	return c * c * (3 - 2 * c)
+end
+
+local function distPointToSegment2D(px: number, pz: number, ax: number, az: number, bx: number, bz: number): number
+	local vx = bx - ax
+	local vz = bz - az
+	local lenSq = vx * vx + vz * vz
+	if lenSq <= 1e-8 then
+		return math.sqrt((px - ax) ^ 2 + (pz - az) ^ 2)
+	end
+	local t = math.clamp(((px - ax) * vx + (pz - az) * vz) / lenSq, 0, 1)
+	local cx = ax + vx * t
+	local cz = az + vz * t
+	return math.sqrt((px - cx) ^ 2 + (pz - cz) ^ 2)
+end
+
+local function distToLayerPath2D(wx: number, wz: number, layer: HeightLayer): number?
+	local pts = layer.points
+	if pts and #pts >= 2 then
+		local best = math.huge
+		for idx = 1, #pts - 1 do
+			local a = pts[idx]
+			local b = pts[idx + 1]
+			local d = distPointToSegment2D(wx, wz, a.x, a.z, b.x, b.z)
+			if d < best then
+				best = d
+			end
+		end
+		return best
+	elseif pts and #pts == 1 then
+		local p = pts[1]
+		return math.sqrt((wx - p.x) ^ 2 + (wz - p.z) ^ 2)
+	end
+
+	local x1, z1, x2, z2 = layer.x1, layer.z1, layer.x2, layer.z2
+	if x1 ~= nil and z1 ~= nil and x2 ~= nil and z2 ~= nil then
+		return distPointToSegment2D(wx, wz, x1, z1, x2, z2)
+	end
+
+	local lx, lz = layer.x, layer.z
+	if lx ~= nil and lz ~= nil then
+		return math.sqrt((wx - lx) ^ 2 + (wz - lz) ^ 2)
+	end
+	return nil
 end
 
 function TerrainBuilder.AlignRegionToGrid(minPos: Vector3, maxPos: Vector3): Region3
@@ -220,7 +308,184 @@ function TerrainBuilder.ApplyFlattenZones(
 	return h, overrideMat, maxPadWeight
 end
 
-function TerrainBuilder.SampleHeightFbm(wx: number, wz: number, config: BuildConfig): (number, Enum.Material?)
+function TerrainBuilder.ApplyHeightLayers(
+	baseHeight: number,
+	wx: number,
+	wz: number,
+	layers: { HeightLayer }?
+): (number, Enum.Material?, number?)
+	if not layers or #layers == 0 then
+		return baseHeight, nil, nil
+	end
+	local h = baseHeight
+	local overrideMat: Enum.Material? = nil
+	local overrideWater: number? = nil
+
+	for _, layer in ipairs(layers) do
+		local kind = string.lower(layer.type or "")
+		if kind == "crater" then
+			local cx = layer.x or 0
+			local cz = layer.z or 0
+			local r = math.max(layer.radius or 40, 1)
+			local depth = layer.depth or 24
+			local rimH = if layer.rimHeight ~= nil then layer.rimHeight else depth * 0.35
+			local rimW = math.max(layer.rimWidth or (r * 0.45), 1)
+			local d = math.sqrt((wx - cx) ^ 2 + (wz - cz) ^ 2)
+			if d <= r then
+				local u = d / r
+				local bowl = (1 - u * u) * depth
+				local rim = smoothstep01((u - 0.55) / 0.45) * rimH
+				h += rim - bowl
+				if layer.material and u <= 0.85 then
+					overrideMat = layer.material
+				end
+			elseif d < r + rimW then
+				local v = (d - r) / rimW
+				h += (1 - smoothstep01(v)) * rimH
+			end
+		elseif kind == "river" then
+			local minDist = distToLayerPath2D(wx, wz, layer)
+			if minDist ~= nil then
+				local halfW = math.max((layer.width or 16) * 0.5, 1)
+				local blend = math.max(layer.blend or (halfW * 0.85), 1)
+				local depth = layer.depth or 14
+				if minDist < halfW + blend then
+					local factor = if minDist <= halfW
+						then (1 - 0.25 * (minDist / halfW) ^ 2)
+						else (1 - smoothstep01((minDist - halfW) / blend))
+					local bankHeight = h
+					h -= depth * factor
+					local fillWater = if layer.waterFill == nil then true else layer.waterFill
+					if fillWater and minDist <= halfW + blend * 0.45 then
+						local wl = if layer.waterLevel ~= nil
+							then layer.waterLevel
+							else (bankHeight - math.min(depth * 0.28, 3.5))
+						overrideWater = if overrideWater ~= nil then math.max(overrideWater, wl) else wl
+					end
+					if layer.material and minDist <= halfW * 0.9 then
+						overrideMat = layer.material
+					end
+				end
+			end
+		elseif kind == "ridge" then
+			local minDist = distToLayerPath2D(wx, wz, layer)
+			if minDist ~= nil then
+				local halfW = math.max((layer.width or 24) * 0.5, 1)
+				local blend = math.max(layer.blend or halfW, 1)
+				local ridgeH = layer.height or layer.rimHeight or 32
+				local totalW = halfW + blend
+				if minDist < totalW then
+					local t = math.clamp(minDist / totalW, 0, 1)
+					local crest = (1 - smoothstep01(t)) * (1 - 0.35 * t)
+					h += ridgeH * crest
+					if layer.material and t <= 0.45 then
+						overrideMat = layer.material
+					end
+				end
+			end
+		elseif kind == "terrace" then
+			local stepH = math.max(layer.stepHeight or 8, 1)
+			local weight = 1
+			local lx, lz = layer.x, layer.z
+			if lx ~= nil and lz ~= nil then
+				local r = math.max(layer.radius or 80, 1)
+				local blend = math.max(layer.blend or (r * 0.35), 1)
+				local d = math.sqrt((wx - lx) ^ 2 + (wz - lz) ^ 2)
+				if d >= r + blend then
+					weight = 0
+				elseif d > r then
+					weight = 1 - smoothstep01((d - r) / blend)
+				end
+			end
+			if layer.minY ~= nil and h < layer.minY then
+				weight = 0
+			end
+			if layer.maxY ~= nil and h > layer.maxY then
+				weight = 0
+			end
+			if weight > 0 then
+				local band = h / stepH
+				local fl = math.floor(band)
+				local frac = band - fl
+				local sharp = 0.35
+				local stepFrac = smoothstep01((frac - (0.5 - sharp * 0.5)) / sharp)
+				local terraced = (fl + stepFrac) * stepH
+				h = h + (terraced - h) * weight
+				if layer.material and weight >= 0.75 then
+					overrideMat = layer.material
+				end
+			end
+		elseif kind == "plateau" then
+			local cx = layer.x or 0
+			local cz = layer.z or 0
+			local r = math.max(layer.radius or 40, 1)
+			local targetH = layer.height or 96
+			local blend = math.max(layer.blend or (r * 0.5), 1)
+			local d = math.sqrt((wx - cx) ^ 2 + (wz - cz) ^ 2)
+			local weight = 0
+			if d <= r then
+				weight = 1
+			elseif d < r + blend then
+				weight = 1 - smoothstep01((d - r) / blend)
+			end
+			if weight > 0 then
+				h = h + (targetH - h) * weight
+				if layer.material and weight >= 0.75 then
+					overrideMat = layer.material
+				end
+			end
+		end
+	end
+
+	return h, overrideMat, overrideWater
+end
+
+function TerrainBuilder.ResolveMaterialRules(
+	wx: number,
+	wz: number,
+	height: number,
+	slope: number,
+	rules: { MaterialRule }?
+): Enum.Material?
+	if not rules or #rules == 0 then
+		return nil
+	end
+	for _, rule in ipairs(rules) do
+		local minY = rule.minY
+		local maxY = rule.maxY
+		local minSlope = rule.minSlope
+		local maxSlope = rule.maxSlope
+		local minRadius = rule.minRadius
+		local maxRadius = rule.maxRadius
+
+		local ok = true
+		if minY ~= nil and height < minY then
+			ok = false
+		elseif maxY ~= nil and height > maxY then
+			ok = false
+		elseif minSlope ~= nil and slope < minSlope then
+			ok = false
+		elseif maxSlope ~= nil and slope > maxSlope then
+			ok = false
+		elseif minRadius ~= nil or maxRadius ~= nil then
+			local rx = rule.x or 0
+			local rz = rule.z or 0
+			local d = math.sqrt((wx - rx) ^ 2 + (wz - rz) ^ 2)
+			if minRadius ~= nil and d < minRadius then
+				ok = false
+			end
+			if maxRadius ~= nil and d > maxRadius then
+				ok = false
+			end
+		end
+		if ok then
+			return rule.material
+		end
+	end
+	return nil
+end
+
+function TerrainBuilder.SampleHeightFbm(wx: number, wz: number, config: BuildConfig): (number, Enum.Material?, number?)
 	local seed = config.seed or 42
 	-- Keep offsets well under 10k so math.noise retains full floating-point precision
 	local sx = ((seed * 73) % 9973) * 0.137
@@ -229,6 +494,7 @@ function TerrainBuilder.SampleHeightFbm(wx: number, wz: number, config: BuildCon
 
 	local baseHeight = config.baseHeight or 56
 	local mountainHeight = config.mountainHeight or 84
+	local noiseWeight = if config.noiseWeight == nil then 1.0 else config.noiseWeight
 	local scale = config.noiseScale or (1 / 140)
 	local octaves = math.clamp(config.octaves or 4, 1, 8)
 	local lacunarity = config.lacunarity or 2.05
@@ -261,25 +527,35 @@ function TerrainBuilder.SampleHeightFbm(wx: number, wz: number, config: BuildCon
 	local combined = fbmNorm * (1 - ridgeWeight) + ridgeNorm * ridgeWeight
 
 	-- Shift around baseHeight so valleys can dip below baseHeight while peaks climb cleanly
-	local rawHeight = baseHeight + (combined - 0.35) * mountainHeight
-	local finalHeight, padMat, _ = TerrainBuilder.ApplyFlattenZones(rawHeight, wx, wz, config.flattenZones)
-	return finalHeight, padMat
+	local rawHeight = baseHeight + (combined - 0.35) * mountainHeight * noiseWeight
+	local layeredHeight, layerMat, layerWater = TerrainBuilder.ApplyHeightLayers(rawHeight, wx, wz, config.heightLayers)
+	local finalHeight, padMat, _ = TerrainBuilder.ApplyFlattenZones(layeredHeight, wx, wz, config.flattenZones)
+	return finalHeight, (padMat or layerMat), layerWater
 end
 
 function TerrainBuilder.ResolveSlopeMaterial(
 	height: number,
 	slope: number,
 	padMat: Enum.Material?,
-	config: BuildConfig
+	config: BuildConfig,
+	wx: number?,
+	wz: number?,
+	waterLevelOverride: number?
 ): Enum.Material
 	if padMat then
 		return padMat
+	end
+	if config.materialRules then
+		local ruleMat = TerrainBuilder.ResolveMaterialRules(wx or 0, wz or 0, height, slope, config.materialRules)
+		if ruleMat then
+			return ruleMat
+		end
 	end
 	local biome: BiomeName = config.biome or "Alpine"
 	local palette = config.palette or TerrainBuilder.BIOME_PALETTES[biome] or TerrainBuilder.BIOME_PALETTES.Alpine
 	local baseHeight = config.baseHeight or 56
 	local mountainHeight = config.mountainHeight or 84
-	local waterLevel = config.waterLevel
+	local waterLevel = if waterLevelOverride ~= nil then waterLevelOverride else config.waterLevel
 
 	if waterLevel and height <= waterLevel - 3 then
 		return palette.underwater
@@ -334,20 +610,24 @@ function TerrainBuilder.BuildRegion(config: BuildConfig): BuildReport
 			local colH: { { number } } = table.create(sx)
 			local colMat: { { Enum.Material } } = table.create(sx)
 			local colSlope: { { number } } = table.create(sx)
+			local colWater: { { number? } } = table.create(sx)
 			for ix = 1, sx do
 				colH[ix] = table.create(sz)
 				colMat[ix] = table.create(sz)
 				colSlope[ix] = table.create(sz)
+				colWater[ix] = table.create(sz)
 				local wx = regionMin.X + (bx + ix - 0.5) * VOXEL_SIZE
 				for iz = 1, sz do
 					local wz = regionMin.Z + (bz + iz - 0.5) * VOXEL_SIZE
-					local h, padMat = TerrainBuilder.SampleHeightFbm(wx, wz, config)
+					local h, padMat, localWater = TerrainBuilder.SampleHeightFbm(wx, wz, config)
 					local hx, _ = TerrainBuilder.SampleHeightFbm(wx + VOXEL_SIZE, wz, config)
 					local hz, _ = TerrainBuilder.SampleHeightFbm(wx, wz + VOXEL_SIZE, config)
 					local slope = math.max(math.abs(hx - h), math.abs(hz - h)) / VOXEL_SIZE
+					local effWater = if localWater ~= nil then localWater else waterLevel
 					colH[ix][iz] = h
 					colSlope[ix][iz] = slope
-					colMat[ix][iz] = TerrainBuilder.ResolveSlopeMaterial(h, slope, padMat, config)
+					colWater[ix][iz] = effWater
+					colMat[ix][iz] = TerrainBuilder.ResolveSlopeMaterial(h, slope, padMat, config, wx, wz, effWater)
 				end
 			end
 
@@ -392,6 +672,7 @@ function TerrainBuilder.BuildRegion(config: BuildConfig): BuildReport
 
 							for iz = 1, sz do
 								local h = colH[ix][iz]
+								local colWL = colWater[ix][iz]
 								local sOcc = math.clamp((h - cellBottom) / VOXEL_SIZE, 0, 1)
 								local lOcc = 0
 								local mat = colMat[ix][iz]
@@ -403,8 +684,8 @@ function TerrainBuilder.BuildRegion(config: BuildConfig): BuildReport
 									solidVoxelsWritten += 1
 								end
 
-								if waterLevel and cellBottom < waterLevel and sOcc <= (1 - OCC_EPSILON) then
-									lOcc = math.clamp((waterLevel - cellBottom) / VOXEL_SIZE, 0, 1)
+								if colWL and cellBottom < colWL and sOcc <= (1 - OCC_EPSILON) then
+									lOcc = math.clamp((colWL - cellBottom) / VOXEL_SIZE, 0, 1)
 									if lOcc <= OCC_EPSILON then
 										lOcc = 0
 									else
@@ -457,11 +738,12 @@ function TerrainBuilder.BuildRegion(config: BuildConfig): BuildReport
 							occupancies[ix][iy] = table.create(sz)
 							for iz = 1, sz do
 								local h = colH[ix][iz]
+								local colWL = colWater[ix][iz]
 								local occ = math.clamp((h - cellBottom) / VOXEL_SIZE, 0, 1)
 								if occ <= OCC_EPSILON then
-									if waterLevel and cellBottom < waterLevel then
+									if colWL and cellBottom < colWL then
 										materials[ix][iy][iz] = Enum.Material.Water
-										occupancies[ix][iy][iz] = math.clamp((waterLevel - cellBottom) / VOXEL_SIZE, 0, 1)
+										occupancies[ix][iy][iz] = math.clamp((colWL - cellBottom) / VOXEL_SIZE, 0, 1)
 										waterVoxelsWritten += 1
 									else
 										materials[ix][iy][iz] = Enum.Material.Air

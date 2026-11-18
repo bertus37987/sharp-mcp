@@ -22,7 +22,11 @@ from sharp_mcp.domain_engines.attachment_engine import (  # noqa: E402
 )
 from sharp_mcp.blender_installer import detect_blender_installation  # noqa: E402
 from sharp_mcp.domain_engines.blender_engine import BlenderDomainEngine  # noqa: E402
-from sharp_mcp.domain_engines.rig_anim_engine import RigAnimationEngine  # noqa: E402
+from sharp_mcp.domain_engines.rig_anim_engine import (  # noqa: E402
+    ANIMATION_STYLE_PROFILES,
+    PROCEDURAL_PRESET_CATALOG,
+    RigAnimationEngine,
+)
 
 
 BUNDLED_SKILLS_DIR = SERVER_ROOT / "sharp_mcp" / "bundled_skills"
@@ -361,6 +365,29 @@ class TestAttachmentEngine(unittest.TestCase):
         self.assertIn("conflictingJoints", luau_verify)
         self.assertIn("scaleMismatch", luau_verify)
 
+    def test_compile_inspect_attachment_fit_luau(self) -> None:
+        for pose in ("raised_arm", "slash_windup", "block_guard", "overhead_reach", "crouch"):
+            luau_fit = self.engine.compile_inspect_attachment_fit_luau(
+                rig_path="Workspace.TestWarrior",
+                item_path="Workspace.PauldronR",
+                test_pose=pose,
+                clearance_margin_studs=0.02,
+            )
+            assert_valid_luau_sanity(luau_fit, f"inspect_fit_{pose}")
+            self.assertEqual(luau_fit.count("--!strict"), 1)
+            self.assertNotIn("TryBeginRecording", luau_fit, "inspect_attachment_fit must remain read-only")
+            for required_token in (
+                "obbSignedGap",
+                "fit_passed",
+                "penetrations",
+                "minClearanceStuds",
+                "recommendedOffsets",
+                "UpperTorso",
+                "LeftUpperArm",
+                "RightUpperArm",
+            ):
+                self.assertIn(required_token, luau_fit)
+
 
 class TestRigAnimationQualityAndPresets(unittest.TestCase):
     def setUp(self) -> None:
@@ -437,6 +464,132 @@ class TestRigAnimationQualityAndPresets(unittest.TestCase):
         batch = self.engine.generate_procedural_presets(["idle_breathing", "walk", "sword_combo_3hit"])
         self.assertEqual(batch["count"], 3)
         self.assertIn("Idle_Breathing", batch["clips"])
+
+        # Verify v2 RPG pacing durations (tempo_scale=1.0, style='heavy_souls') and all 5 animation style profiles
+        expected_v2_durations = {
+            "idle_breathing": 2.80,
+            "walk": 1.20,
+            "run": 0.80,
+            "sword_slash_single": 1.35,
+            "sword_combo_3hit": 2.40,
+            "shield_block": 1.30,
+            "bow_draw_release": 1.65,
+            "cast_spell": 1.70,
+            "jump_land": 1.25,
+            "dash_roll": 1.05,
+            "hit_react": 0.95,
+            "death": 1.80,
+            "emote_wave": 2.10,
+        }
+        self.assertEqual(set(ANIMATION_STYLE_PROFILES.keys()), {
+            "heavy_souls", "snappy_anime", "stylized_cartoony", "tactical_military", "floaty_arcane",
+        })
+        for pname, expected_dur in expected_v2_durations.items():
+            self.assertAlmostEqual(PROCEDURAL_PRESET_CATALOG[pname]["duration"], expected_dur, places=4)
+            clip_hs = self.engine.generate_procedural_preset(pname, style="heavy_souls", tempo_scale=1.0)
+            self.assertAlmostEqual(clip_hs["frames"][-1]["t"], expected_dur, places=3)
+
+        for style_id in ANIMATION_STYLE_PROFILES:
+            for pname in ("sword_slash_single", "cast_spell", "sword_combo_3hit", "walk"):
+                styled = self.engine.generate_procedural_preset(pname, style=style_id, tempo_scale=1.0)
+                rep = self.engine.analyze_clip(styled, expected_kind=pname)
+                self.assertTrue(rep["passed"], f"{style_id}/{pname} failed: {rep['issues']}")
+                self.assertGreaterEqual(rep["quality_score"], 85, f"{style_id}/{pname} low score: {rep}")
+
+        # Verify explicit windup hold & impact hit-stop markers on slash/cast
+        self.assertIn("WindupHoldEnd", {m["name"] for m in slash_raw["markers"]})
+        self.assertIn("HitStopEnd", {m["name"] for m in slash_raw["markers"]})
+        self.assertIn("CastHoldEnd", {m["name"] for m in cast_raw["markers"]})
+
+    def test_compose_custom_clip_and_pose_preview_luau(self) -> None:
+        composed_kp = self.engine.compose_custom_clip(
+            {
+                "name": "GreatswordCleave",
+                "priority": "Action2",
+                "kind": "attack",
+                "keyposes": [
+                    {"t": 0.0, "poses": {"UpperTorso": {"rot": [0, 0, 0]}, "RightUpperArm": {"rot": [-5, 0, -8]}}},
+                    {
+                        "t": 0.25,
+                        "hold": 0.20,
+                        "poses": {
+                            "LowerTorso": {"rot": [2, -16, 0]},
+                            "UpperTorso": {"rot": [8, -22, 0]},
+                            "RightUpperArm": {"rot": [-36, -22, -18]},
+                            "RightLowerArm": {"rot": [-48, 0, 0]},
+                            "LeftUpperLeg": {"rot": [12, 0, 0]},
+                            "LeftLowerLeg": {"rot": [-24, 0, 0]},
+                            "RightUpperLeg": {"rot": [12, 0, 0]},
+                            "RightLowerLeg": {"rot": [-24, 0, 0]},
+                        },
+                    },
+                    {
+                        "t": 0.68,
+                        "hold": 0.16,
+                        "poses": {
+                            "LowerTorso": {"rot": [-4, 18, 0]},
+                            "UpperTorso": {"rot": [-12, 24, 0]},
+                            "RightUpperArm": {"rot": [46, 26, 12]},
+                            "RightLowerArm": {"rot": [-14, 0, 0]},
+                        },
+                    },
+                    {"t": 1.25, "poses": {"UpperTorso": {"rot": [0, 0, 0]}, "RightUpperArm": {"rot": [-5, 0, -8]}}},
+                ],
+                "markers": [{"t": 0.68, "name": "HitFrame", "value": "cleave"}],
+            },
+            style="heavy_souls",
+            tempo_scale=1.0,
+            auto_ground_feet=True,
+        )
+        self.assertTrue(composed_kp["ok"])
+        self.assertTrue(composed_kp["analysis"]["passed"], f"compose_custom_clip failed: {composed_kp['analysis']}")
+        self.assertGreaterEqual(composed_kp["analysis"]["quality_score"], 85)
+        self.assertGreater(len(composed_kp["frames"]), 20)
+        self.assertEqual(composed_kp["markers"][0]["name"], "HitFrame")
+
+        composed_ct = self.engine.compose_custom_clip(
+            {
+                "name": "ArcaneFloat",
+                "priority": "Action",
+                "kind": "emote",
+                "channel_tracks": {
+                    "LowerTorso.y": [(0.0, 0.0), (0.5, -0.04), (1.0, 0.0)],
+                    "UpperTorso.rx": [(0.0, 0.0), (0.4, -10.0), (0.6, -10.0), (1.0, 0.0)],
+                    "RightUpperArm.rx": [(0.0, -5.0), (0.4, 72.0), (0.6, 72.0), (1.0, -5.0)],
+                    "RightLowerArm.rx": [(0.0, -14.0), (0.4, -36.0), (1.0, -14.0)],
+                    "Head.rx": [(0.0, 0.0), (0.5, -12.0), (1.0, 0.0)],
+                },
+                "markers": [{"t": 0.4, "name": "Apex", "value": "float"}],
+            },
+            style="floaty_arcane",
+        )
+        self.assertTrue(composed_ct["ok"])
+        self.assertTrue(composed_ct["analysis"]["passed"], f"channel_tracks failed: {composed_ct['analysis']}")
+        self.assertGreaterEqual(composed_ct["analysis"]["quality_score"], 85)
+
+        luau_pose = self.engine.compile_pose_at_time_luau(
+            rig_path="Workspace.TestWarrior",
+            clip_name="Sword_Slash_Single",
+            folder_name="Animations",
+            time_fraction=0.55,
+        )
+        assert_valid_luau_sanity(luau_pose, "compile_pose_at_time_luau")
+        self.assertEqual(luau_pose.count("--!strict"), 1)
+        self.assertIn("Motor6D", luau_pose)
+        self.assertIn(".Transform", luau_pose)
+        self.assertIn("CurveAnimation", luau_pose)
+        self.assertIn("KeyframeSequence", luau_pose)
+
+        luau_strip = self.engine.compile_pose_strip_luau(
+            rig_path="Workspace.TestWarrior",
+            clip_name="Sword_Slash_Single",
+            folder_name="Animations",
+            sample_fractions=(0.0, 0.25, 0.55, 0.78, 1.0),
+        )
+        assert_valid_luau_sanity(luau_strip, "compile_pose_strip_luau")
+        self.assertEqual(luau_strip.count("--!strict"), 1)
+        self.assertIn("SharpPoseStrip_", luau_strip)
+        self.assertIn("SAMPLE_FRACTIONS", luau_strip)
 
     def test_quality_analyzer_catches_negative_fixtures(self) -> None:
         # 1) Loop seam mismatch
@@ -715,6 +868,77 @@ class TestBlenderAttachCompilerAndHygiene(unittest.TestCase):
                 self.assertTrue(loaded["ok"])
                 self.assertEqual(loaded["warnings"], [])
                 self.assertEqual(loaded["mesh_stats"]["material_count"], 4)
+
+    def test_compile_custom_bmesh_asset_bpy_and_live_headless_blender(self) -> None:
+        attach_eng = AttachmentEngine(BUNDLED_SKILLS_DIR)
+        with tempfile.TemporaryDirectory(prefix="sharp_custom_bmesh_") as td:
+            custom_code = """
+add_cylinder(bm, 0.06, 0.055, 0.75, segs=10, loc=(0.0, 0.0, 0.0), mat_idx=2)
+add_box(bm, (0.55, 0.14, 0.12), (0.0, 0.0, 0.38), bevel_ratio=0.16, mat_idx=1)
+add_tapered_blade(bm, width=0.24, thickness=0.09, length=2.2, tip_len=0.45, loc=(0.0, 0.0, 0.44), mat_idx=0)
+add_faceted_gem(bm, 0.08, 0.09, 0.10, loc=(0.0, 0.0, 0.38), mat_idx=3)
+"""
+            compiled = self.blender.compile_custom_bmesh_asset_bpy(
+                asset_name="ArcaneGreatsword",
+                custom_bpy_code=custom_code,
+                asset_style="dark_gothic_souls",
+                texture_style="arcane_emissive_runes",
+                attach_mode="motor6d_weapon",
+                slot="right_hand",
+                primary_hex="#2D313A",
+                secondary_hex="#C89D54",
+                accent_hex="#F43F5E",
+                output_dir=td,
+                execute=False,
+            )
+            self.assertTrue(compiled["ok"])
+            self.assertEqual(compiled["asset_style"], "dark_gothic_souls")
+            self.assertEqual(compiled["texture_style"], "arcane_emissive_runes")
+            src = compiled["compiled_bpy_code"]
+            compile(src, "custom_bmesh_compiled.py", "exec")
+            for mat_slot in ("PrimaryMetal", "TrimAccent", "LeatherGrip", "CoreEmblem"):
+                self.assertIn(mat_slot, src)
+            self.assertIn("smart_project", src)
+            self.assertIn("recalc_face_normals", src)
+
+            if detect_blender_installation().get("installed"):
+                live_dir = Path(td) / "live_custom"
+                live_res = self.blender.compile_custom_bmesh_asset_bpy(
+                    asset_name="ArcaneGreatsword",
+                    custom_bpy_code=custom_code,
+                    asset_style="handpainted_fantasy_rpg",
+                    texture_style="stylized_gradient_atlas",
+                    attach_mode="motor6d_weapon",
+                    slot="right_hand",
+                    output_dir=str(live_dir),
+                    export_fbx=True,
+                    export_glb=True,
+                    render_preview=True,
+                    execute=True,
+                    execution_mode="headless",
+                    timeout_sec=90.0,
+                )
+                self.assertTrue(live_res["ok"] and live_res["executed"], f"Headless custom_bmesh failed: {live_res}")
+                self.assertTrue(Path(live_res["fbx_path"]).is_file())
+                self.assertTrue(Path(live_res["glb_path"]).is_file())
+                self.assertTrue(Path(live_res["sidecar_path"]).is_file())
+                self.assertTrue(Path(live_res["preview_path"]).is_file())
+                self.assertTrue((live_dir / "preview.png").is_file())
+                self.assertGreater((live_dir / "preview.png").stat().st_size, 500)
+
+                ms = live_res["mesh_stats"]
+                self.assertEqual(ms["material_slots"], ["PrimaryMetal", "TrimAccent", "LeatherGrip", "CoreEmblem"])
+                self.assertTrue(ms["uv_present"])
+                self.assertTrue(ms["within_roblox_10k_budget"])
+                self.assertEqual(ms["non_manifold_edges"], 0)
+                self.assertTrue(ms["is_manifold"])
+                self.assertLess(ms["triangle_count"], 10000)
+
+                sidecar = attach_eng.load_blender_sidecar(live_res["sidecar_path"])
+                self.assertTrue(sidecar["ok"])
+                self.assertEqual(sidecar["warnings"], [])
+                self.assertEqual(sidecar["target_limb"], "RightHand")
+                self.assertEqual(sidecar["target_limb_attachment"], "RightGripAttachment")
 
     def test_runtime_files_and_skills_hygiene_and_mirror_parity(self) -> None:
         runtime_files = [

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import sys
 import tempfile
 import unittest
@@ -16,6 +17,7 @@ if str(SERVER_ROOT) not in sys.path:
 from sharp_mcp.domain_engines.critical_audit_engine import CriticalAuditEngine, tokenize_luau
 from sharp_mcp.domain_engines.game_planner import GamePlanner
 from sharp_mcp.domain_engines.luau_audit_engine import LuauAuditSnapshotEngine
+from sharp_mcp.domain_engines.terrain_env_engine import TerrainEnvironmentEngine
 from sharp_mcp.project_library import ProjectLibraryManager
 from sharp_mcp.skill_router import resolve_default_archive_dir, resolve_default_skills_dir
 
@@ -718,12 +720,384 @@ class TestSkillMirrorAndHygiene(unittest.TestCase):
             SERVER_ROOT / "sharp_mcp" / "domain_engines" / "game_planner.py",
             SERVER_ROOT / "sharp_mcp" / "domain_engines" / "critical_audit_engine.py",
             SERVER_ROOT / "sharp_mcp" / "domain_engines" / "luau_audit_engine.py",
+            SERVER_ROOT / "sharp_mcp" / "domain_engines" / "terrain_env_engine.py",
             *(f for f in live.rglob("*") if f.is_file()),
         ):
             txt = p.read_text(encoding="utf-8")
             self.assertNotIn("Forge", txt, f"Stray 'Forge' in {p}")
             self.assertNotIn("Mixar", txt, f"Stray 'Mixar' in {p}")
             self.assertNotIn("willy", txt.lower(), f"Stray 'willy' in {p}")
+
+    def test_roblox_terrain_atmosphere_three_way_mirror_parity(self) -> None:
+        live = Path.home() / ".gemini" / "config" / "skills" / "roblox-terrain-atmosphere"
+        desktop = REPO_ROOT / "03_roblox_terrain_atmosphere" / "skill"
+        bundled = SERVER_ROOT / "sharp_mcp" / "bundled_skills" / "roblox-terrain-atmosphere"
+
+        for root in (live, desktop):
+            if not root.is_dir():
+                self.skipTest(f"External skill mirror not installed: {root}")
+
+        for root in (live, desktop, bundled):
+            self.assertTrue(root.is_dir(), f"Missing skill dir: {root}")
+            self.assertEqual(list(root.rglob("__pycache__")), [], f"__pycache__ found in {root}")
+            self.assertTrue((root / "scripts" / "terrain_chunked_builder.luau").is_file())
+
+        h_live = _snapshot_tree_hashes(live)
+        h_desk = _snapshot_tree_hashes(desktop)
+        h_bund = _snapshot_tree_hashes(bundled)
+        self.assertEqual(h_live, h_desk, "Live vs Desktop roblox-terrain-atmosphere parity mismatch")
+        self.assertEqual(h_live, h_bund, "Live vs bundled_skills roblox-terrain-atmosphere parity mismatch")
+
+
+class TestSystemContractsAndCustomTerrainV05(unittest.TestCase):
+    def setUp(self) -> None:
+        self.skills = resolve_default_skills_dir()
+        self.archive = resolve_default_archive_dir()
+        self.luau_engine = LuauAuditSnapshotEngine(self.skills, self.archive)
+        self.audit = CriticalAuditEngine(luau_audit_engine=self.luau_engine)
+        self.terrain_engine = TerrainEnvironmentEngine(self.skills, self.archive)
+
+    def test_compile_system_contracts_and_smoke_test_luau(self) -> None:
+        contracts_spec = {
+            "remotes": [
+                {"name": "SwingSword", "kind": "RemoteEvent", "direction": "ClientToServer", "rate_limit": 4},
+                {"name": "DamagePopup", "kind": "RemoteEvent", "direction": "ServerToClient"},
+                {"name": "FetchLoadout", "kind": "RemoteFunction", "direction": "ClientToServer"},
+            ],
+            "tags": {"Enemy": "SharpEnemy", "Interactable": "SharpInteractable"},
+            "modules": {
+                "CombatConfig": {
+                    "path": "ReplicatedStorage.Shared.CombatConfig",
+                    "exports": ["CalcDamage", "BASE_DAMAGE"],
+                    "role": "shared",
+                }
+            },
+        }
+        contracts_installer = self.luau_engine.compile_system_contracts_luau(contracts_spec)
+        self.assertIn("--!strict", contracts_installer)
+        self.assertIn("SystemContracts", contracts_installer)
+        self.assertIn("SwingSword", contracts_installer)
+        self.assertIn("FetchLoadout", contracts_installer)
+        self.assertIn("SharpEnemy", contracts_installer)
+        self.assertIn("CombatConfig", contracts_installer)
+
+        embedded = [m[1] for m in re.findall(r"\[(=*)\[(.*?)\]\1\]", contracts_installer, re.S) if "--!strict" in m[1]]
+        self.assertEqual(len(embedded), 1)
+        embedded_mod = embedded[0]
+        self.assertTrue(embedded_mod.lstrip().startswith("--!strict"))
+        self.assertIn("table.freeze", embedded_mod)
+
+        # Both the installer and the embedded SystemContracts module must pass CriticalAuditEngine cleanly
+        audit_installer = self.audit.audit_static(luau_sources={"ServerScriptService/InstallContracts.server.luau": contracts_installer})
+        self.assertEqual(audit_installer["findings"], [], f"Installer audit failed: {audit_installer['findings']}")
+        audit_mod = self.audit.audit_static(luau_sources={"ReplicatedStorage/Shared/SystemContracts.luau": embedded_mod})
+        self.assertEqual(audit_mod["findings"], [], f"SystemContracts module audit failed: {audit_mod['findings']}")
+
+        smoke_luau = self.luau_engine.compile_smoke_test_luau()
+        self.assertTrue(smoke_luau.lstrip().startswith("--!strict"))
+        for container in ("ReplicatedStorage", "ServerScriptService", "StarterPlayerScripts"):
+            self.assertIn(container, smoke_luau)
+        self.assertIn("pcall(require, entry.mod)", smoke_luau)
+        audit_smoke = self.audit.audit_static(luau_sources={"ServerScriptService/SmokeTest.luau": smoke_luau})
+        self.assertEqual(audit_smoke["findings"], [], f"Smoke test Luau audit failed: {audit_smoke['findings']}")
+
+    def test_verify_system_contracts_catches_all_four_cross_script_failures(self) -> None:
+        # 1. CONTRACT-REQ-001: broken require target path
+        broken_req_sources = {
+            "ReplicatedStorage/Shared/RealMod.luau": "--!strict\nlocal RealMod = {}\nfunction RealMod.Ping(): number\n\treturn 1\nend\nreturn RealMod\n",
+            "ServerScriptService/Boot.server.luau": (
+                "--!strict\n"
+                "local ReplicatedStorage = game:GetService('ReplicatedStorage')\n"
+                "local Missing = require(ReplicatedStorage.Shared.DoesNotExist)\n"
+                "local _n = Missing.Ping()\n"
+            ),
+        }
+        res_req = self.audit.verify_system_contracts(broken_req_sources)
+        self.assertFalse(res_req["passed"])
+        self.assertIn("CONTRACT-REQ-001", {f["id"] for f in res_req["findings"]})
+
+        # 2. CONTRACT-EXPORT-001: caller invokes Mod.MissingMethod / Mod:MissingMethod
+        broken_export_sources = {
+            "ReplicatedStorage/Shared/CombatUtil.luau": (
+                "--!strict\n"
+                "local CombatUtil = {}\n"
+                "function CombatUtil.CalcDamage(base: number): number\n"
+                "\treturn base * 2\n"
+                "end\n"
+                "return CombatUtil\n"
+            ),
+            "ServerScriptService/CombatMain.server.luau": (
+                "--!strict\n"
+                "local ReplicatedStorage = game:GetService('ReplicatedStorage')\n"
+                "local CombatUtil = require(ReplicatedStorage:WaitForChild('Shared', 5):WaitForChild('CombatUtil', 5))\n"
+                "local dmg = CombatUtil.DealDamageMissing(25)\n"
+                "local crit = CombatUtil:RollCritMissing()\n"
+                "print(dmg, crit)\n"
+            ),
+        }
+        res_exp = self.audit.verify_system_contracts(broken_export_sources)
+        self.assertFalse(res_exp["passed"])
+        exp_findings = [f for f in res_exp["findings"] if f["id"] == "CONTRACT-EXPORT-001"]
+        self.assertEqual(len(exp_findings), 2, exp_findings)
+
+        # 3. CONTRACT-NET-001: FireServer / FireClient / InvokeServer mismatches
+        broken_net_sources = {
+            "ServerScriptService/NetServer.server.luau": (
+                "--!strict\n"
+                "local ReplicatedStorage = game:GetService('ReplicatedStorage')\n"
+                "local Remotes = ReplicatedStorage:WaitForChild('Remotes', 5)\n"
+                "local SwingEvent = Remotes:WaitForChild('SwingSword', 5) :: RemoteEvent\n"
+                "local NotifyEvent = Remotes:WaitForChild('NotifyHit', 5) :: RemoteEvent\n"
+                "SwingEvent.OnServerEvent:Connect(function(player: Player) end)\n"
+                "NotifyEvent:FireAllClients({ ok = true })\n"
+            ),
+            "StarterPlayer/StarterPlayerScripts/NetClient.client.luau": (
+                "--!strict\n"
+                "local ReplicatedStorage = game:GetService('ReplicatedStorage')\n"
+                "local Remotes = ReplicatedStorage:WaitForChild('Remotes', 5)\n"
+                "local TypoSwing = Remotes:WaitForChild('SwingSwordsTypo', 5) :: RemoteEvent\n"
+                "local ShopFunc = Remotes:WaitForChild('GetShopItems', 5) :: RemoteFunction\n"
+                "TypoSwing:FireServer()\n"
+                "local _items = ShopFunc:InvokeServer()\n"
+            ),
+        }
+        res_net = self.audit.verify_system_contracts(broken_net_sources)
+        self.assertFalse(res_net["passed"])
+        net_findings = [f for f in res_net["findings"] if f["id"] == "CONTRACT-NET-001"]
+        self.assertEqual(len(net_findings), 3, net_findings)  # FireServer typo, FireAllClients unconsumed, InvokeServer missing OnServerInvoke
+
+        # 4. CONTRACT-LIFECYCLE-001: PlayerAdded without GetPlayers() AND per-player state without PlayerRemoving
+        broken_lifecycle_sources = {
+            "ServerScriptService/PlayerBoot.server.luau": (
+                "--!strict\n"
+                "local Players = game:GetService('Players')\n"
+                "local cooldowns: { [Player]: number } = {}\n"
+                "Players.PlayerAdded:Connect(function(player: Player)\n"
+                "\tcooldowns[player] = os.clock()\n"
+                "end)\n"
+            ),
+            "StarterPlayer/StarterPlayerScripts/ClientBoot.client.luau": (
+                "--!strict\n"
+                "local ready: boolean = true\n"
+                "print(ready)\n"
+            ),
+        }
+        res_life = self.audit.verify_system_contracts(broken_lifecycle_sources)
+        self.assertFalse(res_life["passed"])
+        life_findings = [f for f in res_life["findings"] if f["id"] == "CONTRACT-LIFECYCLE-001"]
+        self.assertEqual(len(life_findings), 2, life_findings)
+
+        # audit_static automatically enables verify_contracts when >= 2 scripts are present
+        static_auto = self.audit.audit_static(luau_sources=broken_net_sources)
+        self.assertIn("contracts", static_auto["summary"]["domains_audited"])
+        self.assertIn("CONTRACT-NET-001", {f["id"] for f in static_auto["findings"]})
+
+        static_disabled = self.audit.audit_static(luau_sources=broken_net_sources, verify_contracts=False)
+        self.assertNotIn("CONTRACT-NET-001", {f["id"] for f in static_disabled["findings"]})
+
+    def test_verify_system_contracts_passes_on_valid_modular_system_and_audit_live(self) -> None:
+        contracts_installer = self.luau_engine.compile_system_contracts_luau({
+            "remotes": [
+                {"name": "SwingSword", "kind": "RemoteEvent"},
+                {"name": "DamagePopup", "kind": "RemoteEvent"},
+                {"name": "FetchLoadout", "kind": "RemoteFunction"},
+            ],
+            "tags": ["SharpEnemy"],
+            "modules": {
+                "CombatConfig": {
+                    "path": "ReplicatedStorage.Shared.CombatConfig",
+                    "exports": ["CalcDamage", "MAX_RANGE"],
+                }
+            },
+        })
+        contracts_src = [m[1] for m in re.findall(r"\[(=*)\[(.*?)\]\1\]", contracts_installer, re.S) if "--!strict" in m[1]][0]
+
+        valid_sources = {
+            "ReplicatedStorage/Shared/SystemContracts.luau": contracts_src,
+            "ReplicatedStorage/Shared/CombatConfig.luau": (
+                "--!strict\n"
+                "local CombatConfig = {}\n"
+                "CombatConfig.MAX_RANGE = 12\n"
+                "function CombatConfig.CalcDamage(base: number): number\n"
+                "\treturn math.clamp(base, 1, 100)\n"
+                "end\n"
+                "return CombatConfig\n"
+            ),
+            "ServerScriptService/CombatServer.server.luau": (
+                "--!strict\n"
+                "local Players = game:GetService('Players')\n"
+                "local ReplicatedStorage = game:GetService('ReplicatedStorage')\n"
+                "local SystemContracts = require(ReplicatedStorage:WaitForChild('Shared', 5):WaitForChild('SystemContracts', 5))\n"
+                "local CombatConfig = require(ReplicatedStorage.Shared.CombatConfig)\n"
+                "local Remotes = SystemContracts.GetRemotesFolder(5) :: Folder\n"
+                "local SwingEvent = Remotes:WaitForChild('SwingSword', 5) :: RemoteEvent\n"
+                "local PopupEvent = Remotes:WaitForChild('DamagePopup', 5) :: RemoteEvent\n"
+                "local LoadoutFunc = Remotes:WaitForChild('FetchLoadout', 5) :: RemoteFunction\n"
+                "local cooldowns: { [Player]: number } = {}\n"
+                "local function onPlayerAdded(player: Player)\n"
+                "\tcooldowns[player] = 0\n"
+                "end\n"
+                "for _, existing in ipairs(Players:GetPlayers()) do\n"
+                "\tonPlayerAdded(existing)\n"
+                "end\n"
+                "Players.PlayerAdded:Connect(onPlayerAdded)\n"
+                "Players.PlayerRemoving:Connect(function(player: Player)\n"
+                "\tcooldowns[player] = nil\n"
+                "end)\n"
+                "SwingEvent.OnServerEvent:Connect(function(player: Player, targetId: unknown)\n"
+                "\tif typeof(targetId) ~= 'string' then return end\n"
+                "\tlocal now = os.clock()\n"
+                "\tif cooldowns[player] and (now - cooldowns[player]) < 0.25 then return end\n"
+                "\tcooldowns[player] = now\n"
+                "\tlocal dmg = CombatConfig.CalcDamage(20)\n"
+                "\tPopupEvent:FireClient(player, dmg)\n"
+                "end)\n"
+                "LoadoutFunc.OnServerInvoke = function(player: Player, slot: unknown)\n"
+                "\tif typeof(slot) ~= 'number' then return nil end\n"
+                "\treturn { range = CombatConfig.MAX_RANGE }\n"
+                "end\n"
+            ),
+            "StarterPlayer/StarterPlayerScripts/CombatClient.client.luau": (
+                "--!strict\n"
+                "local ReplicatedStorage = game:GetService('ReplicatedStorage')\n"
+                "local CombatConfig = require(ReplicatedStorage:WaitForChild('Shared', 5):WaitForChild('CombatConfig', 5))\n"
+                "local Remotes = ReplicatedStorage:WaitForChild('Remotes', 5)\n"
+                "local SwingEvent = Remotes:WaitForChild('SwingSword', 5) :: RemoteEvent\n"
+                "local PopupEvent = Remotes:WaitForChild('DamagePopup', 5) :: RemoteEvent\n"
+                "local LoadoutFunc = Remotes:WaitForChild('FetchLoadout', 5) :: RemoteFunction\n"
+                "PopupEvent.OnClientEvent:Connect(function(dmg: number)\n"
+                "\tprint(dmg, CombatConfig.MAX_RANGE)\n"
+                "end)\n"
+                "local _loadout = LoadoutFunc:InvokeServer(1)\n"
+                "SwingEvent:FireServer('Dummy')\n"
+            ),
+        }
+        contract_res = self.audit.verify_system_contracts(valid_sources)
+        self.assertTrue(contract_res["passed"], f"Expected valid modular system to pass: {contract_res['findings']}")
+        self.assertEqual(contract_res["findings"], [])
+        self.assertEqual(contract_res["verdict"], "SHIP")
+        self.assertEqual(contract_res["score"], 100)
+
+        full_static = self.audit.audit_static(luau_sources=valid_sources)
+        self.assertEqual(full_static["findings"], [], f"Expected full audit SHIP: {full_static['findings']}")
+        self.assertEqual(full_static["verdict"], "SHIP")
+        self.assertEqual(full_static["score"], 100)
+        self.assertIn("contracts", full_static["summary"]["domains_audited"])
+
+        # Also test audit_live integration with >= 2 scripts in scriptInventory
+        live_rep = {
+            "ok": True,
+            "reports": {"luau_security": {"findings": []}, "gui": {"errors": [], "warnings": []}, "environment": {"errors": [], "warnings": []}},
+            "telemetry": {"world": {"partCount": 10, "streamingEnabled": True, "spawnLocationCount": 1}, "gui": {"canvasGroupCount": 1}},
+            "scriptInventory": {
+                "scripts": [{"path": p, "source": s} for p, s in valid_sources.items()]
+            },
+        }
+        live_res = self.audit.audit_live(live_report=live_rep)
+        self.assertEqual(live_res["verdict"], "SHIP", live_res["findings"])
+        self.assertIn("contracts", live_res["summary"]["domains_audited"])
+
+    def test_custom_terrain_spec_and_custom_atmosphere(self) -> None:
+        custom_spec = {
+            "biome": "Volcanic",
+            "noise_weight": 0.65,
+            "height_layers": [
+                {"type": "crater", "x": 0, "z": 0, "radius": 48, "depth": 28, "rimHeight": 14, "material": "Basalt"},
+                {
+                    "type": "river",
+                    "points": [{"x": -120, "z": -60}, {"x": -40, "z": 10}, {"x": 80, "z": 90}],
+                    "width": 18,
+                    "depth": 14,
+                    "waterFill": True,
+                },
+                {"type": "ridge", "x1": -90, "z1": 40, "x2": 90, "z2": -40, "width": 22, "height": 34},
+                {"type": "terrace", "x": 60, "z": -60, "radius": 50, "stepHeight": 8},
+                {"type": "plateau", "x": -70, "z": 70, "radius": 32, "height": 104, "material": "Slate"},
+            ],
+            "material_rules": [
+                {"minY": 115, "material": "CrackedLava"},
+                {"minSlope": 0.65, "material": "Rock"},
+                {"x": 0, "z": 0, "maxRadius": 28, "material": "Basalt"},
+            ],
+        }
+        terrain_luau = self.terrain_engine.compile_terrain_build_luau(
+            min_corner=[-128, -32, -128],
+            max_corner=[128, 160, 128],
+            custom_terrain_spec=custom_spec,
+        )
+        for token in (
+            "ApplyHeightLayers",
+            "ResolveMaterialRules",
+            "heightLayers",
+            "materialRules",
+            '"crater"',
+            '"river"',
+            '"ridge"',
+            '"terrace"',
+            '"plateau"',
+            "Enum.Material.CrackedLava",
+            "Enum.Material.Basalt",
+            "Enum.Material.Slate",
+            "waterFill = true",
+        ):
+            self.assertIn(token, terrain_luau)
+
+        toks, dirs = tokenize_luau(terrain_luau)
+        self.assertIn("--!strict", dirs)
+        self.assertGreater(len(toks), 100)
+        builder_path = self.skills / "roblox-terrain-atmosphere" / "scripts" / "terrain_chunked_builder.luau"
+        b_toks, b_dirs = tokenize_luau(builder_path.read_text(encoding="utf-8"))
+        self.assertIn("--!strict", b_dirs)
+        self.assertGreater(len(b_toks), 100)
+
+        env_luau = self.terrain_engine.compile_environment_apply_luau(
+            preset_name="VolcanicAsh",
+            custom_atmosphere={
+                "clock_time": 18.2,
+                "atmosphere": {"Density": 0.44, "Glare": 1.4, "Haze": 2.2, "Color": "#FFB07A"},
+                "clouds": {"Enabled": True, "Cover": 0.72, "Density": 0.8},
+                "global_wind": [14, 0, -6],
+                "bloom": {"Enabled": True, "Intensity": 0.75},
+            },
+        )
+        self.assertIn("VolcanicAsh", env_luau)
+        self.assertIn("18.2", env_luau)
+        self.assertIn("ColorCorrectionEffect", env_luau)
+        self.assertIn("parseHexColor", env_luau)
+
+    def test_game_planner_v05_subagent_directives(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sharp_v05_plan_") as td:
+            mgr = ProjectLibraryManager(project_dir=Path(td) / "v05_game", project_id="v05_game")
+            planner = GamePlanner(mgr, audit_engine=self.audit)
+            planner.create_plan(title="Ashfall Keep", genre="Action RPG", granularity="micro")
+
+            intake = planner.dispatch_action("intake_questions", title="Ashfall Keep", genre="Action RPG")
+            q_dump = str(intake)
+            for required_kw in ("TEXTURE_STYLE_PROFILES", "ASSET_STYLE_PROFILES", "ANIMATION_STYLE_PROFILES", "compose_custom", "pose_strip"):
+                self.assertIn(required_kw, q_dump)
+
+            for focus, sid in (("auto", "S0.1"), ("auto", "S1.1"), ("auto", "S2.1"), ("auto", "S3.1"), ("auto", "S4.1"), ("art_creation", None)):
+                brief = planner.build_subagent_brief(step_id=sid, role_focus=focus)
+                self.assertTrue(brief["ok"])
+                self.assertIn("workflow_directives", brief)
+                self.assertIn("three_tier_art_pipeline", brief["workflow_directives"])
+                self.assertIn("selected_style_profiles", brief)
+
+            art_brief = planner.build_subagent_brief(role_focus="art_creation")
+            art_txt = str(art_brief)
+            for token in (
+                "sharp_gui_build(mode='custom')",
+                "TEXTURE_STYLE_PROFILES",
+                "ASSET_STYLE_PROFILES",
+                "ANIMATION_STYLE_PROFILES",
+                "compose_custom",
+                "pose_strip",
+                "custom_bmesh",
+                "inspect_attachment_fit",
+                "custom_terrain_spec",
+                "verify_contracts",
+            ):
+                self.assertIn(token, art_txt, f"Missing v0.5 directive '{token}' in subagent_brief")
 
 
 if __name__ == "__main__":

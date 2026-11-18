@@ -1278,6 +1278,427 @@ return HttpService:JSONEncode({{
 }})
 """
 
+    def compile_inspect_attachment_fit_luau(
+        self,
+        rig_path: str = "Workspace.Rig",
+        item_path: str = "",
+        test_pose: str = "raised_arm",
+        clearance_margin_studs: float = 0.02,
+    ) -> str:
+        """Compile read-only Edit-mode Luau computing OBB limb clearance/penetration in rest and action poses."""
+        pose_key = (test_pose or "raised_arm").strip().lower().replace("-", "_").replace(" ", "_")
+        margin = max(0.0, float(clearance_margin_studs))
+        return f"""--!strict
+local HttpService = game:GetService("HttpService")
+
+local TARGET_RIG_PATH = {json.dumps(rig_path)}
+local TARGET_ITEM_PATH = {json.dumps(item_path or "")}
+local TEST_POSE = {json.dumps(pose_key)}
+local CLEARANCE_MARGIN = {margin:.6g}
+
+local function resolveInstance(pathStr: string): Instance?
+	if pathStr == "" then
+		return nil
+	end
+	local curr: Instance = game
+	local first = true
+	for seg in string.gmatch(pathStr, "[^%.]+") do
+		if first and seg == "game" then
+			first = false
+			continue
+		end
+		local nxt: Instance? = nil
+		if first and curr == game then
+			local okSvc, svc = pcall(function()
+				return game:GetService(seg)
+			end)
+			nxt = if okSvc then svc else curr:FindFirstChild(seg)
+		else
+			nxt = curr:FindFirstChild(seg)
+		end
+		first = false
+		if not nxt then
+			return nil
+		end
+		curr = nxt
+	end
+	return curr
+end
+
+local rig = resolveInstance(TARGET_RIG_PATH)
+if not rig then
+	return HttpService:JSONEncode({{
+		ok = false,
+		rigPath = TARGET_RIG_PATH,
+		itemPath = if TARGET_ITEM_PATH ~= "" then TARGET_ITEM_PATH else nil,
+		testPose = TEST_POSE,
+		error = "Rig not found at path: " .. TARGET_RIG_PATH,
+	}})
+end
+
+local itemInst: Instance? = nil
+if TARGET_ITEM_PATH ~= "" then
+	itemInst = resolveInstance(TARGET_ITEM_PATH)
+	if not itemInst then
+		return HttpService:JSONEncode({{
+			ok = false,
+			rigPath = rig:GetFullName(),
+			itemPath = TARGET_ITEM_PATH,
+			testPose = TEST_POSE,
+			error = "Item not found at path: " .. TARGET_ITEM_PATH,
+		}})
+	end
+end
+
+local R15_CORE_SET: {{ [string]: boolean }} = {{
+	HumanoidRootPart = true, LowerTorso = true, UpperTorso = true, Head = true,
+	LeftUpperArm = true, LeftLowerArm = true, LeftHand = true,
+	RightUpperArm = true, RightLowerArm = true, RightHand = true,
+	LeftUpperLeg = true, LeftLowerLeg = true, LeftFoot = true,
+	RightUpperLeg = true, RightLowerLeg = true, RightFoot = true,
+}}
+
+local CHECK_LIMBS: {{ string }} = {{
+	"LowerTorso", "UpperTorso", "Head",
+	"LeftUpperArm", "LeftLowerArm", "LeftHand",
+	"RightUpperArm", "RightLowerArm", "RightHand",
+	"LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
+	"RightUpperLeg", "RightLowerLeg", "RightFoot",
+}}
+
+local limbParts: {{ [string]: BasePart }} = {{}}
+for _, limbName in ipairs(CHECK_LIMBS) do
+	local found = rig:FindFirstChild(limbName, true)
+	if found and found:IsA("BasePart") then
+		limbParts[limbName] = found
+	end
+end
+local hrpInst = rig:FindFirstChild("HumanoidRootPart", true)
+local rootPart: BasePart? = if hrpInst and hrpInst:IsA("BasePart")
+	then hrpInst
+	elseif rig:IsA("Model") and rig.PrimaryPart then rig.PrimaryPart
+	else rig:FindFirstChildWhichIsA("BasePart", true)
+
+if not rootPart then
+	return HttpService:JSONEncode({{
+		ok = false,
+		rigPath = rig:GetFullName(),
+		itemPath = if itemInst then itemInst:GetFullName() else nil,
+		testPose = TEST_POSE,
+		error = "Rig has no BasePart.",
+	}})
+end
+
+local equipParts: {{ BasePart }} = {{}}
+local equipSeen: {{ [BasePart]: boolean }} = {{}}
+local function addEquipPart(p: BasePart)
+	if not equipSeen[p] then
+		equipSeen[p] = true
+		table.insert(equipParts, p)
+	end
+end
+
+if itemInst then
+	if itemInst:IsA("BasePart") then
+		addEquipPart(itemInst)
+	else
+		for _, d in ipairs(itemInst:GetDescendants()) do
+			if d:IsA("BasePart") then
+				addEquipPart(d)
+			end
+		end
+	end
+else
+	for _, d in ipairs(rig:GetDescendants()) do
+		if d:IsA("BasePart") then
+			local par = d.Parent
+			local isEquip = (not R15_CORE_SET[d.Name])
+				or (par ~= nil and (par:IsA("Accessory") or par:IsA("Tool")))
+			if isEquip and (d.Parent ~= rig or not R15_CORE_SET[d.Name]) then
+				addEquipPart(d)
+			end
+		end
+	end
+end
+
+-- Build attachment/joint graph so equipment parts inherit host limb kinematics across poses
+local equipParentMap: {{ [BasePart]: BasePart }} = {{}}
+local function scanJointLinks(container: Instance)
+	for _, d in ipairs(container:GetDescendants()) do
+		if d:IsA("Motor6D") and d.Part0 and d.Part1 and d.Enabled then
+			if equipSeen[d.Part1] or not R15_CORE_SET[d.Part1.Name] then
+				equipParentMap[d.Part1] = d.Part0
+			end
+		elseif d:IsA("Weld") and d.Part0 and d.Part1 and d.Enabled then
+			if equipSeen[d.Part1] then
+				equipParentMap[d.Part1] = d.Part0
+			elseif equipSeen[d.Part0] then
+				equipParentMap[d.Part0] = d.Part1
+			end
+		elseif d:IsA("WeldConstraint") and d.Part0 and d.Part1 and d.Enabled then
+			if equipSeen[d.Part1] and not equipParentMap[d.Part1] then
+				equipParentMap[d.Part1] = d.Part0
+			elseif equipSeen[d.Part0] and not equipParentMap[d.Part0] then
+				equipParentMap[d.Part0] = d.Part1
+			end
+		elseif d:IsA("RigidConstraint") and d.Enabled and d.Attachment0 and d.Attachment1 then
+			local p0 = d.Attachment0.Parent
+			local p1 = d.Attachment1.Parent
+			if p0 and p1 and p0:IsA("BasePart") and p1:IsA("BasePart") then
+				if equipSeen[p0] then
+					equipParentMap[p0] = p1
+				elseif equipSeen[p1] then
+					equipParentMap[p1] = p0
+				end
+			end
+		end
+	end
+end
+scanJointLinks(rig)
+if itemInst and not itemInst:IsDescendantOf(rig) then
+	scanJointLinks(itemInst)
+end
+
+local function findHostLimb(ep: BasePart): BasePart?
+	local cur: BasePart? = ep
+	for _ = 1, 8 do
+		if not cur then
+			break
+		end
+		local nxt = equipParentMap[cur]
+		if not nxt then
+			break
+		end
+		if R15_CORE_SET[nxt.Name] and nxt.Name ~= "HumanoidRootPart" then
+			return nxt
+		end
+		cur = nxt
+	end
+	return nil
+end
+
+local equipHost: {{ [BasePart]: BasePart? }} = {{}}
+local equipLocalFromHost: {{ [BasePart]: CFrame }} = {{}}
+for _, ep in ipairs(equipParts) do
+	local h = findHostLimb(ep)
+	equipHost[ep] = h
+	if h then
+		equipLocalFromHost[ep] = h.CFrame:ToObjectSpace(ep.CFrame)
+	end
+end
+
+local function getActionPoseTransforms(poseKey: string): {{ [string]: CFrame }}
+	if poseKey == "slash_windup" then
+		return {{
+			UpperTorso = CFrame.Angles(math.rad(6), math.rad(-24), 0),
+			RightUpperArm = CFrame.Angles(math.rad(-38), math.rad(-22), math.rad(-20)),
+			RightLowerArm = CFrame.Angles(math.rad(-50), 0, 0),
+			LeftUpperArm = CFrame.Angles(math.rad(24), 0, math.rad(12)),
+		}}
+	elseif poseKey == "block_guard" then
+		return {{
+			UpperTorso = CFrame.Angles(math.rad(-14), math.rad(-26), 0),
+			LeftUpperArm = CFrame.Angles(math.rad(68), math.rad(36), math.rad(12)),
+			LeftLowerArm = CFrame.Angles(math.rad(-84), 0, 0),
+		}}
+	elseif poseKey == "overhead_reach" then
+		return {{
+			RightUpperArm = CFrame.Angles(math.rad(145), 0, math.rad(-10)),
+			LeftUpperArm = CFrame.Angles(math.rad(145), 0, math.rad(10)),
+		}}
+	elseif poseKey == "crouch" then
+		return {{
+			LowerTorso = CFrame.new(0, -0.35, 0) * CFrame.Angles(math.rad(-12), 0, 0),
+			LeftUpperLeg = CFrame.Angles(math.rad(42), 0, 0),
+			LeftLowerLeg = CFrame.Angles(math.rad(-82), 0, 0),
+			RightUpperLeg = CFrame.Angles(math.rad(42), 0, 0),
+			RightLowerLeg = CFrame.Angles(math.rad(-82), 0, 0),
+		}}
+	end
+	-- Default raised_arm pose
+	return {{
+		UpperTorso = CFrame.Angles(math.rad(-8), math.rad(12), 0),
+		RightUpperArm = CFrame.Angles(math.rad(82), math.rad(-10), math.rad(-18)),
+		RightLowerArm = CFrame.Angles(math.rad(-25), 0, 0),
+		LeftUpperArm = CFrame.Angles(math.rad(72), math.rad(10), math.rad(18)),
+		LeftLowerArm = CFrame.Angles(math.rad(-28), 0, 0),
+	}}
+end
+
+local function computeRigPoseCFrames(poseMap: {{ [string]: CFrame }}): {{ [string]: CFrame }}
+	local out: {{ [string]: CFrame }} = {{}}
+	out[rootPart.Name] = rootPart.CFrame
+
+	local adj: {{ [string]: {{ {{ child: string, c0: CFrame, c1: CFrame }} }} }} = {{}}
+	for _, d in ipairs(rig:GetDescendants()) do
+		if d:IsA("Motor6D") and d.Part0 and d.Part1 and R15_CORE_SET[d.Part0.Name] and R15_CORE_SET[d.Part1.Name] then
+			local list = adj[d.Part0.Name]
+			if not list then
+				list = {{}}
+				adj[d.Part0.Name] = list
+			end
+			table.insert(list, {{ child = d.Part1.Name, c0 = d.C0, c1 = d.C1 }})
+		elseif d:IsA("AnimationConstraint") and d.Attachment0 and d.Attachment1 then
+			local p0 = d.Attachment0.Parent
+			local p1 = d.Attachment1.Parent
+			if p0 and p1 and p0:IsA("BasePart") and p1:IsA("BasePart") and R15_CORE_SET[p0.Name] and R15_CORE_SET[p1.Name] then
+				local list = adj[p0.Name]
+				if not list then
+					list = {{}}
+					adj[p0.Name] = list
+				end
+				table.insert(list, {{ child = p1.Name, c0 = d.Attachment0.CFrame, c1 = d.Attachment1.CFrame }})
+			end
+		end
+	end
+
+	local queue: {{ string }} = {{ rootPart.Name }}
+	local idx = 1
+	while idx <= #queue do
+		local pName = queue[idx]
+		idx += 1
+		local parentCf = out[pName]
+		local edges = adj[pName]
+		if parentCf and edges then
+			for _, edge in ipairs(edges) do
+				if not out[edge.child] then
+					local tf = poseMap[edge.child] or CFrame.identity
+					out[edge.child] = parentCf * edge.c0 * tf * edge.c1:Inverse()
+					table.insert(queue, edge.child)
+				end
+			end
+		end
+	end
+
+	for limbName, part in pairs(limbParts) do
+		if not out[limbName] then
+			out[limbName] = part.CFrame
+		end
+	end
+	return out
+end
+
+local function obbSignedGap(cfA: CFrame, sizeA: Vector3, cfB: CFrame, sizeB: Vector3): (number, Vector3)
+	local axesA = {{ cfA.RightVector, cfA.UpVector, cfA.LookVector }}
+	local axesB = {{ cfB.RightVector, cfB.UpVector, cfB.LookVector }}
+	local halfA = sizeA * 0.5
+	local halfB = sizeB * 0.5
+	local delta = cfB.Position - cfA.Position
+	local maxGap = -1e9
+	local bestAxis = Vector3.yAxis
+
+	local function testAxis(rawAxis: Vector3)
+		local mag = rawAxis.Magnitude
+		if mag < 1e-5 then
+			return
+		end
+		local axis = rawAxis / mag
+		local d = math.abs(delta:Dot(axis))
+		local pA = halfA.X * math.abs(axesA[1]:Dot(axis))
+			+ halfA.Y * math.abs(axesA[2]:Dot(axis))
+			+ halfA.Z * math.abs(axesA[3]:Dot(axis))
+		local pB = halfB.X * math.abs(axesB[1]:Dot(axis))
+			+ halfB.Y * math.abs(axesB[2]:Dot(axis))
+			+ halfB.Z * math.abs(axesB[3]:Dot(axis))
+		local gap = d - (pA + pB)
+		if gap > maxGap then
+			maxGap = gap
+			bestAxis = if delta:Dot(axis) < 0 then -axis else axis
+		end
+	end
+
+	for i = 1, 3 do
+		testAxis(axesA[i])
+		testAxis(axesB[i])
+	end
+	for i = 1, 3 do
+		for j = 1, 3 do
+			testAxis(axesA[i]:Cross(axesB[j]))
+		end
+	end
+	return maxGap, bestAxis
+end
+
+local poseCases: {{ {{ name: string, transforms: {{ [string]: CFrame }} }} }} = {{
+	{{ name = "rest", transforms = {{}} }},
+	{{ name = TEST_POSE, transforms = getActionPoseTransforms(TEST_POSE) }},
+}}
+
+local penetrations: {{ any }} = {{}}
+local recommendedOffsets: {{ any }} = {{}}
+local minClearanceStuds = 1e9
+local checkedPairs = 0
+
+local function r4(n: number): number
+	return math.round(n * 10000) / 10000
+end
+
+for _, poseCase in ipairs(poseCases) do
+	local limbCfs = computeRigPoseCFrames(poseCase.transforms)
+	for _, ep in ipairs(equipParts) do
+		local host = equipHost[ep]
+		local hostName = if host then host.Name else nil
+		local equipCf = if (hostName and limbCfs[hostName] and equipLocalFromHost[ep])
+			then (limbCfs[hostName] * equipLocalFromHost[ep])
+			else ep.CFrame
+
+		for _, limbName in ipairs(CHECK_LIMBS) do
+			if limbName ~= hostName and limbParts[limbName] and limbCfs[limbName] then
+				checkedPairs += 1
+				local gap, pushAxis = obbSignedGap(limbCfs[limbName], limbParts[limbName].Size, equipCf, ep.Size)
+				if gap < minClearanceStuds then
+					minClearanceStuds = gap
+				end
+				if gap < -CLEARANCE_MARGIN then
+					local penDepth = -gap
+					local pushWorld = pushAxis * (penDepth + CLEARANCE_MARGIN)
+					local pushLocal = if (hostName and limbCfs[hostName])
+						then limbCfs[hostName]:VectorToObjectSpace(pushWorld)
+						else pushWorld
+					table.insert(penetrations, {{
+						pose = poseCase.name,
+						itemPart = ep.Name,
+						itemPath = ep:GetFullName(),
+						hostLimb = hostName,
+						limb = limbName,
+						penetrationStuds = r4(penDepth),
+						clearanceStuds = r4(gap),
+						axisWorld = {{ r4(pushAxis.X), r4(pushAxis.Y), r4(pushAxis.Z) }},
+					}})
+					table.insert(recommendedOffsets, {{
+						pose = poseCase.name,
+						itemPart = ep.Name,
+						hostLimb = hostName,
+						collidingLimb = limbName,
+						offsetWorld = {{ r4(pushWorld.X), r4(pushWorld.Y), r4(pushWorld.Z) }},
+						offsetLocal = {{ r4(pushLocal.X), r4(pushLocal.Y), r4(pushLocal.Z) }},
+						suggestedMarginStuds = CLEARANCE_MARGIN,
+					}})
+				end
+			end
+		end
+	end
+end
+
+if checkedPairs == 0 then
+	minClearanceStuds = 0
+end
+
+return HttpService:JSONEncode({{
+	ok = true,
+	rigPath = rig:GetFullName(),
+	itemPath = if itemInst then itemInst:GetFullName() else nil,
+	testPose = TEST_POSE,
+	clearanceMarginStuds = CLEARANCE_MARGIN,
+	checkedPairs = checkedPairs,
+	posesTested = {{ "rest", TEST_POSE }},
+	fit_passed = (#penetrations == 0),
+	penetrations = penetrations,
+	minClearanceStuds = r4(minClearanceStuds),
+	recommendedOffsets = recommendedOffsets,
+}})
+"""
+
     def compile_attach_luau(
         self,
         rig_path: str = "Workspace.Rig",

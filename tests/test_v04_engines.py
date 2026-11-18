@@ -841,6 +841,48 @@ class TestV04StdioE2E(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(mp["plan_summary"]["granularity"], "micro")
                     self.assertEqual(mp["plan_summary"]["step_count"], len(MICRO_STEP_EXECUTION_ORDER))
 
+                    # 7. v0.5 bespoke stdio tool actions: list_styles, create_pbr_set, custom UI guide + custom build,
+                    #    compose_custom + pose_at_time, inspect_attachment_fit, custom_terrain_spec, verify_contracts
+                    styles_res = json.loads((await session.call_tool("sharp_design_system", {"action": "list_styles", "detail": "complete"})).content[0].text)
+                    self.assertTrue(styles_res["ok"])
+                    self.assertIn("pbr_metallic_roughness", styles_res["texture_styles"])
+                    self.assertIn("handpainted_fantasy_rpg", styles_res["asset_styles"])
+
+                    pbr_res = json.loads((await session.call_tool("sharp_art_studio", {"action": "create_pbr_set", "game_title": "Slime Arena", "texture_style": "pbr_metallic_roughness", "resolution": 128, "detail": "complete"})).content[0].text)
+                    self.assertTrue(pbr_res["ok"])
+                    self.assertTrue(Path(pbr_res["albedo_path"]).is_file())
+                    self.assertTrue(Path(pbr_res["normal_path"]).is_file())
+
+                    guide_res = json.loads((await session.call_tool("sharp_gui_build", {"mode": "authoring_guide", "layout_paradigm": "arpg_orbs"})).content[0].text)
+                    self.assertTrue(guide_res["ok"])
+                    self.assertEqual(guide_res["paradigm"], "arpg_orbs")
+
+                    custom_gui_res = json.loads((await session.call_tool("sharp_gui_build", {"mode": "custom", "layout_paradigm": "arpg_orbs", "custom_builder_luau": "local sg = Instance.new('ScreenGui')\nsg.Name = 'TestCustomHud'\nsg.Parent = game:GetService('StarterGui')", "execute_in_studio": False})).content[0].text)
+                    self.assertTrue(custom_gui_res["ok"])
+                    self.assertEqual(custom_gui_res["mode"], "custom")
+                    self.assertIn("TestCustomHud", custom_gui_res["compiledLuau"])
+
+                    comp_anim_res = json.loads((await session.call_tool("sharp_rig_and_animation", {"action": "compose_custom", "clip_name": "SlimeHeavySlam", "style": "heavy_souls", "clips_data": {"name": "SlimeHeavySlam", "keyposes": [{"t": 0.0, "poses": {"UpperTorso": {"rot": [0, 0, 0]}}}, {"t": 0.45, "hold": 0.15, "poses": {"UpperTorso": {"rot": [-24, 0, 0]}, "RightUpperArm": {"rot": [-115, 0, 12]}}}, {"t": 0.85, "hold": 0.12, "poses": {"UpperTorso": {"rot": [28, 0, 0]}, "RightUpperArm": {"rot": [25, 0, -5]}}}, {"t": 1.45, "poses": {"UpperTorso": {"rot": [0, 0, 0]}}}]}, "execute_in_studio": False})).content[0].text)
+                    self.assertTrue(comp_anim_res["ok"])
+                    self.assertGreaterEqual(comp_anim_res["duration_sec"], 1.2)
+                    self.assertTrue(comp_anim_res["analysis"]["passed"])
+
+                    pose_res = json.loads((await session.call_tool("sharp_rig_and_animation", {"action": "pose_at_time", "clip_name": "SlimeHeavySlam", "time_fraction": 0.55, "execute_in_studio": False})).content[0].text)
+                    self.assertTrue(pose_res["ok"])
+                    self.assertIn("compiledLuau", pose_res)
+
+                    fit_res = json.loads((await session.call_tool("sharp_equipment_attach", {"action": "inspect_attachment_fit", "rig_path": "Workspace.TestWarrior", "test_pose": "raised_arm", "execute_in_studio": False})).content[0].text)
+                    self.assertTrue(fit_res["ok"])
+                    self.assertIn("compiledLuau", fit_res)
+
+                    ter_res = json.loads((await session.call_tool("sharp_terrain_build", {"biome": "Volcanic", "custom_terrain_spec": {"height_layers": [{"type": "crater", "x": 0, "z": 0, "radius": 45, "depth": 18}]}, "execute_in_studio": False})).content[0].text)
+                    self.assertTrue(ter_res["ok"])
+                    self.assertTrue(ter_res["has_custom_terrain_spec"])
+
+                    con_res = json.loads((await session.call_tool("sharp_luau_scaffold", {"action": "verify_contracts", "luau_sources": {"ReplicatedStorage.Shared.Net": "--!strict\nlocal M = {}\nfunction M.Ping() return true end\nreturn M", "ServerScriptService.Init": "--!strict\nlocal Net = require(game.ReplicatedStorage.Shared.Net)\nNet.MissingFn()\n"}})).content[0].text)
+                    self.assertTrue(con_res["ok"])
+                    self.assertIn("CONTRACT-EXPORT-001", {f["id"] for f in con_res["findings"]})
+
 
 if __name__ == "__main__":
     unittest.main()

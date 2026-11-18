@@ -197,6 +197,156 @@ DESIGN_PRESETS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+TEXTURE_STYLE_PROFILES: Dict[str, Dict[str, Any]] = {
+    "clean_vector_cel": {
+        "style_id": "clean_vector_cel",
+        "label": "Clean Vector Cel",
+        "description": "Crisp 2-band cel shading with clean vector edges, minimal grain, satin-matte dielectric surfaces, and bold readable color blocks.",
+        "albedo_bands": 2,
+        "grain_strength": 0.04,
+        "roughness_range": [0.42, 0.62],
+        "metallic_range": [0.0, 0.05],
+        "normal_strength": 0.25,
+        "emissive_mask": False,
+        "pixel_grid_px": 0,
+        "surface_appearance_defaults": {"Roughness": 0.52, "Metalness": 0.0},
+        "prompt_keywords": ["clean cel shading", "crisp vector edges", "2-tone shadow bands", "minimal grain"],
+    },
+    "stylized_gradient_atlas": {
+        "style_id": "stylized_gradient_atlas",
+        "label": "Stylized Gradient Atlas",
+        "description": "Painterly directional palette gradients with soft ambient cavity shading, gentle brushstroke texture, and balanced satin roughness.",
+        "albedo_bands": 0,
+        "grain_strength": 0.10,
+        "roughness_range": [0.45, 0.72],
+        "metallic_range": [0.0, 0.12],
+        "normal_strength": 0.45,
+        "emissive_mask": False,
+        "pixel_grid_px": 0,
+        "surface_appearance_defaults": {"Roughness": 0.58, "Metalness": 0.05},
+        "prompt_keywords": ["stylized painted gradient", "soft cavity occlusion", "vibrant color ramp", "satin finish"],
+    },
+    "pbr_metallic_roughness": {
+        "style_id": "pbr_metallic_roughness",
+        "label": "PBR Metallic Roughness",
+        "description": "Anisotropic brushed alloy streaks, chamfered panel seams, micro-scratches, crisp tangent normal relief, and true metallic/dielectric contrast.",
+        "albedo_bands": 0,
+        "grain_strength": 0.28,
+        "roughness_range": [0.16, 0.68],
+        "metallic_range": [0.72, 0.96],
+        "normal_strength": 0.85,
+        "emissive_mask": False,
+        "pixel_grid_px": 0,
+        "surface_appearance_defaults": {"Roughness": 0.32, "Metalness": 0.85},
+        "prompt_keywords": ["brushed metal streaks", "chamfered panel seams", "micro-scratches", "high metallic contrast"],
+    },
+    "pixel_retro_crisp": {
+        "style_id": "pixel_retro_crisp",
+        "label": "Pixel Retro Crisp",
+        "description": "Nearest-neighbor pixel-grid texels with ordered Bayer dithering, quantized palette blocks, and stepped retro bevel normals.",
+        "albedo_bands": 6,
+        "grain_strength": 0.12,
+        "roughness_range": [0.55, 0.82],
+        "metallic_range": [0.0, 0.15],
+        "normal_strength": 0.60,
+        "emissive_mask": False,
+        "pixel_grid_px": 16,
+        "surface_appearance_defaults": {"Roughness": 0.68, "Metalness": 0.05},
+        "prompt_keywords": ["crisp pixel art texels", "nearest-neighbor grid", "ordered dithering", "retro palette"],
+    },
+    "arcane_emissive_runes": {
+        "style_id": "arcane_emissive_runes",
+        "label": "Arcane Emissive Runes",
+        "description": "Carved dark obsidian/slate stone inlaid with luminous arcane rune sigils, engraved normal channels, and metallic gilt trim.",
+        "albedo_bands": 0,
+        "grain_strength": 0.20,
+        "roughness_range": [0.22, 0.78],
+        "metallic_range": [0.10, 0.82],
+        "normal_strength": 0.90,
+        "emissive_mask": True,
+        "pixel_grid_px": 0,
+        "surface_appearance_defaults": {"Roughness": 0.44, "Metalness": 0.35},
+        "prompt_keywords": ["carved obsidian stone", "glowing arcane rune inlays", "engraved normal grooves", "gilded bronze trim"],
+    },
+}
+
+ASSET_STYLE_PROFILES: Dict[str, Dict[str, Any]] = {
+    "lowpoly_flat_stylized": {
+        "style_id": "lowpoly_flat_stylized",
+        "label": "Low-Poly Flat Stylized",
+        "description": "Faceted planar low-poly geometry with bold readable silhouettes, crisp edge bevels, and tight triangle budgets.",
+        "recommended_texture_style": "stylized_gradient_atlas",
+        "poly_budget_target": 1800,
+        "bevel_width": 0.025,
+        "shade_smooth": False,
+        "proportion_bias": "clean_stylized",
+        "roughness_bias": 0.62,
+        "metallic_bias": 0.08,
+        "silhouette_rules": ["sharp planar facets", "bold primary shapes", "clean low-poly silhouette"],
+    },
+    "handpainted_fantasy_rpg": {
+        "style_id": "handpainted_fantasy_rpg",
+        "label": "Hand-Painted Fantasy RPG",
+        "description": "Heroic tapered blades, ornate gilded guards, leather-wrapped grips, and warm painterly surface contrast.",
+        "recommended_texture_style": "stylized_gradient_atlas",
+        "poly_budget_target": 4200,
+        "bevel_width": 0.035,
+        "shade_smooth": True,
+        "proportion_bias": "heroic_taper",
+        "roughness_bias": 0.50,
+        "metallic_bias": 0.45,
+        "silhouette_rules": ["heroic chamfered bevels", "ornate guard & pommel silhouette", "warm painted contrast"],
+    },
+    "hard_surface_scifi_mecha": {
+        "style_id": "hard_surface_scifi_mecha",
+        "label": "Hard-Surface Sci-Fi Mecha",
+        "description": "Angular 45-degree chamfered armor plates, recessed panel seams, brushed alloys, and glowing optic emitters.",
+        "recommended_texture_style": "pbr_metallic_roughness",
+        "poly_budget_target": 5500,
+        "bevel_width": 0.018,
+        "shade_smooth": False,
+        "proportion_bias": "angular_chamfer",
+        "roughness_bias": 0.28,
+        "metallic_bias": 0.85,
+        "silhouette_rules": ["chamfered panel seams", "vent cutouts", "brushed metallic specular response"],
+    },
+    "chibi_chunky_toon": {
+        "style_id": "chibi_chunky_toon",
+        "label": "Chibi Chunky Toon",
+        "description": "Oversized chunky toy proportions, generous rounded bevels, and glossy candy-coated readability from afar.",
+        "recommended_texture_style": "clean_vector_cel",
+        "poly_budget_target": 2400,
+        "bevel_width": 0.06,
+        "shade_smooth": True,
+        "proportion_bias": "chunky_oversized",
+        "roughness_bias": 0.40,
+        "metallic_bias": 0.05,
+        "silhouette_rules": ["thick readable grips & edges", "generous rounded bevels", "playful exaggerated proportions"],
+    },
+    "dark_gothic_souls": {
+        "style_id": "dark_gothic_souls",
+        "label": "Dark Gothic Souls",
+        "description": "Hammered weathered iron, elongated gothic spire guards, engraved rune channels, and tarnished bronze accents.",
+        "recommended_texture_style": "arcane_emissive_runes",
+        "poly_budget_target": 6500,
+        "bevel_width": 0.022,
+        "shade_smooth": True,
+        "proportion_bias": "elongated_gothic",
+        "roughness_bias": 0.42,
+        "metallic_bias": 0.72,
+        "silhouette_rules": ["elongated gothic spires", "weathered forged steel contrast", "engraved rune inlays"],
+    },
+}
+
+_PRESET_STYLE_DEFAULTS: Dict[str, Tuple[str, str]] = {
+    "candy_simulator": ("clean_vector_cel", "chibi_chunky_toon"),
+    "anime_neon": ("clean_vector_cel", "handpainted_fantasy_rpg"),
+    "cozy_pastel": ("stylized_gradient_atlas", "lowpoly_flat_stylized"),
+    "scifi_holo": ("pbr_metallic_roughness", "hard_surface_scifi_mecha"),
+    "arcade_pop": ("pixel_retro_crisp", "lowpoly_flat_stylized"),
+    "rpg_arcane": ("arcane_emissive_runes", "handpainted_fantasy_rpg"),
+}
+
 
 # ---------------------------------------------------------------------------
 # Color Science Utilities (sRGB, HSL, WCAG 2.1, CIE Lab, Delta-E)
@@ -553,10 +703,59 @@ class DesignEngine:
                     "surface_mode": v["surface_mode"],
                     "keywords": list(v["keywords"]),
                     "style_material": v["style_material"],
+                    "default_texture_style": _PRESET_STYLE_DEFAULTS.get(k, ("stylized_gradient_atlas", "handpainted_fantasy_rpg"))[0],
+                    "default_asset_style": _PRESET_STYLE_DEFAULTS.get(k, ("stylized_gradient_atlas", "handpainted_fantasy_rpg"))[1],
                 }
                 for k, v in DESIGN_PRESETS.items()
             ],
+            "texture_styles": {k: dict(v) for k, v in TEXTURE_STYLE_PROFILES.items()},
+            "asset_styles": {k: dict(v) for k, v in ASSET_STYLE_PROFILES.items()},
         }
+
+    def list_style_profiles(self) -> Dict[str, Any]:
+        """Return available Texture and 3D Asset style profiles."""
+        return {
+            "ok": True,
+            "texture_styles": {k: dict(v) for k, v in TEXTURE_STYLE_PROFILES.items()},
+            "asset_styles": {k: dict(v) for k, v in ASSET_STYLE_PROFILES.items()},
+            "preset_defaults": {
+                k: {"texture_style": v[0], "asset_style": v[1]}
+                for k, v in _PRESET_STYLE_DEFAULTS.items()
+            },
+        }
+
+    @staticmethod
+    def _resolve_style_profiles(
+        preset_id: str,
+        genre: str = "",
+        mood: str = "",
+        texture_style: Optional[str] = None,
+        asset_style: Optional[str] = None,
+        constraints: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[str, str]:
+        """Resolve valid texture_style and asset_style keys with preset & keyword auto-selection."""
+        cfg = constraints or {}
+        default_tex, default_asset = _PRESET_STYLE_DEFAULTS.get(
+            preset_id, ("stylized_gradient_atlas", "handpainted_fantasy_rpg")
+        )
+        hay = f"{genre} {mood}".lower()
+        if any(w in hay for w in ("gothic", "souls", "grim", "crypt", "undead", "horror")):
+            default_asset = "dark_gothic_souls"
+            if preset_id == "rpg_arcane":
+                default_tex = "arcane_emissive_runes"
+        elif any(w in hay for w in ("pixel", "8bit", "8-bit", "16bit", "retro")):
+            default_tex = "pixel_retro_crisp"
+        elif any(w in hay for w in ("mecha", "cyber", "hard surface", "sci-fi", "scifi")):
+            default_asset = "hard_surface_scifi_mecha"
+            default_tex = "pbr_metallic_roughness"
+        elif any(w in hay for w in ("chibi", "toy", "pet", "bubble")):
+            default_asset = "chibi_chunky_toon"
+
+        raw_tex = str(texture_style or cfg.get("texture_style") or "").strip().lower()
+        raw_asset = str(asset_style or cfg.get("asset_style") or "").strip().lower()
+        resolved_tex = raw_tex if raw_tex in TEXTURE_STYLE_PROFILES else default_tex
+        resolved_asset = raw_asset if raw_asset in ASSET_STYLE_PROFILES else default_asset
+        return resolved_tex, resolved_asset
 
     def _resolve_preset(self, genre: str, mood: str, seed_bytes: bytes, constraints: Dict[str, Any]) -> Dict[str, Any]:
         forced = str(constraints.get("preset") or "").strip().lower()
@@ -614,6 +813,8 @@ class DesignEngine:
         mood: str = "vibrant",
         seed: Optional[int | str] = None,
         constraints: Optional[Dict[str, Any]] = None,
+        texture_style: Optional[str] = None,
+        asset_style: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate a deterministic, unique, WCAG-verified per-game design system."""
         title_clean = str(game_title or "Untitled Realm").strip() or "Untitled Realm"
@@ -961,6 +1162,14 @@ class DesignEngine:
             preset_id=str(preset["preset_id"]),
             overrides=cfg.get("content") if isinstance(cfg.get("content"), dict) else None,
         )
+        resolved_tex_style, resolved_asset_style = self._resolve_style_profiles(
+            preset_id=str(preset["preset_id"]),
+            genre=genre_clean,
+            mood=mood_clean,
+            texture_style=texture_style,
+            asset_style=asset_style,
+            constraints=cfg,
+        )
 
         return {
             "ok": True,
@@ -972,6 +1181,10 @@ class DesignEngine:
             "preset_id": preset["preset_id"],
             "surface_mode": surface_mode,
             "harmony": harmony,
+            "texture_style": resolved_tex_style,
+            "texture_style_profile": dict(TEXTURE_STYLE_PROFILES[resolved_tex_style]),
+            "asset_style": resolved_asset_style,
+            "asset_style_profile": dict(ASSET_STYLE_PROFILES[resolved_asset_style]),
             "palette": palette,
             "content": content,
             "tokens": {
@@ -1599,7 +1812,13 @@ class DesignEngine:
 
         game_title = str(ds.get("game_title", "Custom Game"))
         genre = str(ds.get("genre", "adventure"))
+        mood = str(ds.get("mood", "vibrant"))
         preset_id = str(ds.get("preset_id", "rpg_arcane"))
+        fallback_tex, fallback_asset = self._resolve_style_profiles(preset_id=preset_id, genre=genre, mood=mood)
+        raw_tex = str(ds.get("texture_style") or "").strip().lower()
+        raw_asset = str(ds.get("asset_style") or "").strip().lower()
+        tex_style = raw_tex if raw_tex in TEXTURE_STYLE_PROFILES else fallback_tex
+        asset_style = raw_asset if raw_asset in ASSET_STYLE_PROFILES else fallback_asset
         content = self._build_theme_content(
             game_title=game_title,
             genre=genre,
@@ -1620,7 +1839,11 @@ class DesignEngine:
             f"\t\tSurfaceMode = {_luau_str(ds.get('surface_mode', 'dark'))},",
             f"\t\tHarmony = {_luau_str(ds.get('harmony', 'triadic'))},",
             f"\t\tSeedHash = {_luau_str(ds.get('seed_hash', '0000'))},",
+            f"\t\tTextureStyle = {_luau_str(tex_style)},",
+            f"\t\tAssetStyle = {_luau_str(asset_style)},",
             "\t},",
+            f"\tTextureStyle = {_luau_str(tex_style)},",
+            f"\tAssetStyle = {_luau_str(asset_style)},",
             "\tColors = {",
             f"\t\tBgDeep = {_luau_color3(p['bg_deep'])},",
             f"\t\tBgPanel = {_luau_color3(p['bg_panel'])},",
@@ -2055,6 +2278,8 @@ class DesignEngine:
                 "mood": "str = 'vibrant'",
                 "seed": "Optional[int | str] = None",
                 "constraints": "Optional[Dict[str, Any]] = None",
+                "texture_style": "Optional[str] = None  # clean_vector_cel | stylized_gradient_atlas | pbr_metallic_roughness | pixel_retro_crisp | arcane_emissive_runes",
+                "asset_style": "Optional[str] = None  # lowpoly_flat_stylized | handpainted_fantasy_rpg | hard_surface_scifi_mecha | chibi_chunky_toon | dark_gothic_souls",
                 "design_system": "Optional[Dict[str, Any]] = None  # pass output of generate, or auto-generated when omitted",
                 "spec_or_palette": "Optional[Dict[str, Any] | str] = None  # input for action='lint'",
                 "screens": "Optional[List[str]] = None  # e.g. ['MainHud', 'ShopModal', 'LoadingScreen']",

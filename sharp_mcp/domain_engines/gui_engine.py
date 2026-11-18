@@ -26,6 +26,365 @@ from PIL import Image
 from .design_engine import DesignEngine
 
 
+LAYOUT_PARADIGM_BLUEPRINTS: Dict[str, Dict[str, Any]] = {
+    "arpg_orbs": {
+        "paradigm_id": "arpg_orbs",
+        "label": "ARPG Health/Mana Orbs & Bottom Skill Bar",
+        "recommended_presets": ["rpg_arcane", "anime_neon"],
+        "recommended_primitives": [
+            "UIKit.CreateArcGauge",
+            "UIKit.CreateGlossyButton",
+            "UIKit.CreateBadgePill",
+            "UIKit.CreateModalManager",
+        ],
+        "screen_layout": {
+            "HealthOrb": "Bottom-left glowing crimson/primary liquid orb gauge (OrbMode = true, SweepAngleDeg = 360, clear of compact mobile thumbstick)",
+            "ManaOrb": "Bottom-right glowing cyan/accent liquid orb gauge (OrbMode = true, SweepAngleDeg = 360)",
+            "SkillBar": "Bottom-center 5x >=52px glossy ability buttons + slim XP arc/bar",
+            "QuestChip": "Top-right compact collapsible quest banner",
+        },
+        "anti_slop_notes": [
+            "Use circular liquid orbs + centered combat bar instead of generic top-left rectangle HUDs.",
+            "Keep all interactive buttons >= 52px and ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets.",
+        ],
+        "starter_luau_example": """--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local UIKit = require(ReplicatedStorage:WaitForChild("UIThemeAndComponents")) :: any
+local hud = Instance.new("ScreenGui")
+hud.Name = "ArpgOrbsHudGui"
+hud.DisplayOrder = 10
+hud.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
+hud.ResetOnSpawn = false
+hud.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+hud.Parent = StarterGui
+UIKit.BindResponsiveScale(hud, 0.86, 1.08)
+local hpOrb = UIKit.CreateArcGauge({
+	Name = "HealthOrb",
+	Parent = hud,
+	Size = UDim2.fromOffset(132, 132),
+	Position = UDim2.new(0, 18, 1, -18),
+	AnchorPoint = Vector2.new(0, 1),
+	Label = "HP",
+	Value = 860,
+	Max = 1000,
+	StartAngleDeg = 0,
+	SweepAngleDeg = 360,
+	OrbMode = true,
+	GlowEnabled = true,
+	FillColor = UIKit.Tokens.Colors.Danger,
+	SecondaryColor = UIKit.Tokens.Colors.Primary,
+})
+local manaOrb = UIKit.CreateArcGauge({
+	Name = "ManaOrb",
+	Parent = hud,
+	Size = UDim2.fromOffset(132, 132),
+	Position = UDim2.new(1, -18, 1, -18),
+	AnchorPoint = Vector2.new(1, 1),
+	Label = "MANA",
+	Value = 420,
+	Max = 500,
+	StartAngleDeg = 0,
+	SweepAngleDeg = 360,
+	OrbMode = true,
+	GlowEnabled = true,
+	FillColor = UIKit.Tokens.Colors.Accent,
+	SecondaryColor = UIKit.Tokens.Colors.Secondary,
+})
+return { Hud = hud, HpOrb = hpOrb, ManaOrb = manaOrb }
+""",
+    },
+    "scifi_visor_radial": {
+        "paradigm_id": "scifi_visor_radial",
+        "label": "Sci-Fi Visor Telemetry & Polar Radial Command Wheel",
+        "recommended_presets": ["scifi_holo"],
+        "recommended_primitives": [
+            "UIKit.CreateRadialWheel",
+            "UIKit.CreateArcGauge",
+            "UIKit.CreatePanel",
+            "UIKit.CreateBadgePill",
+        ],
+        "screen_layout": {
+            "CommandWheel": "Center polar N-segment tactical radial wheel (SegmentSizePx >= 56, MinSize >= 44)",
+            "ShieldArc": "Top-left curved energy/shield arc gauge with telemetry ticks",
+            "VisorFrame": "Non-interactive holo_brackets corner HUD frames",
+        },
+        "anti_slop_notes": [
+            "Use polar radial sectors instead of flat vertical list buttons.",
+            "Keep every radial sector and center hub >= 44x44px.",
+        ],
+        "starter_luau_example": """--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local UIKit = require(ReplicatedStorage:WaitForChild("UIThemeAndComponents")) :: any
+local hud = Instance.new("ScreenGui")
+hud.Name = "VisorRadialHudGui"
+hud.DisplayOrder = 10
+hud.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
+hud.ResetOnSpawn = false
+hud.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+hud.Parent = StarterGui
+UIKit.BindResponsiveScale(hud, 0.86, 1.08)
+local wheel = UIKit.CreateRadialWheel({
+	Name = "TacticalWheel",
+	Parent = hud,
+	Position = UDim2.fromScale(0.5, 0.52),
+	CenterTitle = "SYSTEMS",
+	RadiusPx = 110,
+	SegmentSizePx = 58,
+})
+local shieldArc = UIKit.CreateArcGauge({
+	Name = "ShieldArc",
+	Parent = hud,
+	Size = UDim2.fromOffset(124, 124),
+	Position = UDim2.fromOffset(16, 14),
+	AnchorPoint = Vector2.zero,
+	Label = "SHIELD",
+	Unit = "%",
+	Value = 92,
+	Max = 100,
+	FillColor = UIKit.Tokens.Colors.Primary,
+	SecondaryColor = UIKit.Tokens.Colors.Accent,
+})
+return { Hud = hud, Wheel = wheel, ShieldArc = shieldArc }
+""",
+    },
+    "cozy_book_journal": {
+        "paradigm_id": "cozy_book_journal",
+        "label": "Cozy Two-Page Open Book Journal & Bookmark Tabs",
+        "recommended_presets": ["cozy_pastel", "candy_simulator"],
+        "recommended_primitives": [
+            "UIKit.CreateBookSpread",
+            "UIKit.CreateBadgePill",
+            "UIKit.CreateGlossyButton",
+            "UIKit.CreateViewportPreview",
+        ],
+        "screen_layout": {
+            "JournalSpread": "Centered two-page open book with SpineShadow, LeftPage, RightPage, and right-edge >=44px bookmark tabs",
+            "LeftPage": "Illustrated title/item preview or ViewportFrame specimen",
+            "RightPage": "Handcrafted quest checklist + reward claim button",
+        },
+        "anti_slop_notes": [
+            "Build an authentic open-book spread with spine crease shadow and protruding bookmark tabs rather than a generic modal table.",
+            "Keep right-edge bookmark tabs >= 44px tall and SpineShadow Active = false.",
+        ],
+        "starter_luau_example": """--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local UIKit = require(ReplicatedStorage:WaitForChild("UIThemeAndComponents")) :: any
+local journalGui = Instance.new("ScreenGui")
+journalGui.Name = "CozyJournalGui"
+journalGui.DisplayOrder = 50
+journalGui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
+journalGui.ResetOnSpawn = false
+journalGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+journalGui.Parent = StarterGui
+UIKit.BindResponsiveScale(journalGui, 0.86, 1.08)
+local book = UIKit.CreateBookSpread({
+	Name = "FieldJournal",
+	Parent = journalGui,
+	BookTitle = "Field Almanac",
+	Size = UDim2.fromOffset(660, 410),
+	Position = UDim2.fromScale(0.5, 0.5),
+})
+local claimBtn = UIKit.CreateGlossyButton({
+	Name = "HarvestClaimBtn",
+	Parent = book.RightPage,
+	Text = "Collect Harvest",
+	Size = UDim2.fromOffset(180, 50),
+	Position = UDim2.new(0.5, 0, 1, -12),
+	AnchorPoint = Vector2.new(0.5, 1),
+	Variant = "Success",
+})
+return { Gui = journalGui, Book = book, ClaimBtn = claimBtn }
+""",
+    },
+    "card_battler_fan": {
+        "paradigm_id": "card_battler_fan",
+        "label": "Card Battler Curved Hand Fan & Mana Orb",
+        "recommended_presets": ["rpg_arcane", "arcade_pop", "anime_neon"],
+        "recommended_primitives": [
+            "UIKit.CreateCardFan",
+            "UIKit.CreateArcGauge",
+            "UIKit.CreateGlossyButton",
+            "UIKit.CreateBadgePill",
+        ],
+        "screen_layout": {
+            "HandFan": "Bottom-center curved card fan across [-maxAngle, +maxAngle] with cost badges, body text, and hover lift",
+            "ManaGauge": "Bottom-left circular energy gauge",
+            "EndTurnBtn": "Bottom-right glossy End Turn action button (>=52px)",
+        },
+        "anti_slop_notes": [
+            "Fan cards cleanly across [-maxAngle, +maxAngle] with parabolic Y drop instead of a flat horizontal grid.",
+            "Keep hover-lifted card tops inside ScreenGui CoreUISafeInsets bounds.",
+        ],
+        "starter_luau_example": """--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local UIKit = require(ReplicatedStorage:WaitForChild("UIThemeAndComponents")) :: any
+local hud = Instance.new("ScreenGui")
+hud.Name = "CardBattlerHudGui"
+hud.DisplayOrder = 10
+hud.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
+hud.ResetOnSpawn = false
+hud.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+hud.Parent = StarterGui
+UIKit.BindResponsiveScale(hud, 0.86, 1.08)
+local fan = UIKit.CreateCardFan({
+	Name = "PlayerHandFan",
+	Parent = hud,
+	Position = UDim2.new(0.5, 0, 1, -8),
+	MaxAngleDeg = 20,
+	ArcDropPx = 22,
+	HoverLiftPx = 22,
+})
+local mana = UIKit.CreateArcGauge({
+	Name = "ManaGauge",
+	Parent = hud,
+	Size = UDim2.fromOffset(108, 108),
+	Position = UDim2.new(0, 18, 1, -18),
+	AnchorPoint = Vector2.new(0, 1),
+	Label = "MANA",
+	Value = 4,
+	Max = 5,
+	OrbMode = true,
+	FillColor = UIKit.Tokens.Colors.Secondary,
+	SecondaryColor = UIKit.Tokens.Colors.Accent,
+})
+local endTurn = UIKit.CreateGlossyButton({
+	Name = "EndTurnBtn",
+	Parent = hud,
+	Text = "END TURN",
+	Size = UDim2.fromOffset(132, 52),
+	Position = UDim2.new(1, -18, 1, -24),
+	AnchorPoint = Vector2.new(1, 1),
+	Variant = "Primary",
+})
+return { Hud = hud, Fan = fan, Mana = mana, EndTurn = endTurn }
+""",
+    },
+    "street_racer_cockpit": {
+        "paradigm_id": "street_racer_cockpit",
+        "label": "Street Racer Tachometer Arc & Nitro Telemetry",
+        "recommended_presets": ["arcade_pop", "anime_neon", "scifi_holo"],
+        "recommended_primitives": [
+            "UIKit.CreateArcGauge",
+            "UIKit.CreateBadgePill",
+            "UIKit.CreateGlossyPanel",
+            "UIKit.CreateShineSweep",
+        ],
+        "screen_layout": {
+            "Speedometer": "Bottom-right large 270-deg arc gauge with needle, ticks, MPH unit, and glow",
+            "NitroGauge": "Adjacent compact arc gauge for boost charge",
+            "PositionBadge": "Top-left high-contrast race placement & lap pill",
+        },
+        "anti_slop_notes": [
+            "Keep speedometer cluster clear of mobile right touch jump zone when compact.",
+            "Use tabular Mono fonts for live speed and split timers so digits never jitter.",
+        ],
+        "starter_luau_example": """--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local UIKit = require(ReplicatedStorage:WaitForChild("UIThemeAndComponents")) :: any
+local hud = Instance.new("ScreenGui")
+hud.Name = "RacerCockpitGui"
+hud.DisplayOrder = 10
+hud.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
+hud.ResetOnSpawn = false
+hud.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+hud.Parent = StarterGui
+UIKit.BindResponsiveScale(hud, 0.86, 1.08)
+local speedo = UIKit.CreateArcGauge({
+	Name = "Speedometer",
+	Parent = hud,
+	Size = UDim2.fromOffset(172, 172),
+	Position = UDim2.new(1, -20, 1, -20),
+	AnchorPoint = Vector2.new(1, 1),
+	Label = "SPEED",
+	Unit = "MPH",
+	Value = 148,
+	Max = 220,
+	StartAngleDeg = -135,
+	SweepAngleDeg = 270,
+	TickCount = 13,
+	ShowNeedle = true,
+	GlowEnabled = true,
+})
+local posPill = UIKit.CreateBadgePill({
+	Name = "RaceRankPill",
+	Parent = hud,
+	Text = "POS 1 / 8  •  LAP 2/3",
+	Size = UDim2.fromOffset(186, 36),
+	Position = UDim2.fromOffset(16, 14),
+	AnchorPoint = Vector2.zero,
+	Rotation = 0,
+	Color = UIKit.Tokens.Colors.Primary,
+	TextSize = 13,
+})
+return { Hud = hud, Speedo = speedo, PosPill = posPill }
+""",
+    },
+    "minimal_horror_cam": {
+        "paradigm_id": "minimal_horror_cam",
+        "label": "Minimal Diegetic Bodycam / Camcorder Overlay",
+        "recommended_presets": ["scifi_holo", "rpg_arcane"],
+        "recommended_primitives": [
+            "UIKit.CreateArcGauge",
+            "UIKit.CreateBadgePill",
+            "UIKit.CreatePanel",
+        ],
+        "screen_layout": {
+            "RecBadge": "Top-left minimal REC indicator & Mono timecode inside CoreUISafeInsets",
+            "BatteryArc": "Top-right compact flashlight/stamina arc gauge",
+            "ViewfinderCorners": "Thin non-interactive corner brackets (Active = false) leaving >=85% screen open",
+        },
+        "anti_slop_notes": [
+            "Never clutter horror HUDs with opaque boxes; leave >=85% viewport clear.",
+            "Set Active = false on all viewfinder overlay strokes/frames.",
+        ],
+        "starter_luau_example": """--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local UIKit = require(ReplicatedStorage:WaitForChild("UIThemeAndComponents")) :: any
+local camGui = Instance.new("ScreenGui")
+camGui.Name = "BodycamOverlayGui"
+camGui.DisplayOrder = 10
+camGui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
+camGui.ResetOnSpawn = false
+camGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+camGui.Parent = StarterGui
+UIKit.BindResponsiveScale(camGui, 0.86, 1.08)
+local recPill = UIKit.CreateBadgePill({
+	Name = "RecIndicator",
+	Parent = camGui,
+	Text = "REC  00:04:19",
+	Size = UDim2.fromOffset(146, 32),
+	Position = UDim2.fromOffset(18, 16),
+	AnchorPoint = Vector2.zero,
+	Rotation = 0,
+	Color = UIKit.Tokens.Colors.Danger,
+	TextSize = 13,
+})
+local battery = UIKit.CreateArcGauge({
+	Name = "BatteryGauge",
+	Parent = camGui,
+	Size = UDim2.fromOffset(96, 96),
+	Position = UDim2.new(1, -18, 0, 16),
+	AnchorPoint = Vector2.new(1, 0),
+	Label = "CELL",
+	Unit = "%",
+	Value = 64,
+	Max = 100,
+	ShowNeedle = false,
+	GlowEnabled = false,
+	FillColor = UIKit.Tokens.Colors.Accent,
+})
+return { Gui = camGui, RecPill = recPill, Battery = battery }
+""",
+    },
+}
+
+
 class GuiDomainEngine:
     def __init__(self, skills_dir: Path, archive_dir: Optional[Path] = None) -> None:
         self.skills_dir = skills_dir
@@ -188,17 +547,15 @@ class GuiDomainEngine:
             "layers": layers,
         }
 
-    def compile_gui_build_luau(
+    def _prepare_theme_source_and_assets(
         self,
         panel_asset_id: str = "",
         button_asset_id: str = "",
         atlas_asset_id: str = "",
-        run_audit_after: bool = True,
         design_system: Optional[Dict[str, Any] | str] = None,
-    ) -> str:
+    ) -> tuple[str, Dict[str, str]]:
+        """Inject optional asset IDs and DesignTheme tokens into ui_theme_and_components.luau."""
         theme_src = self._read_script("ui_theme_and_components.luau")
-        builder_src = self._read_script("build_standard_game_gui.luau")
-        audit_src = self._read_script("audit_gui.luau")
 
         asset_overrides: Dict[str, str] = {}
         luau_override_entries: List[str] = []
@@ -251,6 +608,285 @@ class GuiDomainEngine:
                 )
             else:
                 theme_src = theme_src + f"\n{theme_block}\nUIKit.ApplyDesignSystem(DesignTheme)\n"
+
+        return theme_src, asset_overrides
+
+    def get_custom_ui_authoring_guide(
+        self,
+        paradigm: str = "arpg_orbs",
+        design_system: Optional[Dict[str, Any] | str] = None,
+    ) -> Dict[str, Any]:
+        """Return custom UI layout blueprint, UIKit composable primitive contracts, and design tokens."""
+        norm = str(paradigm or "arpg_orbs").strip().lower()
+        available = list(LAYOUT_PARADIGM_BLUEPRINTS.keys())
+
+        resolved_ds: Optional[Dict[str, Any]] = None
+        if design_system:
+            design_engine = DesignEngine(self.skills_dir, self.archive_dir)
+            if isinstance(design_system, str):
+                stripped = design_system.strip()
+                if stripped.startswith("{"):
+                    resolved_ds = json.loads(stripped)
+                else:
+                    resolved_ds = design_engine.generate_design_system("Custom Experience", genre=stripped)
+            elif isinstance(design_system, dict):
+                resolved_ds = design_system
+
+        tokens_summary: Optional[Dict[str, Any]] = None
+        if isinstance(resolved_ds, dict):
+            tokens_summary = {
+                "game_title": resolved_ds.get("game_title"),
+                "preset_id": resolved_ds.get("preset_id"),
+                "surface_mode": resolved_ds.get("surface_mode"),
+                "texture_style": resolved_ds.get("texture_style"),
+                "asset_style": resolved_ds.get("asset_style"),
+                "palette": resolved_ds.get("palette"),
+                "typography": (resolved_ds.get("tokens") or {}).get("typography"),
+                "radii": (resolved_ds.get("tokens") or {}).get("radii"),
+            }
+
+        uikit_primitives = [
+            {
+                "name": "UIKit.CreateArcGauge(opts)",
+                "purpose": "Circular/arc progress & speedometer/liquid-orb widget with label, value/max, ticks, needle, and optional glow.",
+                "key_options": ["Name", "Parent", "Size", "Position", "AnchorPoint", "Label", "Unit", "Value", "Max", "StartAngleDeg", "SweepAngleDeg", "TickCount", "FillColor", "SecondaryColor", "GlowEnabled", "ShowNeedle", "OrbMode"],
+            },
+            {
+                "name": "UIKit.CreateRadialWheel(opts)",
+                "purpose": "Polar N-segment radial menu with sector buttons, icons/labels, center hub, and >=44px touch targets.",
+                "key_options": ["Name", "Parent", "Position", "RadiusPx", "SegmentSizePx", "HubSizePx", "StartAngleDeg", "CenterTitle", "Items", "OnSelect", "OnCenterClick"],
+            },
+            {
+                "name": "UIKit.CreateCardFan(opts)",
+                "purpose": "Curved hand of cards across [-MaxAngleDeg, +MaxAngleDeg] with parabolic ArcDropPx, cost badge, body text, and hover lift.",
+                "key_options": ["Name", "Parent", "Size", "Position", "CardSize", "MaxAngleDeg", "ArcDropPx", "HoverLiftPx", "Cards", "OnCardClick"],
+            },
+            {
+                "name": "UIKit.CreateBookSpread(opts)",
+                "purpose": "Two-page open book/journal with spine shadow, right-edge >=44px bookmark tabs, LeftPage & RightPage frames.",
+                "key_options": ["Name", "Parent", "Size", "Position", "BookTitle", "Tabs", "PageColor", "CoverColor", "ShowClose", "OnTabChanged", "OnClose"],
+            },
+            {
+                "name": "UIKit.CreateGlossyPanel / UIKit.CreateGlossyButton / UIKit.CreateBadgePill / UIKit.CreateModalManager",
+                "purpose": "Supporting glossy beveled containers, buttons, tilted pills, sliders, toggles, tooltips, toasts, and 3D ViewportFrame previews.",
+                "key_options": ["Name", "Parent", "Size", "Position", "Variant", "Text", "Title", "OnClick"],
+            },
+        ]
+
+        rules = [
+            "Start custom_builder_luau with `--!strict` and avoid semicolons.",
+            "Every persistent ScreenGui must be a direct child of StarterGui with ResetOnSpawn=false, ZIndexBehavior=Enum.ZIndexBehavior.Sibling, and explicit ScreenInsets (CoreUISafeInsets for HUD/modals).",
+            "Call UIKit.BindResponsiveScale(gui, 0.86, 1.08) and ensure all interactive buttons meet >= 44x44px (>= 52px recommended).",
+            "Never hardcode flat dark-navy/blue boxes; read colors/fonts/radii from UIKit.Tokens and compose UIKit primitives.",
+        ]
+
+        if norm == "all":
+            return {
+                "ok": True,
+                "paradigm": "all",
+                "available_paradigms": available,
+                "blueprints": LAYOUT_PARADIGM_BLUEPRINTS,
+                "uikit_primitives": uikit_primitives,
+                "design_tokens_summary": tokens_summary,
+                "rules": rules,
+            }
+
+        if norm not in LAYOUT_PARADIGM_BLUEPRINTS:
+            return {
+                "ok": False,
+                "error": f"Unknown layout paradigm '{paradigm}'.",
+                "available_paradigms": available,
+                "uikit_primitives": uikit_primitives,
+                "design_tokens_summary": tokens_summary,
+            }
+
+        blueprint = dict(LAYOUT_PARADIGM_BLUEPRINTS[norm])
+        return {
+            "ok": True,
+            "paradigm": norm,
+            "blueprint": blueprint,
+            "starter_luau": blueprint["starter_luau_example"],
+            "available_paradigms": available,
+            "uikit_primitives": uikit_primitives,
+            "design_tokens_summary": tokens_summary,
+            "rules": rules,
+        }
+
+    def compile_custom_gui_build_luau(
+        self,
+        custom_builder_luau: str,
+        *,
+        panel_asset_id: str = "",
+        button_asset_id: str = "",
+        atlas_asset_id: str = "",
+        run_audit_after: bool = True,
+        design_system: Optional[Dict[str, Any] | str] = None,
+        clear_previous_sharp_guis: bool = True,
+    ) -> str:
+        """Compile a bespoke custom GUI builder script with UIKit, DesignTheme, UIStyles, ChangeHistory, and audit."""
+        if not isinstance(custom_builder_luau, str) or not custom_builder_luau.strip():
+            raise ValueError("custom_builder_luau must be a non-empty Luau string.")
+
+        theme_src, asset_overrides = self._prepare_theme_source_and_assets(
+            panel_asset_id=panel_asset_id,
+            button_asset_id=button_asset_id,
+            atlas_asset_id=atlas_asset_id,
+            design_system=design_system,
+        )
+        audit_src = self._read_script("audit_gui.luau")
+        assets_json = json.dumps(asset_overrides)
+        custom_body = custom_builder_luau.rstrip() + "\n"
+
+        return f"""local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local CollectionService = game:GetService("CollectionService")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local StarterPlayer = game:GetService("StarterPlayer")
+
+local activePluginRec = ChangeHistoryService:GetAttribute("__SharpActiveRecordingId")
+local recId = if activePluginRec then nil else ChangeHistoryService:TryBeginRecording("SharpCustomGuiBuild", "Sharp MCP: Build Custom Game GUI & StyleSheet")
+local ok, resOrErr = xpcall(function()
+	local oldMod = ReplicatedStorage:FindFirstChild("UIThemeAndComponents")
+	if oldMod then oldMod:Destroy() end
+
+	local themeMod = Instance.new("ModuleScript")
+	themeMod.Name = "UIThemeAndComponents"
+	themeMod.Source = [========[{theme_src}]========]
+	themeMod.Parent = ReplicatedStorage
+
+	local UIKit = require(themeMod) :: any
+	local customAssets = HttpService:JSONDecode({json.dumps(assets_json)})
+	if next(customAssets) ~= nil then
+		_G.ROBLOX_GUI_ASSETS = customAssets
+		UIKit.SetAssets(customAssets)
+	end
+
+	local clearPrev = {"true" if clear_previous_sharp_guis else "false"}
+	if clearPrev then
+		local standardGuiNames: {{ [string]: boolean }} = {{
+			BackdropVignetteGui = true,
+			MainHudGui = true,
+			TopbarWidgetsGui = true,
+			ContextualPromptGui = true,
+			ModalBackdropGui = true,
+			ModalMenusGui = true,
+			NpcDialogGui = true,
+			ConfirmDialogGui = true,
+			FloatingTooltipGui = true,
+			ToastNotificationGui = true,
+		}}
+		for _, child in ipairs(StarterGui:GetChildren()) do
+			if child:IsA("ScreenGui") and (standardGuiNames[child.Name] or child:GetAttribute("SharpManagedGui") == true or CollectionService:HasTag(child, "SharpManagedGui")) then
+				child:Destroy()
+			end
+		end
+		local oldModels = ReplicatedStorage:FindFirstChild("GuiPreviewModels")
+		if oldModels then oldModels:Destroy() end
+		local oldTpl = ReplicatedStorage:FindFirstChild("LoadingTransitionTemplate")
+		if oldTpl then oldTpl:Destroy() end
+		local sps = StarterPlayer:FindFirstChild("StarterPlayerScripts")
+		if sps then
+			local oldCtrl = sps:FindFirstChild("StandardGuiController")
+			if oldCtrl then oldCtrl:Destroy() end
+		end
+	end
+
+	local existingStarterGuis: {{ [Instance]: boolean }} = {{}}
+	for _, child in ipairs(StarterGui:GetChildren()) do
+		if child:IsA("ScreenGui") then
+			existingStarterGuis[child] = true
+		end
+	end
+
+	UIKit.BuildStyleSheet(ReplicatedStorage)
+
+	local customBuilderFn = function()
+{custom_body}
+	end
+	local buildRes = customBuilderFn()
+	_G.ROBLOX_GUI_ASSETS = nil
+
+	local stylesFolder = ReplicatedStorage:FindFirstChild("UIStyles")
+	local activeDesignSheet = if stylesFolder then stylesFolder:FindFirstChild("DesignSheet") else nil
+	if not activeDesignSheet or not activeDesignSheet:IsA("StyleSheet") then
+		activeDesignSheet = UIKit.BuildStyleSheet(ReplicatedStorage)
+	end
+
+	local createdScreenGuis: {{ string }} = {{}}
+	for _, child in ipairs(StarterGui:GetChildren()) do
+		if child:IsA("ScreenGui") then
+			if not existingStarterGuis[child] then
+				child:SetAttribute("SharpManagedGui", true)
+				CollectionService:AddTag(child, "SharpManagedGui")
+				table.insert(createdScreenGuis, child.Name)
+			end
+			if activeDesignSheet and activeDesignSheet:IsA("StyleSheet") and child:FindFirstChildOfClass("StyleLink") == nil then
+				UIKit.AttachStyleLink(child, activeDesignSheet)
+			end
+		end
+	end
+
+	local auditRes = nil
+	if {"true" if run_audit_after else "false"} then
+		task.wait(0.05)
+		local auditFn = function()
+{audit_src}
+		end
+		local rawAudit = auditFn()
+		if type(rawAudit) == "string" then
+			local okDec, decoded = pcall(function() return HttpService:JSONDecode(rawAudit) end)
+			auditRes = if okDec then decoded else rawAudit
+		else
+			auditRes = rawAudit
+		end
+	end
+
+	return {{
+		mode = "custom",
+		createdScreenGuis = createdScreenGuis,
+		buildResult = buildRes,
+		auditReport = auditRes,
+	}}
+end, debug.traceback)
+
+if recId then
+	pcall(function()
+		ChangeHistoryService:FinishRecording(
+			recId,
+			if ok then Enum.FinishRecordingOperation.Commit else Enum.FinishRecordingOperation.Cancel
+		)
+	end)
+end
+
+if not ok then
+	error(resOrErr)
+end
+
+return HttpService:JSONEncode({{
+	ok = true,
+	mode = "custom",
+	recordingStatus = if (recId or activePluginRec) then "Committed" else "NoRecording",
+	result = resOrErr,
+}})
+"""
+
+    def compile_gui_build_luau(
+        self,
+        panel_asset_id: str = "",
+        button_asset_id: str = "",
+        atlas_asset_id: str = "",
+        run_audit_after: bool = True,
+        design_system: Optional[Dict[str, Any] | str] = None,
+    ) -> str:
+        theme_src, asset_overrides = self._prepare_theme_source_and_assets(
+            panel_asset_id=panel_asset_id,
+            button_asset_id=button_asset_id,
+            atlas_asset_id=atlas_asset_id,
+            design_system=design_system,
+        )
+        builder_src = self._read_script("build_standard_game_gui.luau")
+        audit_src = self._read_script("audit_gui.luau")
 
         assets_json = json.dumps(asset_overrides)
 

@@ -1025,7 +1025,7 @@ class TestUpstreamMultiplexerCriticalUnwrapAndCliServe(unittest.IsolatedAsyncioT
             )
             self.assertTrue(preset_res["ok"])
             self.assertEqual(preset_res["name"], "Sword_Slash_Single")
-            self.assertEqual(len(preset_res["frames"]), 17)
+            self.assertEqual(len(preset_res["frames"]), 41)
 
             analyze_res = json.loads(
                 asyncio.run(

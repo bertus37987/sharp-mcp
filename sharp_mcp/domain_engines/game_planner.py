@@ -44,72 +44,167 @@ MICRO_STEP_EXECUTION_ORDER: Tuple[str, ...] = (
 MICRO_MVP_REQUIRED_STEPS: Tuple[str, ...] = ("S0.1", "S1.1", "S2.1", "S2.2", "S2.3", "S4.1")
 POST_MVP_LOCKED_STAGES: Tuple[str, ...] = ("S3", "S5", "S6", "S7")
 
+V05_WORKFLOW_DIRECTIVES: Dict[str, Any] = {
+    "tool_first": (
+        "TOOL-FIRST: Always construct Luau contracts, terrain, GUI, animations, and 3D equipment via Sharp MCP domain tools "
+        "(sharp_luau_scaffold, sharp_terrain_build, sharp_gui_build, sharp_rig_and_animation, sharp_equipment_attach, "
+        "sharp_blender_asset_pipeline, sharp_art_studio, sharp_critical_audit) rather than ad-hoc raw execute_luau scripts."
+    ),
+    "style_guided": (
+        "STYLE-GUIDED: Lock cohesive per-game style profiles from TEXTURE_STYLE_PROFILES "
+        "(clean_vector_cel | stylized_gradient_atlas | pbr_metallic_roughness | pixel_retro_crisp | arcane_emissive_runes), "
+        "ASSET_STYLE_PROFILES (lowpoly_flat_stylized | handpainted_fantasy_rpg | hard_surface_scifi_mecha | chibi_chunky_toon | dark_gothic_souls), "
+        "and ANIMATION_STYLE_PROFILES (heavy_souls | snappy_anime | stylized_cartoony | tactical_military | floaty_arcane)."
+    ),
+    "anti_template": (
+        "ANTI-TEMPLATE: Never ship boilerplate layouts, flat baseplates, or robotic lockstep motion. "
+        "Use sharp_gui_build(mode='custom') with composable UIKit primitives (ArcGauge/RadialWheel/CardFan/BookSpread), "
+        "custom_terrain_spec (crater/river/ridge/terrace/plateau height_layers + material_rules) + custom_atmosphere, "
+        "and compose_custom with explicit windup hold -> action arc -> impact hit-stop -> recovery."
+    ),
+    "three_tier_art_pipeline": {
+        "tier_1_procedural_2d_pbr": "sharp_design_system(TEXTURE_STYLE_PROFILES, ASSET_STYLE_PROFILES) + sharp_art_studio(create_pbr_texture_set, create_custom_font_kit, create_custom_vfx) + sharp_gui_slice_and_pack",
+        "tier_2_bespoke_3d_blender": "sharp_blender_asset_pipeline(custom_bmesh with 4 PBR slots, .fbx/.glb, _attachments.json, preview.png) + sharp_equipment_attach(inspect_attachment_fit)",
+        "tier_3_ai_media_polish": "sharp_ai_studio (optional AI concept/texture art when keys configured) + sharp_media_qa (Vision/Video/Audio QA)",
+    },
+    "mandatory_vision_verification": (
+        "MANDATORY VISION-VERIFICATION: Never accept JSON pass metrics without rendered visual inspection. "
+        "Animations require pose_strip / pose_at_time + screen_capture; 3D attachments require inspect_attachment_fit + preview.png/viewport check; "
+        "GUIs require multi-device capture + sharp_media_qa(inspect_gui_vision) + sharp_visual_diff; "
+        "multi-script systems require SystemContracts + verify_contracts + pcall(require) smoke test."
+    ),
+    "style_profiles": {
+        "TEXTURE_STYLE_PROFILES": [
+            "clean_vector_cel",
+            "stylized_gradient_atlas",
+            "pbr_metallic_roughness",
+            "pixel_retro_crisp",
+            "arcane_emissive_runes",
+        ],
+        "ASSET_STYLE_PROFILES": [
+            "lowpoly_flat_stylized",
+            "handpainted_fantasy_rpg",
+            "hard_surface_scifi_mecha",
+            "chibi_chunky_toon",
+            "dark_gothic_souls",
+        ],
+        "ANIMATION_STYLE_PROFILES": [
+            "heavy_souls",
+            "snappy_anime",
+            "stylized_cartoony",
+            "tactical_military",
+            "floaty_arcane",
+        ],
+    },
+}
+
 STEP_SUBAGENT_ROLES: Dict[str, Dict[str, Any]] = {
     "S0.1": {
-        "role": "Roblox Security & Architecture Sub-Agent",
+        "role": "Roblox Security, Architecture & SystemContracts Sub-Agent",
         "skills": ["roblox-luau-coding"],
         "tools": ["sharp_luau_scaffold", "sharp_critical_audit", "sharp_game_library"],
-        "verification": "Run sharp_critical_audit(mode='static') with 0 BLOCKER/CRITICAL before advancing.",
+        "verification": (
+            "Install ReplicatedStorage.Shared.SystemContracts + SafeRemoteGateway, run pcall(require) smoke test, "
+            "and pass sharp_critical_audit(mode='static', verify_contracts=True) with 0 BLOCKER/CRITICAL."
+        ),
+        "directives": ["tool_first", "mandatory_vision_verification"],
     },
     "S1.1": {
-        "role": "Greybox World & Overlap QA Sub-Agent",
+        "role": "Custom Terrain, Atmosphere & Overlap QA Sub-Agent",
         "skills": ["roblox-terrain-atmosphere", "roblox-world-assembly-and-optimization"],
-        "tools": ["sharp_terrain_build", "sharp_world_assembly_and_optimization", "sharp_critical_audit"],
-        "verification": "Verify SpawnLocation >= 1 and run audit_overlaps (`overlapCount == 0`, zero asset interpenetration).",
+        "tools": ["sharp_terrain_build", "sharp_environment_apply", "sharp_world_assembly_and_optimization", "sharp_critical_audit"],
+        "verification": (
+            "Sculpt bespoke world with custom_terrain_spec (height_layers + material_rules) and custom_atmosphere, "
+            "verify SpawnLocation >= 1, run audit_overlaps (`overlapCount == 0`), and visually capture terrain framing."
+        ),
+        "directives": ["tool_first", "anti_template", "mandatory_vision_verification"],
     },
     "S2.1": {
-        "role": "Micro-Slice Combat/Action #1 Sub-Agent (Single Action + Animation)",
+        "role": "Micro-Slice Combat/Action #1 Sub-Agent (compose_custom + Pose-Strip QA)",
         "skills": ["roblox-animation", "roblox-combat-and-controllers"],
-        "tools": ["sharp_equipment_attach", "sharp_combat_and_controllers", "sharp_media_qa"],
-        "verification": "Test ONLY the single primary action (e.g., 1 attack swing + 1 hitbox): verify analyze_clip >= 85 and video/visual test.",
+        "tools": ["sharp_rig_and_animation", "sharp_equipment_attach", "sharp_combat_and_controllers", "sharp_media_qa"],
+        "verification": (
+            "Author single primary action using ANIMATION_STYLE_PROFILES + compose_custom (windup hold -> arc -> hit-stop -> recovery), "
+            "verify analyze_clip >= 85, and visually verify pose_strip via screen_capture + sharp_media_qa."
+        ),
+        "directives": ["tool_first", "style_guided", "anti_template", "mandatory_vision_verification"],
     },
     "S2.2": {
         "role": "Micro-Slice Guard/Counter #2 Sub-Agent (Second Action Only)",
         "skills": ["roblox-animation", "roblox-combat-and-controllers"],
-        "tools": ["sharp_equipment_attach", "sharp_combat_and_controllers", "sharp_media_qa"],
-        "verification": "Test ONLY block/guard stance + damage mitigation: verify foot slide <= 0.1 and video/visual check.",
+        "tools": ["sharp_rig_and_animation", "sharp_equipment_attach", "sharp_combat_and_controllers", "sharp_media_qa"],
+        "verification": (
+            "Author guard/counter clip via ANIMATION_STYLE_PROFILES + compose_custom with foot slide <= 0.1, "
+            "and visually inspect pose_strip + Studio playtest video."
+        ),
+        "directives": ["tool_first", "style_guided", "anti_template", "mandatory_vision_verification"],
     },
     "S2.3": {
-        "role": "Micro-Slice Target & Soundtest QA Sub-Agent",
+        "role": "Micro-Slice Target, Contracts & Soundtest QA Sub-Agent",
         "skills": ["roblox-ai-and-gameplay-systems", "roblox-audio-vfx-cutscenes"],
-        "tools": ["sharp_playtest_scenario", "sharp_art_studio", "sharp_media_qa"],
-        "verification": "Run full_slice_bot + sharp_media_qa(mode='inspect_audio'/'inspect_video') to confirm hit SFX, VFX, and zero soft-locks.",
+        "tools": ["sharp_playtest_scenario", "sharp_art_studio", "sharp_critical_audit", "sharp_media_qa"],
+        "verification": (
+            "Run verify_contracts across Server/Client/Shared scripts + pcall(require) smoke test, "
+            "and pass full_slice_bot + sharp_media_qa(mode='inspect_audio'/'inspect_video')."
+        ),
+        "directives": ["tool_first", "mandatory_vision_verification"],
     },
     "S3.1": {
-        "role": "3D Asset & Equipment Rigging Sub-Agent",
+        "role": "3D Asset, Custom BMesh & Equipment Fit Sub-Agent",
         "skills": ["roblox-animation", "blender-game-assets", "blender-character-rigging"],
-        "tools": ["sharp_equipment_attach", "sharp_blender_asset_pipeline", "sharp_game_library"],
-        "verification": "Validate sidecar R15 attachments, triangle budgets, and animation quality score >= 85.",
+        "tools": ["sharp_blender_asset_pipeline", "sharp_equipment_attach", "sharp_rig_and_animation", "sharp_game_library", "sharp_media_qa"],
+        "verification": (
+            "Build Tier-2 hero equipment with custom_bmesh (ASSET_STYLE_PROFILES + TEXTURE_STYLE_PROFILES, <10k tris, _attachments.json, preview.png), "
+            "verify rest + raised-arm clearance via inspect_attachment_fit, and confirm pose_strip + analyze_clip >= 85."
+        ),
+        "directives": ["tool_first", "style_guided", "three_tier_art_pipeline", "mandatory_vision_verification"],
     },
     "S4.1": {
-        "role": "Game-Specific 2D Art, Font & Anti-Slop UI Sub-Agent",
+        "role": "Game-Specific 2D Art, Style Profiles & Custom MVP HUD Sub-Agent",
         "skills": ["roblox-gui"],
         "tools": ["sharp_design_system", "sharp_art_studio", "sharp_gui_build", "sharp_media_qa"],
-        "verification": "Create bespoke design_system + custom 2D/font/click-VFX kit, build minimal HUD, pass sharp_visual_diff + Gemini Vision quality audit.",
+        "verification": (
+            "Generate cohesive TEXTURE_STYLE_PROFILES + ASSET_STYLE_PROFILES design_system + Tier-1 PBR/font/VFX kit, "
+            "author bespoke non-template HUD via sharp_gui_build(mode='custom'), and pass sharp_visual_diff + inspect_gui_vision."
+        ),
+        "directives": ["tool_first", "style_guided", "anti_template", "three_tier_art_pipeline", "mandatory_vision_verification"],
     },
     "S4.2": {
-        "role": "Full Menus, Custom Art & Vision QA Sub-Agent",
+        "role": "Full Custom Menus, Art Pipeline & Multi-Device Vision QA Sub-Agent",
         "skills": ["roblox-gui"],
         "tools": ["sharp_art_studio", "sharp_gui_slice_and_pack", "sharp_gui_build", "sharp_gui_inspect", "sharp_media_qa"],
-        "verification": "Verify desktop + mobile simulation, <= 6 CanvasGroups, custom fonts/2D elements, and Vision QA SHIP/FIX_FIRST.",
+        "verification": (
+            "Build custom paradigm menus via sharp_gui_build(mode='custom') + Tier-1/Tier-3 assets, "
+            "verify desktop + mobile safe zones, <= 6 CanvasGroups, and Gemini Vision inspect_gui_vision SHIP/FIX_FIRST."
+        ),
+        "directives": ["tool_first", "style_guided", "anti_template", "three_tier_art_pipeline", "mandatory_vision_verification"],
     },
     "S5.1": {
-        "role": "Economy & DataStore Security Sub-Agent",
+        "role": "Economy, DataStore & SystemContracts Security Sub-Agent",
         "skills": ["roblox-data-economy-monetization", "roblox-luau-coding"],
         "tools": ["sharp_data_economy_monetization", "sharp_critical_audit"],
-        "verification": "Verify UpdateAsync session locking, BindToClose flush, and idempotent ProcessReceipt.",
+        "verification": (
+            "Verify UpdateAsync session locking, BindToClose flush, idempotent ProcessReceipt, "
+            "and sharp_critical_audit(verify_contracts=True) with zero CONTRACT-* or SEC-* defects."
+        ),
+        "directives": ["tool_first", "mandatory_vision_verification"],
     },
     "S6.1": {
-        "role": "Audio/VFX/Polish & Soundtest Sub-Agent",
+        "role": "Audio/VFX/Polish & PBR Texture Sub-Agent",
         "skills": ["roblox-audio-vfx-cutscenes"],
         "tools": ["sharp_audio_vfx_cutscenes", "sharp_art_studio", "sharp_media_qa"],
-        "verification": "Run sharp_media_qa soundtest + video QA and confirm Highlight pool <= 31.",
+        "verification": "Run sharp_media_qa soundtest + video QA, verify Highlight pool <= 31 and PBR texture/VFX coherence.",
+        "directives": ["tool_first", "style_guided", "three_tier_art_pipeline", "mandatory_vision_verification"],
     },
     "S7.1": {
-        "role": "Final Release & Challenge Gate Sub-Agent",
+        "role": "Final Release, Cross-Script Contracts & Challenge Gate Sub-Agent",
         "skills": ["roblox-luau-coding", "roblox-gui", "roblox-world-assembly-and-optimization"],
         "tools": ["sharp_world_assembly_and_optimization", "sharp_media_qa", "sharp_critical_audit", "sharp_playtest_scenario"],
-        "verification": "Run audit_overlaps (`overlapCount == 0`), 100-player/phone/rejoin challenge probe, video playtest review, and final SHIP gate.",
+        "verification": (
+            "Pass verify_contracts + pcall(require) smoke test, audit_overlaps (`overlapCount == 0`), "
+            "100-player/phone/rejoin challenge probe, video/vision review, and final SHIP gate."
+        ),
+        "directives": ["tool_first", "mandatory_vision_verification"],
     },
 }
 
@@ -976,17 +1071,20 @@ class GamePlanner:
             },
             {
                 "id": "Q2_ART_DIRECTION",
-                "topic": "Unique Visual Identity & Anti-Slop Aesthetic",
-                "question": "Which distinct visual mood, color energy, and UI personality should set this game apart from generic dark-blue UIs?",
-                "why_it_matters": "Feeds `sharp_design_system` and `sharp_art_studio` (custom 2D art kits, fonts, and click VFX).",
+                "topic": "Unique Visual Identity, Texture/Asset Style & Anti-Template UI",
+                "question": "Which distinct visual mood, TEXTURE_STYLE_PROFILES, ASSET_STYLE_PROFILES, and custom UI paradigm should set this game apart from generic dark-blue UIs?",
+                "why_it_matters": "Feeds `sharp_design_system`, `sharp_art_studio(create_pbr_texture_set)`, `custom_bmesh`, and `sharp_gui_build(mode='custom')`.",
                 "options": ["candy_simulator", "anime_neon", "cozy_pastel", "scifi_holo", "arcade_pop", "rpg_arcane"],
+                "texture_style_profiles": V05_WORKFLOW_DIRECTIVES["style_profiles"]["TEXTURE_STYLE_PROFILES"],
+                "asset_style_profiles": V05_WORKFLOW_DIRECTIVES["style_profiles"]["ASSET_STYLE_PROFILES"],
             },
             {
                 "id": "Q3_ANIMATION_VFX",
-                "topic": "First 2 Animations & Custom VFX Focus",
-                "question": "For your first tiny playable test, which single attack/action + single defensive/secondary reaction should we animate and record first?",
-                "why_it_matters": "Enforces slow micro-MVP verification: attack first -> test -> block second -> test.",
+                "topic": "First 2 Animations, Animation Style Profile & Pose-Strip Verification",
+                "question": "Which ANIMATION_STYLE_PROFILES weight/tempo and first attack + defensive reaction should we author via `compose_custom` and visually inspect via `pose_strip`?",
+                "why_it_matters": "Enforces slow micro-MVP verification with windup hold, hit-stop, and mandatory Vision verification before expanding combos.",
                 "default_micro_pair": ["S2.1 Primary Attack Animation + Hitbox", "S2.2 Guard/Block Stance + Mitigation"],
+                "animation_style_profiles": V05_WORKFLOW_DIRECTIVES["style_profiles"]["ANIMATION_STYLE_PROFILES"],
             },
             {
                 "id": "Q4_AI_MODELS_KEYS",
@@ -1017,7 +1115,7 @@ class GamePlanner:
         step_id: Optional[str] = None,
         role_focus: str = "auto",
     ) -> Dict[str, Any]:
-        """Build a concise, actionable sub-agent delegation brief with exact Sharp skills and verification gates."""
+        """Build a concise, actionable sub-agent delegation brief with v0.5 rules, Sharp skills, and verification gates."""
         plan, _, stages = self._load_plan_and_stages()
         target_id = (step_id or "").strip().upper()
         if not target_id and isinstance(plan, dict) and stages:
@@ -1027,17 +1125,50 @@ class GamePlanner:
                     target_id = sid
                     break
 
-        if (role_focus or "").strip().lower() == "art_creation":
+        focus = (role_focus or "auto").strip().lower()
+        if focus == "art_creation":
             spec = {
-                "role": "Dedicated 2D/3D Game Art & VFX Sub-Agent",
+                "role": "Dedicated 3-Tier 2D/3D Game Art, PBR & Custom UI Sub-Agent",
                 "skills": ["roblox-gui", "roblox-audio-vfx-cutscenes", "blender-game-assets"],
-                "tools": ["sharp_design_system", "sharp_art_studio", "sharp_gui_slice_and_pack", "sharp_blender_asset_pipeline", "sharp_media_qa"],
-                "verification": "Verify palette WCAG >=4.5:1, zero slop lint findings, <=1024px spritesheets, and Gemini Vision inspect_gui_vision pass.",
+                "tools": [
+                    "sharp_design_system",
+                    "sharp_art_studio",
+                    "sharp_gui_slice_and_pack",
+                    "sharp_gui_build",
+                    "sharp_blender_asset_pipeline",
+                    "sharp_equipment_attach",
+                    "sharp_media_qa",
+                ],
+                "verification": (
+                    "Follow 3-Tier Art Pipeline (Tier-1 TEXTURE_STYLE_PROFILES/create_pbr_texture_set, "
+                    "Tier-2 custom_bmesh + ASSET_STYLE_PROFILES + inspect_attachment_fit, Tier-3 sharp_ai_studio/sharp_media_qa); "
+                    "build custom HUD via sharp_gui_build(mode='custom'), verify WCAG >=4.5:1, <=1024px atlases, and Gemini Vision pass."
+                ),
+                "directives": ["tool_first", "style_guided", "anti_template", "three_tier_art_pipeline", "mandatory_vision_verification"],
             }
+        elif focus == "terrain_world":
+            spec = STEP_SUBAGENT_ROLES["S1.1"]
+        elif focus == "animation_3d":
+            spec = STEP_SUBAGENT_ROLES["S3.1"]
+        elif focus == "code_contracts":
+            spec = STEP_SUBAGENT_ROLES["S0.1"]
         else:
             spec = STEP_SUBAGENT_ROLES.get(target_id, STEP_SUBAGENT_ROLES["S2.1"])
 
         ds = self.project_library.get_design_system() or (plan.get("design_system") if isinstance(plan, dict) else None)
+        ds_dict = ds if isinstance(ds, dict) else {}
+        selected_styles = {
+            "texture_style": ds_dict.get("texture_style") or "stylized_gradient_atlas",
+            "asset_style": ds_dict.get("asset_style") or "handpainted_fantasy_rpg",
+            "animation_style": ds_dict.get("animation_style") or "heavy_souls",
+        }
+        active_directive_keys = list(spec.get("directives") or ["tool_first", "style_guided", "anti_template", "mandatory_vision_verification"])
+        step_directives = {
+            k: V05_WORKFLOW_DIRECTIVES[k]
+            for k in active_directive_keys
+            if k in V05_WORKFLOW_DIRECTIVES
+        }
+
         return {
             "ok": True,
             "step_id": target_id or None,
@@ -1048,7 +1179,29 @@ class GamePlanner:
             "verification_gate": spec["verification"],
             "game_title": (plan or {}).get("title") if isinstance(plan, dict) else None,
             "design_system_attached": bool(ds),
-            "micro_rule": "Implement ONLY this single micro-step or art asset batch; visually inspect/test before returning to coordinator.",
+            "selected_style_profiles": selected_styles,
+            "workflow_directives": {
+                **step_directives,
+                "three_tier_art_pipeline": V05_WORKFLOW_DIRECTIVES["three_tier_art_pipeline"],
+                "style_profiles": V05_WORKFLOW_DIRECTIVES["style_profiles"],
+                "tool_keywords": [
+                    "sharp_gui_build(mode='custom')",
+                    "TEXTURE_STYLE_PROFILES",
+                    "ASSET_STYLE_PROFILES",
+                    "ANIMATION_STYLE_PROFILES",
+                    "compose_custom",
+                    "pose_strip",
+                    "custom_bmesh",
+                    "inspect_attachment_fit",
+                    "custom_terrain_spec",
+                    "verify_contracts",
+                ],
+            },
+            "micro_rule": (
+                "Implement ONLY this single micro-step or art asset batch using Tool-First Sharp MCP workflows "
+                "(sharp_gui_build(mode='custom'), custom_terrain_spec, compose_custom, custom_bmesh, SystemContracts/verify_contracts); "
+                "run Mandatory Vision-Verification (pose_strip / inspect_attachment_fit / screen_capture) before returning to coordinator."
+            ),
         }
 
     def _resolve_target_step_id(self, requested_id: str, stages: Sequence[Dict[str, Any]]) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
