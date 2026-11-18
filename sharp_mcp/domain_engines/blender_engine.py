@@ -668,6 +668,18 @@ _run_sharp_asset_pipeline()
                     ("MuzzleAttachment", [0.0, 0.12, -1.35], [0.0, 0.0, 0.0], None, None, "fx"),
                 ],
             },
+            "crossbow": {
+                "default_mode": "rigid",
+                "default_slot": "right_hand",
+                "limb": "RightHand",
+                "limb_att": "RightGripAttachment",
+                "item_att": "GripAttachment",
+                "target_size_studs": (2.6, 0.78, 2.4),
+                "secondary_sockets": [
+                    ("ForegripAttachment", [-0.04, 0.0, -0.35], [0.0, 0.0, 0.0], "LeftHand", "LeftGripAttachment", "foregrip"),
+                    ("MuzzleAttachment", [0.0, 0.36, -2.05], [0.0, 0.0, 0.0], None, None, "fx"),
+                ],
+            },
             "backpack": {
                 "default_mode": "rigid",
                 "default_slot": "back",

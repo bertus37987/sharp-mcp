@@ -259,6 +259,35 @@ SOCKET_PRESETS: Dict[str, Dict[str, Any]] = {
             "pole_pos": [-1.4, -0.2, 1.0],
         },
     },
+    "crossbow": {
+        "category": "weapon_ranged",
+        "default_mode": "two_hand_ik",
+        "default_slot": "right_hand",
+        "limb_part": "RightHand",
+        "limb_attachment": "RightGripAttachment",
+        "item_attachment": "GripAttachment",
+        "offset_pos": [-0.02, 0.14, -0.14],
+        "offset_rot_deg": [0.0, 0.0, 0.0],
+        "tool_grip": {"pos": [0.0, -0.16, 0.14], "rot_deg": [90.0, 0.0, 0.0]},
+        "holster": {
+            "back": {
+                "limb_part": "UpperTorso",
+                "limb_attachment": "BodyBackAttachment",
+                "item_attachment": "HolsterBackAttachment",
+                "offset_pos": [0.1, 0.05, 0.15],
+                "offset_rot_deg": [0.0, 0.0, -30.0],
+            },
+        },
+        "two_hand_ik": {
+            "chain_root": "LeftUpperArm",
+            "end_effector": "LeftHand",
+            "foregrip_attachment": "ForegripAttachment",
+            "foregrip_pos": [-0.04, 0.0, -0.35],
+            "foregrip_rot_deg": [0.0, 0.0, 0.0],
+            "pole_limb": "HumanoidRootPart",
+            "pole_pos": [-1.1, -0.7, -0.2],
+        },
+    },
     "backpack": {
         "category": "wearable_back",
         "default_mode": "accessory_rigid",
@@ -1261,6 +1290,23 @@ if measureTarget then
 	end
 end
 
+-- Check Model.PrimaryPart.PivotOffset rotation & Tool/Muzzle alignment
+local pivotMismatch: any = nil
+if itemInst and itemInst:IsA("Model") and itemInst.PrimaryPart then
+	local po = itemInst.PrimaryPart.PivotOffset
+	local lookDot = po.LookVector:Dot(Vector3.new(0, 0, -1))
+	local upDot = po.UpVector:Dot(Vector3.new(0, 1, 0))
+	if lookDot < 0.99 or upDot < 0.99 then
+		pivotMismatch = {{
+			model = itemInst:GetFullName(),
+			primaryPart = itemInst.PrimaryPart.Name,
+			lookDot = lookDot,
+			upDot = upDot,
+		}}
+		table.insert(issues, string.format("Model '%s' PrimaryPart.PivotOffset is rotated (lookDot=%.3f, upDot=%.3f); PivotTo(CFrame.lookAt(...)) will orient item off-axis.", itemInst.Name, lookDot, upDot))
+	end
+end
+
 return HttpService:JSONEncode({{
 	ok = true,
 	mode = "verify",
@@ -1274,6 +1320,7 @@ return HttpService:JSONEncode({{
 	conflictingJoints = conflictingJoints,
 	missingSlots = missingSlots,
 	scaleMismatch = scaleMismatch,
+	pivotMismatch = pivotMismatch,
 	ikControls = ikControls,
 }})
 """
@@ -1823,7 +1870,7 @@ return HttpService:JSONEncode({{
         foregrip_offset_rot_deg: Optional[Iterable[float]] = None,
         ik_weight: float = 1.0,
         ik_smooth_time: float = 0.08,
-        ik_type: str = "Transform",
+        ik_type: str = "Position",
         create_pole: bool = True,
         attach_primary_in_ik: bool = True,
         replace_existing_welds: bool = True,
@@ -2380,7 +2427,7 @@ local ok, resOrErr = xpcall(function()
 				if okNamed and valNamed ~= nil then
 					ik.Type = valNamed
 				else
-					ik.Type = enumType.Transform
+					ik.Type = enumType.Position
 				end
 			end)
 			ikOptionalProps.EndEffectorOffset = pcall(function()

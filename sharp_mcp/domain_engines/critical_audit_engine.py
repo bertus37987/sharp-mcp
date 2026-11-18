@@ -1562,6 +1562,21 @@ class CriticalAuditEngine:
                     )
                 )
 
+        # 9. LUAU-AIM-001: ViewportPointToRay fixed-range projection without Raycast parallax correction
+        if "ViewportPointToRay" in source and "Raycast" not in source and "ScreenPointToRay" not in source:
+            findings.append(
+                _make_finding(
+                    rule_id="LUAU-AIM-001",
+                    severity="MAJOR",
+                    domain="luau",
+                    file=path,
+                    line=1,
+                    evidence="`ViewportPointToRay(...)` used without `Workspace:Raycast(...)` depth resolution",
+                    why_it_matters="Projecting a third-person camera ray by a fixed distance instead of raycasting to the surface under the reticle causes close-range muzzle parallax miss and GuiInset misalignment.",
+                    fix="Use `CombatHitboxAndProjectile.ComputeCrosshairAimRay` (`ScreenPointToRay` from the reticle center + `Workspace:Raycast`).",
+                )
+            )
+
         return findings
 
     # ------------------------------------------------------------------
@@ -3771,6 +3786,64 @@ class CriticalAuditEngine:
                         evidence=f"StarterGui contains {gt['canvasGroupCount']} CanvasGroups (> 6 budget)",
                         why_it_matters="Excess CanvasGroups render blank on low-end mobile GPUs.",
                         fix="Reduce CanvasGroups to modal fade containers only.",
+                    )
+                )
+        wt = telemetry.get("weapons")
+        if isinstance(wt, dict):
+            for entry in wt.get("rotatedPivotModels") or []:
+                if isinstance(entry, dict):
+                    findings.append(
+                        _make_finding(
+                            rule_id="WEAPON-PIVOT-001",
+                            severity="CRITICAL",
+                            domain="luau",
+                            file=str(entry.get("path", "")),
+                            evidence=(
+                                f"Model '{entry.get('path')}' PrimaryPart '{entry.get('primaryPart')}' has non-identity "
+                                f"PivotOffset (lookDot={entry.get('lookDot')}, upDot={entry.get('upDot')})"
+                            ),
+                            why_it_matters="Calling Model:PivotTo(CFrame.lookAt(...)) multiplies by PrimaryPart.PivotOffset, causing projectiles or equipment to fly/attach sideways or vertically.",
+                            fix="Reset PrimaryPart.PivotOffset = CFrame.identity or call CombatHitboxAndProjectile.AlignModelToDirection().",
+                            auto_fixable=True,
+                        )
+                    )
+            for path_str in wt.get("brokenLoadedAmmo") or []:
+                findings.append(
+                    _make_finding(
+                        rule_id="WEAPON-AMMO-001",
+                        severity="CRITICAL",
+                        domain="luau",
+                        file=str(path_str),
+                        evidence=f"Loaded ammo mesh '{path_str}' is oriented perpendicular to weapon Handle barrel (-Z).",
+                        why_it_matters="Loaded bolts/arrows stick vertically through the weapon stock instead of lying flat along the rail.",
+                        fix="Rotate LoadedBolt/Arrow parts to align along Handle barrel axis (-Z) with tip facing muzzle.",
+                        auto_fixable=True,
+                    )
+                )
+            for path_str in wt.get("verticalRangedTools") or []:
+                findings.append(
+                    _make_finding(
+                        rule_id="WEAPON-GRIP-001",
+                        severity="MAJOR",
+                        domain="luau",
+                        file=str(path_str),
+                        evidence=f"Ranged Tool '{path_str}' has default Identity Grip under R15 RightGripAttachment (-90 deg X), pointing barrel vertically.",
+                        why_it_matters="R15 RightGripAttachment is pitched -90 deg; an Identity Tool.Grip points ranged weapons straight up at the sky.",
+                        fix="Set Tool.Grip pitch (+90 deg around X) or run dynamic chest-level RightGrip.C1 alignment using RightGrip.C0.",
+                        auto_fixable=True,
+                    )
+                )
+            for path_str in wt.get("transformArmIKs") or []:
+                findings.append(
+                    _make_finding(
+                        rule_id="ANIM-IK-001",
+                        severity="MAJOR",
+                        domain="animation",
+                        file=str(path_str),
+                        evidence=f"Enabled IKControl '{path_str}' uses Enum.IKControlType.Transform on R15 hand EndEffector.",
+                        why_it_matters="Rigid Transform IK on R15 RightHand/LeftHand fights Wrist/Shoulder BallSocketConstraint limits and pulls the arm down or twists the weapon.",
+                        fix="Use Enum.IKControlType.Position on IKControl and calibrate Tool.Grip relative to settled RightHand CFrame.",
+                        auto_fixable=True,
                     )
                 )
 

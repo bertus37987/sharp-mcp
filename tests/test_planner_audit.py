@@ -1117,6 +1117,41 @@ class TestSystemContractsAndCustomTerrainV05(unittest.TestCase):
             ):
                 self.assertIn(token, art_txt, f"Missing v0.5 directive '{token}' in subagent_brief")
 
+    def test_weapon_pivot_grip_ammo_ik_and_aim_audit_rules(self) -> None:
+        bad_aim_src = (
+            "--!strict\n"
+            "local cam = workspace.CurrentCamera\n"
+            "local vp = cam.ViewportSize\n"
+            "local r = cam:ViewportPointToRay(vp.X * 0.5, vp.Y * 0.46)\n"
+            "local dir = (r.Origin + r.Direction * 120 - Vector3.zero).Unit\n"
+        )
+        static_res = self.audit.audit_static(luau_sources={"StarterPlayerScripts/Aim.client.luau": bad_aim_src})
+        ids = {f["id"] for f in static_res["findings"]}
+        self.assertIn("LUAU-AIM-001", ids)
+
+        live_rep = {
+            "ok": True,
+            "reports": {"luau_security": {"findings": []}, "gui": {"errors": [], "warnings": []}, "environment": {"errors": [], "warnings": []}},
+            "telemetry": {
+                "world": {"partCount": 10, "streamingEnabled": True, "spawnLocationCount": 1},
+                "gui": {"canvasGroupCount": 1},
+                "weapons": {
+                    "rotatedPivotModels": [{"path": "ReplicatedStorage.Assets.MedievalBolt", "primaryPart": "LeatherGrip", "lookDot": 0.0, "upDot": 0.0}],
+                    "brokenLoadedAmmo": ["StarterPack.Crossbow.LoadedBolt.Tip"],
+                    "verticalRangedTools": ["StarterPack.Crossbow"],
+                    "transformArmIKs": ["Workspace.Hero.Humanoid.RightAimIK"],
+                },
+            },
+        }
+        live_res = self.audit.audit_live(live_report=live_rep)
+        live_ids = {f["id"] for f in live_res["findings"]}
+        for expected in ("WEAPON-PIVOT-001", "WEAPON-AMMO-001", "WEAPON-GRIP-001", "ANIM-IK-001"):
+            self.assertIn(expected, live_ids, f"Missing live weapon/IK finding {expected}: {live_ids}")
+
+        compiled = self.luau_engine.compile_critical_audit_luau()
+        for tok in ("weaponTelemetry", "rotatedPivotModels", "brokenLoadedAmmo", "verticalRangedTools", "transformArmIKs"):
+            self.assertIn(tok, compiled)
+
 
 if __name__ == "__main__":
     unittest.main()

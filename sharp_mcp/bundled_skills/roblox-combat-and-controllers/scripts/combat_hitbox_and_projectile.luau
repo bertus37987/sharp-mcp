@@ -164,7 +164,8 @@ function CombatHitboxAndProjectile.ValidateServerHit(spec: ServerValidationSpec)
 		end
 	end
 
-	if if spec.requireLineOfSight == nil then true else spec.requireLineOfSight then
+	local requireLOS = if spec.requireLineOfSight == nil then true else spec.requireLineOfSight
+	if requireLOS then
 		local rayParams = RaycastParams.new()
 		rayParams.FilterType = Enum.RaycastFilterType.Exclude
 		local filter: { Instance } = { spec.attackerRoot.Parent :: Instance, spec.targetRoot.Parent :: Instance }
@@ -263,6 +264,77 @@ function CombatHitboxAndProjectile.SimulateProjectileTrajectory(
 	end
 
 	return history
+end
+
+function CombatHitboxAndProjectile.AlignModelToDirection(
+	model: Model,
+	position: Vector3,
+	direction: Vector3,
+	localForwardAxis: Vector3?,
+	neutralizePivotOffset: boolean?
+): CFrame
+	local dirUnit = if direction.Magnitude > 1e-4 then direction.Unit else Vector3.new(0, 0, -1)
+	local fwd = if localForwardAxis and localForwardAxis.Magnitude > 1e-4 then localForwardAxis.Unit else Vector3.new(0, 0, -1)
+	local upRef = if math.abs(dirUnit:Dot(Vector3.new(0, 1, 0))) > 0.99 then Vector3.new(0, 0, 1) else Vector3.new(0, 1, 0)
+	local baseCF = CFrame.lookAt(position, position + dirUnit, upRef)
+
+	-- Map arbitrary localForwardAxis (e.g. +Z FBX projectile nose) onto world LookVector (-Z)
+	local targetLocalLook = Vector3.new(0, 0, -1)
+	local dot = math.clamp(fwd:Dot(targetLocalLook), -1, 1)
+	local axisAlign = CFrame.identity
+	if dot < -0.999 then
+		axisAlign = CFrame.Angles(0, math.pi, 0)
+	elseif dot < 0.999 then
+		local rotAxis = fwd:Cross(targetLocalLook)
+		if rotAxis.Magnitude > 1e-4 then
+			axisAlign = CFrame.fromAxisAngle(rotAxis.Unit, math.acos(dot))
+		end
+	end
+
+	local pp = model.PrimaryPart
+	local shouldResetPivot = if neutralizePivotOffset == nil then true else neutralizePivotOffset
+	if pp and shouldResetPivot then
+		pp.PivotOffset = CFrame.identity
+		model.WorldPivot = pp.CFrame
+	end
+
+	local finalCF = baseCF * axisAlign
+	model:PivotTo(finalCF)
+	return finalCF
+end
+
+function CombatHitboxAndProjectile.ComputeCrosshairAimRay(
+	camera: Camera?,
+	reticleGui: GuiObject?,
+	muzzleOrigin: Vector3,
+	excludeInstances: { Instance }?,
+	maxRange: number?
+): (Vector3, Vector3)
+	if not camera then
+		return muzzleOrigin, Vector3.new(0, 0, -1)
+	end
+	local vp = camera.ViewportSize
+	local sx = vp.X * 0.5
+	local sy = vp.Y * 0.5
+	local screenRay: Ray
+	if reticleGui then
+		local center = reticleGui.AbsolutePosition + reticleGui.AbsoluteSize * 0.5
+		screenRay = camera:ScreenPointToRay(center.X, center.Y)
+	else
+		screenRay = camera:ViewportPointToRay(sx, sy)
+	end
+
+	local range = maxRange or 300
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = excludeInstances or {}
+	rayParams.IgnoreWater = true
+
+	local aimHit = Workspace:Raycast(screenRay.Origin, screenRay.Direction * range, rayParams)
+	local aimTarget = if aimHit then aimHit.Position else (screenRay.Origin + screenRay.Direction * range)
+	local delta = aimTarget - muzzleOrigin
+	local dir = if delta.Magnitude > 0.25 then delta.Unit else screenRay.Direction.Unit
+	return muzzleOrigin, dir
 end
 
 return CombatHitboxAndProjectile

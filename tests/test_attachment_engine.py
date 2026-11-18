@@ -1171,6 +1171,30 @@ assert (0.25, 0.25) in uv_vals and (0.75, 0.75) in uv_vals, f"Lost UVs: {uv_vals
             for other in existing[1:]:
                 self.assertEqual(baseline, _tree_sha256(other), f"Skill mirror drift for {sname}: {other}")
 
+    def test_crossbow_preset_position_ik_and_verify_pivot_check(self) -> None:
+        eng = AttachmentEngine(BUNDLED_SKILLS_DIR)
+        self.assertIn("crossbow", SOCKET_PRESETS)
+        luau_cb = eng.compile_attach_luau(mode="two_hand_ik", preset="crossbow")
+        assert_valid_luau_sanity(luau_cb, "crossbow_two_hand_ik")
+        self.assertIn("ForegripAttachment", luau_cb)
+        self.assertIn('"Position"', luau_cb)
+
+        luau_ver = eng.compile_verify_luau(rig_path="Workspace.Rig", item_path="ReplicatedStorage.Assets.MedievalBolt")
+        assert_valid_luau_sanity(luau_ver, "verify_pivot")
+        self.assertIn("pivotMismatch", luau_ver)
+        self.assertIn("PivotOffset", luau_ver)
+
+        combat_script = (
+            BUNDLED_SKILLS_DIR
+            / "roblox-combat-and-controllers"
+            / "scripts"
+            / "combat_hitbox_and_projectile.luau"
+        ).read_text(encoding="utf-8")
+        assert_valid_luau_sanity(combat_script, "combat_hitbox_and_projectile")
+        self.assertIn("AlignModelToDirection", combat_script)
+        self.assertIn("ComputeCrosshairAimRay", combat_script)
+        self.assertIn("PivotOffset = CFrame.identity", combat_script)
+
 
 if __name__ == "__main__":
     unittest.main()

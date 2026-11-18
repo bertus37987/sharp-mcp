@@ -382,9 +382,73 @@ for _, desc in ipairs(StarterGui:GetDescendants()) do
 end
 
 local payload = if okBase and type(baseDecoded) == "table" then baseDecoded else {{ ok = false, raw = baseRaw }}
+local weaponTelemetry = {{
+	rotatedPivotModels = {{}},
+	brokenLoadedAmmo = {{}},
+	verticalRangedTools = {{}},
+	transformArmIKs = {{}},
+}}
+local assetContainers = {{
+	game:GetService("ReplicatedStorage"),
+	game:GetService("ServerStorage"),
+	game:GetService("StarterPack"),
+}}
+for _, container in ipairs(assetContainers) do
+	for _, desc in ipairs(container:GetDescendants()) do
+		if desc:IsA("Model") and desc.PrimaryPart then
+			local po = desc.PrimaryPart.PivotOffset
+			if po.LookVector:Dot(Vector3.new(0, 0, -1)) < 0.99 or po.UpVector:Dot(Vector3.new(0, 1, 0)) < 0.99 then
+				table.insert(weaponTelemetry.rotatedPivotModels, {{
+					path = desc:GetFullName(),
+					primaryPart = desc.PrimaryPart.Name,
+					lookDot = po.LookVector:Dot(Vector3.new(0, 0, -1)),
+					upDot = po.UpVector:Dot(Vector3.new(0, 1, 0)),
+				}})
+			end
+		elseif desc:IsA("Tool") then
+			local h = desc:FindFirstChild("Handle")
+			local muzzle = desc:FindFirstChild("MuzzleAttachment", true)
+			if h and h:IsA("BasePart") and muzzle and muzzle:IsA("Attachment") then
+				local muzzleDir = h.CFrame:VectorToObjectSpace(muzzle.WorldCFrame.LookVector)
+				local barrelAxis = if muzzle.Position.Magnitude > 0.1 then muzzle.Position.Unit else muzzleDir
+				if math.abs(desc.Grip.RightVector:Dot(Vector3.new(1, 0, 0))) > 0.99 and desc.Grip.LookVector:Dot(Vector3.new(0, 0, -1)) > 0.99 then
+					table.insert(weaponTelemetry.verticalRangedTools, desc:GetFullName())
+				end
+				for _, child in ipairs(desc:GetChildren()) do
+					local ln = string.lower(child.Name)
+					if child:IsA("Model") and (string.find(ln, "bolt", 1, true) or string.find(ln, "arrow", 1, true) or string.find(ln, "ammo", 1, true)) then
+						for _, bp in ipairs(child:GetDescendants()) do
+							if bp:IsA("BasePart") then
+								local relLook = h.CFrame:ToObjectSpace(bp.CFrame).LookVector
+								if math.abs(relLook:Dot(Vector3.new(0, 0, -1))) < 0.7 then
+									table.insert(weaponTelemetry.brokenLoadedAmmo, bp:GetFullName())
+									break
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+for _, rootSvc in ipairs({{ Workspace, game:GetService("StarterPlayer") }}) do
+	for _, desc in ipairs(rootSvc:GetDescendants()) do
+		if desc:IsA("IKControl") and desc.Enabled then
+			local okT, isTransform = pcall(function()
+				return desc.Type == Enum.IKControlType.Transform
+			end)
+			if okT and isTransform and desc.EndEffector and (desc.EndEffector.Name == "RightHand" or desc.EndEffector.Name == "LeftHand") then
+				table.insert(weaponTelemetry.transformArmIKs, desc:GetFullName())
+			end
+		end
+	end
+end
+
 payload.telemetry = {{
 	world = worldTelemetry,
 	gui = guiTelemetry,
+	weapons = weaponTelemetry,
 }}
 if okInv and type(invDecoded) == "table" then
 	payload.scriptInventory = invDecoded
