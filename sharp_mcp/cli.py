@@ -195,6 +195,7 @@ def _cmd_register(args: argparse.Namespace) -> int:
         bridge_port=args.bridge_port,
         prune_legacy=not args.keep_legacy,
         dry_run=args.dry_run,
+        include_api_keys=bool(getattr(args, "include_keys", False)),
     )
     lines = [f"Sharp MCP Client Registration ({'DRY RUN' if args.dry_run else 'APPLIED'}):"]
     for cname, cdata in res.get("clients", {}).items():
@@ -606,7 +607,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_blender.add_argument("--json", action="store_true", help="Emit JSON output.")
     p_blender.set_defaults(handler=_cmd_install_blender)
 
-    p_reg = subparsers.add_parser("register", help="Register Sharp MCP across Antigravity, Claude Desktop, Claude Code, Codex, and OpenCode.")
+    p_reg = subparsers.add_parser("register", help="Register Sharp MCP across Antigravity, Claude Desktop, Claude Code, Codex, OpenCode, and Devin.")
     p_reg.add_argument(
         "--client",
         action="append",
@@ -621,6 +622,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_reg.add_argument("--config-root", default=None, help="Override client config root directory.")
     p_reg.add_argument("--bridge-host", default=os.environ.get("SHARP_BRIDGE_HOST", "127.0.0.1"))
     p_reg.add_argument("--bridge-port", type=int, default=int(os.environ.get("SHARP_BRIDGE_PORT", "58421")))
+    p_reg.add_argument("--include-keys", action="store_true", help="Embed stored API keys (Gemini, OpenRouter, Roblox Open Cloud) in the client's MCP env block.")
     p_reg.add_argument("--keep-legacy", action="store_true", help="Keep legacy Roblox_Forge entries.")
     p_reg.add_argument("--dry-run", action="store_true", help="Preview changes without modifying config files.")
     p_reg.add_argument("--json", action="store_true", help="Emit JSON output.")

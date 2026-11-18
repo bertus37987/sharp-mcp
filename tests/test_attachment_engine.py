@@ -983,6 +983,7 @@ add_faceted_gem(bm, 0.08, 0.09, 0.10, loc=(0.0, 0.0, 0.38), mat_idx=3)
                     export_fbx=True,
                     export_glb=True,
                     render_preview=True,
+                    split_by_material=True,
                     execute=True,
                     execution_mode="headless",
                     timeout_sec=90.0,
@@ -991,7 +992,11 @@ add_faceted_gem(bm, 0.08, 0.09, 0.10, loc=(0.0, 0.0, 0.38), mat_idx=3)
                 self.assertTrue(Path(live_res["fbx_path"]).is_file())
                 self.assertTrue(Path(live_res["glb_path"]).is_file())
                 self.assertTrue(Path(live_res["sidecar_path"]).is_file())
+                self.assertTrue(Path(live_res["palette_texture_path"]).is_file())
                 self.assertTrue(Path(live_res["preview_path"]).is_file())
+                self.assertGreaterEqual(len(live_res.get("material_slots_split", [])), 3)
+                for split_entry in live_res["material_slots_split"]:
+                    self.assertTrue(Path(split_entry["fbx_path"]).is_file())
                 self.assertTrue((live_dir / "preview.png").is_file())
                 self.assertGreater((live_dir / "preview.png").stat().st_size, 500)
 

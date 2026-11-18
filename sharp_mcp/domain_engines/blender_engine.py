@@ -1673,6 +1673,7 @@ _run_sharp_asset_attach_pipeline()
         export_fbx: bool = True,
         export_glb: bool = True,
         render_preview: bool = True,
+        split_by_material: bool = False,
         execute: bool = False,
         auto_install: bool = False,
         execution_mode: str = "auto",
@@ -2250,6 +2251,11 @@ def _run_sharp_custom_bmesh_pipeline():
     xs = [c.x for c in bbox_local]
     ys = [c.y for c in bbox_local]
     zs = [c.z for c in bbox_local]
+    full_center_blender = (
+        (min(xs) + max(xs)) * 0.5,
+        (min(ys) + max(ys)) * 0.5,
+        (min(zs) + max(zs)) * 0.5,
+    )
     dims_studs = [
         round(max(xs) - min(xs), 4),
         round(max(zs) - min(zs), 4),
@@ -2259,41 +2265,65 @@ def _run_sharp_custom_bmesh_pipeline():
     sidecar_path = Path({json.dumps(sidecar_file.as_posix())})
     fbx_path = Path({json.dumps(fbx_file.as_posix())})
     glb_path = Path({json.dumps(glb_file.as_posix())})
+    palette_path = out_dir / f"{{asset_name}}_palette.png"
     preview_path = Path({json.dumps(preview_file.as_posix())})
     generic_preview_path = Path({json.dumps(generic_preview_file.as_posix())})
 
-    # Export FBX & GLB before adding render Camera/Lights
-    if {repr(bool(export_fbx))}:
-        bpy.ops.object.select_all(action="DESELECT")
-        asset_obj.select_set(True)
-        for emp in socket_empties:
-            emp.select_set(True)
-        bpy.context.view_layer.objects.active = asset_obj
-        bpy.ops.export_scene.fbx(
-            filepath=str(fbx_path),
-            use_selection=True,
-            object_types={{"MESH", "EMPTY"}},
-            apply_scale_options="FBX_SCALE_ALL",
-            axis_forward="-Z",
-            axis_up="Y",
-            add_leaf_bones=False,
-            bake_anim=False,
-        )
+    # Generate 4-quadrant palette texture PNG & bind ShaderNodeTexImage for ROBLOX-ASSET-IMPORT-MULTI-MATERIAL
+    def _lin_to_srgb_u8(c: float) -> int:
+        v = max(0.0, min(1.0, float(c)))
+        s = v * 12.92 if v <= 0.0031308 else (1.055 * (v ** (1.0 / 2.4)) - 0.055)
+        return max(0, min(255, int(round(s * 255.0))))
 
-    if {repr(bool(export_glb))}:
-        bpy.ops.object.select_all(action="DESELECT")
-        asset_obj.select_set(True)
-        for emp in socket_empties:
-            emp.select_set(True)
-        bpy.context.view_layer.objects.active = asset_obj
-        bpy.ops.export_scene.gltf(
-            filepath=str(glb_path),
-            use_selection=True,
-            export_format="GLB",
-            export_yup=True,
-        )
+    slot_rgba_list = []
+    slot_srgb_map = {{}}
+    for idx_m, m in enumerate(mat_list):
+        rgba = (0.5, 0.5, 0.5, 1.0)
+        if m and m.use_nodes:
+            bsdf_n = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+            if bsdf_n is not None:
+                rgba = tuple(float(x) for x in bsdf_n.inputs["Base Color"].default_value)
+        slot_rgba_list.append(rgba)
+        slot_srgb_map[idx_m] = [_lin_to_srgb_u8(rgba[0]), _lin_to_srgb_u8(rgba[1]), _lin_to_srgb_u8(rgba[2])]
 
-    # Orthographic preview render
+    pal_img = bpy.data.images.new(name=f"{{asset_name}}_Palette", width=64, height=64, alpha=True)
+    pixels = [1.0] * (64 * 64 * 4)
+    # Quadrants: 0=(top-left: u<32, v>=32), 1=(top-right: u>=32, v>=32), 2=(bottom-left: u<32, v<32), 3=(bottom-right: u>=32, v<32)
+    for py in range(64):
+        for px in range(64):
+            q_idx = (0 if px < 32 else 1) if py >= 32 else (2 if px < 32 else 3)
+            c_rgba = slot_rgba_list[min(q_idx, len(slot_rgba_list) - 1)]
+            p_off = (py * 64 + px) * 4
+            pixels[p_off : p_off + 4] = [c_rgba[0], c_rgba[1], c_rgba[2], 1.0]
+    pal_img.pixels = pixels
+    pal_img.filepath_raw = str(palette_path)
+    pal_img.file_format = "PNG"
+    try:
+        pal_img.save()
+        pal_img.pack()
+    except Exception:
+        pass
+
+    if uv_method != "existing" and asset_obj.data.uv_layers:
+        uv_layer_data = asset_obj.data.uv_layers[0].data
+        quad_centers = [(0.25, 0.75), (0.75, 0.75), (0.25, 0.25), (0.75, 0.25)]
+        for poly in asset_obj.data.polygons:
+            qc_u, qc_v = quad_centers[max(0, min(3, int(poly.material_index)))]
+            for l_idx in poly.loop_indices:
+                old_uv = uv_layer_data[l_idx].uv
+                uv_layer_data[l_idx].uv = (
+                    qc_u + (float(old_uv[0]) - 0.5) * 0.36,
+                    qc_v + (float(old_uv[1]) - 0.5) * 0.36,
+                )
+        for m in mat_list:
+            if m and m.use_nodes:
+                bsdf_n = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+                if bsdf_n is not None:
+                    tex_n = m.node_tree.nodes.new(type="ShaderNodeTexImage")
+                    tex_n.image = pal_img
+                    m.node_tree.links.new(bsdf_n.inputs["Base Color"], tex_n.outputs["Color"])
+
+    # Orthographic preview render before optional material split
     preview_written = False
     if {repr(bool(render_preview))}:
         world = bpy.data.worlds.new("SharpPreviewWorld")
@@ -2350,6 +2380,119 @@ def _run_sharp_custom_bmesh_pipeline():
             shutil.copy2(preview_path, generic_preview_path)
             preview_written = True
 
+    export_mesh_objects = [asset_obj]
+    material_slots_split = []
+    if {repr(bool(split_by_material))}:
+        roblox_mat_defaults = {{
+            "PrimaryMetal": "Metal",
+            "TrimAccent": "Metal",
+            "LeatherGrip": "Wood",
+            "CoreEmblem": "Fabric",
+        }}
+        split_objs = []
+        for slot_idx, mat_item in enumerate(mat_list):
+            slot_name = mat_item.name if mat_item else f"Slot{{slot_idx}}"
+            bm_slot = bmesh.new()
+            bm_slot.from_mesh(asset_obj.data)
+            faces_to_del = [f for f in bm_slot.faces if int(f.material_index) != slot_idx]
+            if faces_to_del:
+                bmesh.ops.delete(bm_slot, geom=faces_to_del, context="FACES")
+            loose_v = [v for v in bm_slot.verts if len(v.link_faces) == 0]
+            if loose_v:
+                bmesh.ops.delete(bm_slot, geom=loose_v, context="VERTS")
+            if len(bm_slot.faces) == 0:
+                bm_slot.free()
+                continue
+            for f in bm_slot.faces:
+                f.material_index = 0
+            s_xs = [float(v.co.x) for v in bm_slot.verts]
+            s_ys = [float(v.co.y) for v in bm_slot.verts]
+            s_zs = [float(v.co.z) for v in bm_slot.verts]
+            s_cx = (min(s_xs) + max(s_xs)) * 0.5
+            s_cy = (min(s_ys) + max(s_ys)) * 0.5
+            s_cz = (min(s_zs) + max(s_zs)) * 0.5
+            s_tris = sum(max(1, len(f.verts) - 2) for f in bm_slot.faces)
+
+            slot_mesh = bpy.data.meshes.new(f"{{asset_name}}_{{slot_name}}_Mesh")
+            bm_slot.to_mesh(slot_mesh)
+            bm_slot.free()
+            if mat_item:
+                slot_mesh.materials.append(mat_item)
+            slot_obj = bpy.data.objects.new(f"{{asset_name}}_{{slot_name}}", slot_mesh)
+            bpy.context.collection.objects.link(slot_obj)
+            split_objs.append(slot_obj)
+
+            slot_fbx = out_dir / f"{{asset_name}}__{{slot_name}}.fbx"
+            if {repr(bool(export_fbx))}:
+                bpy.ops.object.select_all(action="DESELECT")
+                slot_obj.select_set(True)
+                bpy.context.view_layer.objects.active = slot_obj
+                bpy.ops.export_scene.fbx(
+                    filepath=str(slot_fbx),
+                    use_selection=True,
+                    object_types={{"MESH"}},
+                    apply_scale_options="FBX_SCALE_ALL",
+                    axis_forward="-Z",
+                    axis_up="Y",
+                    path_mode="COPY",
+                    embed_textures=True,
+                    add_leaf_bones=False,
+                    bake_anim=False,
+                )
+
+            dx = round(s_cx - full_center_blender[0], 5)
+            dy = round(s_cy - full_center_blender[1], 5)
+            dz = round(s_cz - full_center_blender[2], 5)
+            material_slots_split.append({{
+                "slot_index": slot_idx,
+                "slot_name": slot_name,
+                "object_name": slot_obj.name,
+                "fbx_path": str(slot_fbx) if {repr(bool(export_fbx))} else None,
+                "triangle_count": int(s_tris),
+                "srgb_color": slot_srgb_map.get(slot_idx, [163, 162, 165]),
+                "roblox_material": roblox_mat_defaults.get(slot_name, "SmoothPlastic"),
+                "bbox_center_blender": [round(s_cx, 5), round(s_cy, 5), round(s_cz, 5)],
+                "offset_from_full_center_blender": [dx, dy, dz],
+                "offset_from_full_center_roblox_raw": [dx, dz, dy],
+            }})
+        if split_objs:
+            export_mesh_objects = split_objs
+
+    # Export FBX & GLB
+    if {repr(bool(export_fbx))}:
+        bpy.ops.object.select_all(action="DESELECT")
+        for m_o in export_mesh_objects:
+            m_o.select_set(True)
+        for emp in socket_empties:
+            emp.select_set(True)
+        bpy.context.view_layer.objects.active = export_mesh_objects[0]
+        bpy.ops.export_scene.fbx(
+            filepath=str(fbx_path),
+            use_selection=True,
+            object_types={{"MESH", "EMPTY"}},
+            apply_scale_options="FBX_SCALE_ALL",
+            axis_forward="-Z",
+            axis_up="Y",
+            path_mode="COPY",
+            embed_textures=True,
+            add_leaf_bones=False,
+            bake_anim=False,
+        )
+
+    if {repr(bool(export_glb))}:
+        bpy.ops.object.select_all(action="DESELECT")
+        for m_o in export_mesh_objects:
+            m_o.select_set(True)
+        for emp in socket_empties:
+            emp.select_set(True)
+        bpy.context.view_layer.objects.active = export_mesh_objects[0]
+        bpy.ops.export_scene.gltf(
+            filepath=str(glb_path),
+            use_selection=True,
+            export_format="GLB",
+            export_yup=True,
+        )
+
     mat_slots = [m.name for m in asset_obj.data.materials if m is not None]
     within_budget = bool(tri_count <= 10000)
     is_manifold = bool(non_manifold_edges == 0)
@@ -2392,7 +2535,10 @@ def _run_sharp_custom_bmesh_pipeline():
         "mesh_stats": mesh_stats,
         "fbx_path": str(fbx_path) if {repr(bool(export_fbx))} else None,
         "glb_path": str(glb_path) if {repr(bool(export_glb))} else None,
+        "palette_texture_path": str(palette_path) if palette_path.is_file() else None,
         "preview_path": str(preview_path) if preview_written else None,
+        "split_by_material": {repr(bool(split_by_material))},
+        "material_slots_split": material_slots_split,
         "attachments": attachments_json,
     }}
     sidecar_path.write_text(json.dumps(sidecar_payload, indent=2), encoding="utf-8")
@@ -2447,6 +2593,8 @@ _run_sharp_custom_bmesh_pipeline()
                 ms = sidecar_obj.get("mesh_stats") or {}
                 result["sidecar"] = sidecar_obj
                 result["mesh_stats"] = ms
+                result["palette_texture_path"] = sidecar_obj.get("palette_texture_path")
+                result["material_slots_split"] = sidecar_obj.get("material_slots_split", [])
                 result["audit"] = {
                     "passed": bool(ms.get("within_roblox_10k_budget")) and int(ms.get("triangle_count", 0)) > 0,
                     "within_roblox_10k_budget": bool(ms.get("within_roblox_10k_budget")),

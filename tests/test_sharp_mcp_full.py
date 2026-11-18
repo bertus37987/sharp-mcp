@@ -53,9 +53,11 @@ from sharp_mcp.client_registry import (
     LEGACY_SERVER_NAMES,
     SUPPORTED_CLIENTS,
     get_client_registration_status,
+    register_client,
     register_clients,
     strip_jsonc_comments,
 )
+from sharp_mcp.credentials_store import set_credentials
 from sharp_mcp.domain_engines.blender_engine import BlenderDomainEngine
 from sharp_mcp.domain_engines.critical_audit_engine import CriticalAuditEngine, _unwrap_live_report
 from sharp_mcp.domain_engines.gui_engine import GuiDomainEngine, compute_visual_diff
@@ -1133,7 +1135,10 @@ class TestPackagingCliAndRegistration(unittest.TestCase):
             self.assertTrue(json.loads(cli_dry.stdout)["ok"])
 
     def test_multi_client_registration_isolated_with_comments_and_pruning(self) -> None:
-        self.assertEqual(set(SUPPORTED_CLIENTS), {"antigravity", "claude-desktop", "claude-code", "codex", "opencode"})
+        self.assertEqual(
+            set(SUPPORTED_CLIENTS),
+            {"antigravity", "claude-desktop", "claude-code", "codex", "opencode", "devin"},
+        )
         self.assertIn("Roblox_Forge", LEGACY_SERVER_NAMES)
 
         # Verify JSONC comment stripping keeps strings containing // intact
@@ -1191,6 +1196,32 @@ class TestPackagingCliAndRegistration(unittest.TestCase):
             status = get_client_registration_status(home_dir=home)
             for client_name in SUPPORTED_CLIENTS:
                 self.assertTrue(status["clients"][client_name]["registered"], f"{client_name} not registered: {status}")
+
+            # Verify Devin with embedded API keys + redacted return summary
+            cred_file = home / "creds.json"
+            fake_gem = "AIzaDevinMockKey00001111"
+            fake_oc = "rbx_oc_devin_mock_22223333"
+            set_credentials(
+                gemini_api_key=fake_gem,
+                roblox_open_cloud_api_key=fake_oc,
+                roblox_creator_id="4990516523",
+                credentials_path=cred_file,
+            )
+            dev_res = register_client(
+                "devin",
+                launcher="python",
+                home_dir=home,
+                include_api_keys=True,
+                credentials_path=cred_file,
+            )
+            self.assertTrue(dev_res["ok"])
+            self.assertNotIn(fake_gem, json.dumps(dev_res))
+            self.assertNotIn(fake_oc, json.dumps(dev_res))
+            devin_cfg_path = Path(dev_res["files"][0]["path"])
+            devin_cfg = json.loads(devin_cfg_path.read_text(encoding="utf-8"))
+            self.assertEqual(devin_cfg["mcpServers"]["Sharp"]["env"]["GEMINI_API_KEY"], fake_gem)
+            self.assertEqual(devin_cfg["mcpServers"]["Sharp"]["env"]["ROBLOX_OPEN_CLOUD_API_KEY"], fake_oc)
+            self.assertEqual(devin_cfg["mcpServers"]["Sharp"]["env"]["ROBLOX_CREATOR_ID"], "4990516523")
 
 
 class TestBlenderInstallerAndEngine(unittest.TestCase):

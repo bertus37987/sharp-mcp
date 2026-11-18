@@ -109,9 +109,19 @@ Blender materials must be robust against localization:
          use_selection=True,
          apply_scale_options='FBX_SCALE_ALL',
          axis_forward='-Z',
-         axis_up='Y'
+         axis_up='Y',
+         path_mode='COPY',
+         embed_textures=True,
      )
      ```
+4. **CRITICAL RULE — `ROBLOX-ASSET-IMPORT-MULTI-MATERIAL` (Preserving Iron, Bronze, Wood & Fabric across Blender -> Roblox Import)**:
+   - A single Roblox `MeshPart` supports only **one** `Enum.Material` and (if untextured) only **one** `Color3`. If a multi-material Blender asset (e.g., oak wood stock `LeatherGrip` + wrought iron straps/bow `PrimaryMetal` + bronze rivets/latch `TrimAccent` + fabric fletching `CoreEmblem`) is merged into a single untextured mesh and given one `Color3`/`Enum.Material` in Roblox Studio, all iron fittings and metal parts turn into wood!
+   - **Mandatory Solution**:
+     1. In `sharp_blender_asset_pipeline` / `compile_custom_bmesh_asset_bpy`, pass `split_by_material=True` whenever an asset combines distinct materials (Wood/Leather + Wrought Iron/Metal + Bronze/Trim + Fabric/Neon) for Roblox Open Cloud upload.
+     2. `compile_custom_bmesh_asset_bpy(..., split_by_material=True)` automatically:
+        - Generates and packs a 4-quadrant procedural palette texture (`<Asset>_palette.png`) bound via `ShaderNodeTexImage` with `path_mode="COPY", embed_textures=True`.
+        - Splits the mesh by `material_index` into per-slot `MESH` objects (`<Asset>_PrimaryMetal`, `<Asset>_TrimAccent`, `<Asset>_LeatherGrip`, `<Asset>_CoreEmblem`) and exports per-slot `.fbx` files (`<Asset>__PrimaryMetal.fbx`, etc.) along with exact bounding-box center offsets (`offset_from_full_center_roblox_raw`: `[dx, dz, dy]`) and target Roblox material/color specs in `<Asset>_attachments.json` (`material_slots_split`).
+     3. In Roblox Studio, each material slot must be a distinct `MeshPart` (either child `MeshPart`s of the imported `Model` or uploaded per-slot `MeshPart`s welded at `rootCF * CFrame.new(dx, dz, dy)` under `Angles(0, math.pi, 0)` -> `CFrame.new(-dx, dz, -dy)`), assigned its authentic `Enum.Material` (`Enum.Material.Metal` + dark wrought iron `Color3.fromRGB(68, 74, 82)` for `PrimaryMetal`, `Enum.Material.Metal` + bronze `Color3.fromRGB(186, 142, 74)` for `TrimAccent`, `Enum.Material.Wood`/`Leather` + brown `Color3.fromRGB(102, 62, 32)` for `LeatherGrip`, `Enum.Material.Fabric` for `CoreEmblem`).
 
 ---
 

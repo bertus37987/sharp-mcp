@@ -1,4 +1,4 @@
-"""Multi-client MCP registration & inspection for Sharp (Antigravity, Claude Desktop, Claude Code, Codex, OpenCode)."""
+"""Multi-client MCP registration & inspection for Sharp (Antigravity, Claude Desktop, Claude Code, Codex, OpenCode, Devin)."""
 
 from __future__ import annotations
 
@@ -11,12 +11,15 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from .credentials_store import get_api_key, get_credentials_status, mask_api_key, resolve_credentials_path
+
 SUPPORTED_CLIENTS: Tuple[str, ...] = (
     "antigravity",
     "claude-desktop",
     "claude-code",
     "codex",
     "opencode",
+    "devin",
 )
 
 LEGACY_SERVER_NAMES: Tuple[str, ...] = (
@@ -41,6 +44,7 @@ def normalize_client_name(name: str) -> str:
         "claudecode": "claude-code",
         "codex": "codex",
         "opencode": "opencode",
+        "devin": "devin",
     }
     return aliases.get(cleaned, cleaned)
 
@@ -137,6 +141,8 @@ def build_server_spec(
     bridge_port: int = 58421,
     package_root: Optional[str | Path] = None,
     python_executable: Optional[str] = None,
+    include_api_keys: bool = False,
+    credentials_path: Optional[str | Path] = None,
 ) -> Dict[str, Any]:
     """Build normalized command/args/env launch specification for Sharp MCP."""
     if launcher not in ("auto", "npx", "uvx", "python"):
@@ -148,12 +154,27 @@ def build_server_spec(
     wrapper_mjs = root / "bin" / "sharp-mcp.mjs"
     serve_args = ["serve", "--profile", profile]
 
+    cred_file = resolve_credentials_path(credentials_path)
     env: Dict[str, str] = {
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUNBUFFERED": "1",
         "SHARP_BRIDGE_HOST": str(bridge_host),
         "SHARP_BRIDGE_PORT": str(int(bridge_port)),
+        "SHARP_CREDENTIALS_PATH": str(cred_file),
     }
+    if include_api_keys:
+        gem_key = get_api_key("gemini", credentials_path=cred_file)
+        if gem_key:
+            env["GEMINI_API_KEY"] = gem_key
+        or_key = get_api_key("openrouter", credentials_path=cred_file)
+        if or_key:
+            env["OPENROUTER_API_KEY"] = or_key
+        oc_key = get_api_key("roblox_open_cloud", credentials_path=cred_file)
+        if oc_key:
+            env["ROBLOX_OPEN_CLOUD_API_KEY"] = oc_key
+        creator_id = get_credentials_status(cred_file).get("roblox_creator_id")
+        if creator_id:
+            env["ROBLOX_CREATOR_ID"] = str(creator_id)
     if project_dir:
         resolved_proj = str(Path(project_dir).expanduser().resolve())
         env["SHARP_PROJECT_DIR"] = resolved_proj
@@ -291,6 +312,33 @@ def _resolve_claude_desktop_target(
     return xdg_cfg / "Claude" / "claude_desktop_config.json"
 
 
+def _resolve_devin_target(
+    home: Path,
+    cfg_root: Optional[Path],
+    isolated: bool,
+) -> Path:
+    if cfg_root is not None:
+        return cfg_root / "Devin" / "mcp_config.json"
+
+    if sys.platform == "win32":
+        if isolated:
+            app_data = home / "AppData" / "Roaming"
+        else:
+            env_ap = os.environ.get("APPDATA", "").strip()
+            app_data = Path(env_ap) if env_ap else (home / "AppData" / "Roaming")
+        return app_data / "Devin" / "mcp_config.json"
+
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "Devin" / "mcp_config.json"
+
+    if isolated:
+        xdg_cfg = home / ".config"
+    else:
+        env_xdg = os.environ.get("XDG_CONFIG_HOME", "").strip()
+        xdg_cfg = Path(env_xdg) if env_xdg else (home / ".config")
+    return xdg_cfg / "Devin" / "mcp_config.json"
+
+
 def _resolve_claude_code_target(
     home: Path,
     cfg_root: Optional[Path],
@@ -402,6 +450,14 @@ def _update_json_mcp_servers(
     if not dry_run:
         backup_path = _atomic_write_with_backup(target_path, rendered)
 
+    redacted_entry = json.loads(json.dumps(server_entry))
+    for env_field in ("env", "environment"):
+        env_map = redacted_entry.get(env_field)
+        if isinstance(env_map, dict):
+            for secret_k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENROUTER_API_KEY", "ROBLOX_OPEN_CLOUD_API_KEY", "ROBLOX_API_KEY"):
+                if secret_k in env_map and env_map[secret_k]:
+                    env_map[secret_k] = mask_api_key(str(env_map[secret_k])) or "***"
+
     return {
         "path": str(target_path),
         "existed": existed,
@@ -409,7 +465,7 @@ def _update_json_mcp_servers(
         "backup_path": str(backup_path) if backup_path else None,
         "server_key": server_key,
         "pruned_legacy": pruned,
-        "entry": server_entry,
+        "entry": redacted_entry,
     }
 
 
@@ -524,6 +580,8 @@ def register_client(
     dry_run: bool = False,
     package_root: Optional[str | Path] = None,
     python_executable: Optional[str] = None,
+    include_api_keys: bool = False,
+    credentials_path: Optional[str | Path] = None,
 ) -> Dict[str, Any]:
     """Register Sharp MCP in one supported client configuration file."""
     canonical = normalize_client_name(client)
@@ -544,6 +602,8 @@ def register_client(
         bridge_port=bridge_port,
         package_root=package_root,
         python_executable=python_executable,
+        include_api_keys=include_api_keys,
+        credentials_path=credentials_path,
     )
     home, cfg_root, isolated = _resolve_bases(home_dir=home_dir, config_root=config_root)
     proj_path = Path(project_dir).expanduser().resolve() if project_dir else None
@@ -619,6 +679,17 @@ def register_client(
                     use_opencode_v2=True,
                 )
             )
+        elif canonical == "devin":
+            target = _resolve_devin_target(home, cfg_root, isolated)
+            files_updated.append(
+                _update_json_mcp_servers(
+                    target_path=target,
+                    server_key="Sharp",
+                    server_entry=standard_entry,
+                    prune_legacy=prune_legacy,
+                    dry_run=dry_run,
+                )
+            )
     except Exception as exc:
         return {
             "ok": False,
@@ -689,7 +760,15 @@ def _inspect_json_file_status(path: Path, server_key: str, use_opencode_v2: bool
             info["registered"] = server_key in servers
             info["legacy_present"] = [leg for leg in LEGACY_SERVER_NAMES if leg in servers]
             if server_key in servers:
-                info["entry"] = servers[server_key]
+                redacted = json.loads(json.dumps(servers[server_key]))
+                if isinstance(redacted, dict):
+                    for env_field in ("env", "environment"):
+                        env_map = redacted.get(env_field)
+                        if isinstance(env_map, dict):
+                            for secret_k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENROUTER_API_KEY", "ROBLOX_OPEN_CLOUD_API_KEY", "ROBLOX_API_KEY"):
+                                if secret_k in env_map and env_map[secret_k]:
+                                    env_map[secret_k] = mask_api_key(str(env_map[secret_k])) or "***"
+                info["entry"] = redacted
     except Exception as exc:
         info["error"] = str(exc)
     return info
@@ -768,6 +847,9 @@ def get_client_registration_status(
                 "sharp",
                 use_opencode_v2=True,
             )
+            statuses[canonical] = {"registered": f_info["registered"], "files": [f_info]}
+        elif canonical == "devin":
+            f_info = _inspect_json_file_status(_resolve_devin_target(home, cfg_root, isolated), "Sharp")
             statuses[canonical] = {"registered": f_info["registered"], "files": [f_info]}
         else:
             statuses[raw_name] = {"ok": False, "error": f"Unknown client '{raw_name}'"}
