@@ -1052,7 +1052,7 @@ def _sharp_import_prop_mesh(source_path_str: str, prop_name: str):
     return primary
 
 
-def _sharp_merge_sub_bm(bm, sub_bm, mat_idx: int = 0, rot_deg=(0.0, 0.0, 0.0), loc=(0.0, 0.0, 0.0)):
+def _sharp_merge_sub_bm(bm, sub_bm, mat_idx=None, rot_deg=(0.0, 0.0, 0.0), loc=(0.0, 0.0, 0.0)):
     sub_bm.verts.index_update()
     rot_mat = Euler(
         (math.radians(float(rot_deg[0])), math.radians(float(rot_deg[1])), math.radians(float(rot_deg[2]))),
@@ -1063,7 +1063,7 @@ def _sharp_merge_sub_bm(bm, sub_bm, mat_idx: int = 0, rot_deg=(0.0, 0.0, 0.0), l
     for f in sub_bm.faces:
         try:
             nf = bm.faces.new([vmap[v.index] for v in f.verts])
-            nf.material_index = int(mat_idx)
+            nf.material_index = int(mat_idx) if mat_idx is not None else int(f.material_index)
         except ValueError:
             pass
     sub_bm.free()
@@ -1832,7 +1832,7 @@ def _sharp_create_styled_materials():
     return mats, mat_list
 
 
-def _sharp_merge_sub_bm(bm, sub_bm, mat_idx: int = 0, rot_deg=(0.0, 0.0, 0.0), loc=(0.0, 0.0, 0.0)):
+def _sharp_merge_sub_bm(bm, sub_bm, mat_idx=None, rot_deg=(0.0, 0.0, 0.0), loc=(0.0, 0.0, 0.0)):
     sub_bm.verts.index_update()
     rot_mat = Euler(
         (math.radians(float(rot_deg[0])), math.radians(float(rot_deg[1])), math.radians(float(rot_deg[2]))),
@@ -1843,7 +1843,7 @@ def _sharp_merge_sub_bm(bm, sub_bm, mat_idx: int = 0, rot_deg=(0.0, 0.0, 0.0), l
     for f in sub_bm.faces:
         try:
             nf = bm.faces.new([vmap[v.index] for v in f.verts])
-            nf.material_index = int(mat_idx)
+            nf.material_index = int(mat_idx) if mat_idx is not None else int(f.material_index)
         except ValueError:
             pass
     sub_bm.free()

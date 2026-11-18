@@ -1214,6 +1214,8 @@ assert (0.25, 0.25) in uv_vals and (0.75, 0.75) in uv_vals, f"Lost UVs: {uv_vals
         bm_res = bl.compile_custom_bmesh_asset_bpy(asset_name="TestGreave", custom_bpy_code="", slot="left_greave", execute=False)
         self.assertIn('"LeftLowerLeg"', bm_res["compiled_bpy_code"])
         self.assertIn('"LeftKneeRigAttachment"', bm_res["compiled_bpy_code"])
+        self.assertIn("def _sharp_merge_sub_bm(bm, sub_bm, mat_idx=None", bm_res["compiled_bpy_code"])
+        self.assertIn("int(f.material_index)", bm_res["compiled_bpy_code"])
 
 
 if __name__ == "__main__":
