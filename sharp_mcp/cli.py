@@ -504,6 +504,7 @@ def _cmd_keys(args: argparse.Namespace) -> int:
             open_browser=not bool(getattr(args, "no_browser", False)),
             wait_for_save=True,
             default_creator_id=str(getattr(args, "creator_id", None) or ""),
+            announce_url=True,
         )
         lines = [
             f"Sharp Browser Credentials Prompt: saved={res.get('saved')} cancelled={res.get('cancelled')} url={res.get('url')}"

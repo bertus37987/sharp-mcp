@@ -14,6 +14,7 @@ import html
 import json
 import os
 import secrets
+import sys
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -577,6 +578,7 @@ async def async_prompt_credentials_in_browser(
     wait_for_save: bool = True,
     credentials_path: Optional[str | Path] = None,
     default_creator_id: str = "",
+    announce_url: bool = False,
 ) -> Dict[str, Any]:
     """Start a localhost browser UI prompt for Gemini, OpenRouter & Roblox Open Cloud API keys."""
     token = secrets.token_urlsafe(16)
@@ -673,6 +675,8 @@ async def async_prompt_credentials_in_browser(
     if site._server and site._server.sockets:
         bound_port = int(site._server.sockets[0].getsockname()[1])
     setup_url = f"http://127.0.0.1:{bound_port}/setup?token={token}"
+    if announce_url:
+        print(f"Sharp MCP Setup URL: {setup_url}", file=sys.stderr, flush=True)
 
     browser_opened = False
     if open_browser:
@@ -737,6 +741,7 @@ def prompt_credentials_in_browser(
     wait_for_save: bool = True,
     credentials_path: Optional[str | Path] = None,
     default_creator_id: str = "",
+    announce_url: bool = False,
 ) -> Dict[str, Any]:
     """Synchronous CLI wrapper around `async_prompt_credentials_in_browser`."""
     return asyncio.run(
@@ -746,5 +751,6 @@ def prompt_credentials_in_browser(
             wait_for_save=wait_for_save,
             credentials_path=credentials_path,
             default_creator_id=default_creator_id,
+            announce_url=announce_url,
         )
     )
