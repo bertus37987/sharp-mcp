@@ -98,8 +98,23 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 
     if "skills_dir" in params and args.skills_dir:
         kwargs["skills_dir"] = Path(args.skills_dir).expanduser().resolve()
-    if "project_dir" in params and args.project_dir:
-        kwargs["project_dir"] = Path(args.project_dir).expanduser().resolve()
+    if "project_dir" in params:
+        if args.project_dir:
+            kwargs["project_dir"] = Path(args.project_dir).expanduser().resolve()
+        elif not os.environ.get("SHARP_PROJECT_DIR", "").strip():
+            from .project_library import DEFAULT_LIBRARY_ROOT, _sanitize_project_id
+
+            safe_id = _sanitize_project_id(os.environ.get("SHARP_PROJECT_ID") or "default_game")
+            dest = Path.home() / ".sharp-mcp" / "projects" / safe_id
+            src = DEFAULT_LIBRARY_ROOT / safe_id
+            if not dest.exists() and src.is_dir():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(
+                    src,
+                    dest,
+                    ignore=shutil.ignore_patterns("__pycache__"),
+                )
+            kwargs["project_dir"] = str(dest)
     if "bridge_host" in params:
         kwargs["bridge_host"] = args.bridge_host
     if "bridge_port" in params:

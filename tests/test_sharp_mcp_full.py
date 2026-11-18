@@ -42,6 +42,7 @@ REPO_ROOT = SERVER_ROOT.parent
 if str(SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_ROOT))
 
+from sharp_mcp import cli as sharp_cli
 from sharp_mcp.blender_installer import (
     detect_blender_installation,
     ensure_blender_installed,
@@ -56,9 +57,12 @@ from sharp_mcp.client_registry import (
     strip_jsonc_comments,
 )
 from sharp_mcp.domain_engines.blender_engine import BlenderDomainEngine
+from sharp_mcp.domain_engines.critical_audit_engine import CriticalAuditEngine, _unwrap_live_report
 from sharp_mcp.domain_engines.gui_engine import GuiDomainEngine, compute_visual_diff
+from sharp_mcp.domain_engines.luau_audit_engine import LuauAuditSnapshotEngine
 from sharp_mcp.domain_engines.rig_anim_engine import RigAnimationEngine
 from sharp_mcp.domain_engines.terrain_env_engine import TerrainEnvironmentEngine
+from sharp_mcp.domain_engines.upstream_multiplexer import UpstreamMultiplexer
 from sharp_mcp.domain_engines.toolchain_engine import ToolchainEngine
 from sharp_mcp.mcp_server import (
     BLENDER_ONLY_TOOLS,
@@ -647,6 +651,338 @@ class TestBridgeBrokerAndTransientHttp(unittest.IsolatedAsyncioTestCase):
                         self.assertNotIn(token, server.batches)
         finally:
             await server.stop()
+
+    async def test_windows_port_conflict_raises_oserror_and_multiplexer_busy(self) -> None:
+        # 1. Verify reuse_address=False when os.name == 'nt'
+        mock_broker = BridgeBroker(host="127.0.0.1", port=0)
+        with patch("sharp_mcp.bridge_broker.os.name", "nt"), patch(
+            "sharp_mcp.bridge_broker.web.TCPSite"
+        ) as mock_site_cls:
+            mock_site = mock_site_cls.return_value
+            mock_site.start = AsyncMock(return_value=None)
+            mock_site._server = None
+            try:
+                await mock_broker.start()
+                self.assertIs(mock_site_cls.call_args.kwargs.get("reuse_address"), False)
+            finally:
+                await mock_broker.stop()
+
+        # 2. On Windows, binding a second BridgeBroker to an already-bound port raises OSError
+        if os.name == "nt":
+            second = BridgeBroker(host="127.0.0.1", port=self.broker.port)
+            try:
+                with self.assertRaises(OSError):
+                    await second.start()
+            finally:
+                await second.stop()
+
+            third = BridgeBroker(host="127.0.0.1", port=self.broker.port)
+            mux = UpstreamMultiplexer(third)
+            try:
+                status = await mux.ensure_broker_started()
+                self.assertTrue(status["busy"])
+                self.assertIn("OSError", status["reason"])
+            finally:
+                await third.stop()
+
+
+class TestUpstreamMultiplexerCriticalUnwrapAndCliServe(unittest.IsolatedAsyncioTestCase):
+    async def test_resolve_active_studio_id_edit_preference_and_ttl_cache(self) -> None:
+        broker = BridgeBroker(host="127.0.0.1", port=0)
+        mux = UpstreamMultiplexer(broker)
+        with patch.object(
+            mux,
+            "call_upstream_studio_mcp",
+            new=AsyncMock(
+                return_value={
+                    "ok": True,
+                    "decoded": {
+                        "studios": [
+                            {"id": "sid-play", "mode": "Play"},
+                            {"id": "sid-edit", "mode": "Edit"},
+                        ]
+                    },
+                }
+            ),
+        ) as mock_call:
+            self.assertEqual(await mux.resolve_active_studio_id("explicit-sid"), "explicit-sid")
+            self.assertEqual(mock_call.await_count, 0)
+
+            first = await mux.resolve_active_studio_id()
+            self.assertEqual(first, "sid-edit")
+            self.assertEqual(mock_call.await_count, 1)
+
+            # Second call within 15s TTL returns cached studio_id without re-calling StudioMCP
+            second = await mux.resolve_active_studio_id()
+            self.assertEqual(second, "sid-edit")
+            self.assertEqual(mock_call.await_count, 1)
+
+            # Expired TTL forces a fresh lookup
+            mux._cached_studio_ts -= 20.0
+            third = await mux.resolve_active_studio_id()
+            self.assertEqual(third, "sid-edit")
+            self.assertEqual(mock_call.await_count, 2)
+
+    async def test_execute_studio_job_upstream_auto_resolve_and_offline_fallback(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sharp_mux_job_") as td:
+            bat = Path(td) / "mcp.bat"
+            bat.write_text("@echo off\r\n", encoding="utf-8")
+            broker = BridgeBroker(host="127.0.0.1", port=0)
+            mux = UpstreamMultiplexer(broker)
+            mux.mcp_bat_path = bat
+            try:
+                with patch("sharp_mcp.domain_engines.upstream_multiplexer.sys.platform", "win32"), patch.object(
+                    mux, "resolve_active_studio_id", new=AsyncMock(return_value="studio-edit-1")
+                ), patch.object(
+                    mux,
+                    "call_upstream_studio_mcp",
+                    new=AsyncMock(return_value={"ok": True, "decoded": {"ok": True, "place": "Edit"}, "content": []}),
+                ) as mock_exec:
+                    res = await mux.execute_studio_job(
+                        tool_name="sharp_terrain_build",
+                        compiled_luau="--!strict\nreturn '{}'",
+                        kind="write",
+                        invoke_upstream_studiomcp_if_plugin_offline=True,
+                    )
+                    self.assertEqual(res["executionMode"], "Upstream_StudioMCP_Subprocess")
+                    self.assertEqual(res["studioId"], "studio-edit-1")
+                    self.assertEqual(res["decoded"], {"ok": True, "place": "Edit"})
+                    self.assertEqual(mock_exec.await_args.kwargs["tool_name"], "execute_luau")
+
+                # When no active studio resolves, falls through to Compiled_Luau_Ready
+                with patch("sharp_mcp.domain_engines.upstream_multiplexer.sys.platform", "win32"), patch.object(
+                    mux, "resolve_active_studio_id", new=AsyncMock(return_value=None)
+                ):
+                    fallback = await mux.execute_studio_job(
+                        tool_name="sharp_terrain_build",
+                        compiled_luau="--!strict\nreturn '{}'",
+                        kind="write",
+                        invoke_upstream_studiomcp_if_plugin_offline=True,
+                    )
+                    self.assertEqual(fallback["executionMode"], "Compiled_Luau_Ready")
+                    self.assertIn("compiledLuau", fallback)
+            finally:
+                await broker.stop()
+
+    async def test_compile_module_op_luau_and_execute_module_op_upstream_fallback(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sharp_mux_modop_") as td:
+            bat = Path(td) / "mcp.bat"
+            bat.write_text("@echo off\r\n", encoding="utf-8")
+            broker = BridgeBroker(host="127.0.0.1", port=0)
+            mux = UpstreamMultiplexer(broker)
+            mux.mcp_bat_path = bat
+            try:
+                gui_inspect_luau = mux.compile_module_op_luau("SharpGuiTools", "inspect", {"maxDepth": 3}, kind="read")
+                self.assertIsNotNone(gui_inspect_luau)
+                assert gui_inspect_luau is not None
+                self.assertTrue(gui_inspect_luau.startswith("--!strict"))
+                self.assertNotIn("return SharpUndo.withRecording(", gui_inspect_luau)
+                self.assertIn("pcall(_invokeModuleOp)", gui_inspect_luau)
+                self.assertNotIn("\nreturn SharpGuiTools\n", gui_inspect_luau)
+
+                gui_patch_luau = mux.compile_module_op_luau(
+                    "SharpGuiTools",
+                    "patch",
+                    {"path": "StarterGui.MainHudGui", "setProperties": {"Visible": True}},
+                    kind="write",
+                )
+                self.assertIsNotNone(gui_patch_luau)
+                assert gui_patch_luau is not None
+                self.assertIn("return SharpUndo.withRecording(", gui_patch_luau)
+
+                for op_name, args in (
+                    ("searchTree", {"query": "Script", "maxDepth": 3}),
+                    ("inspectInstance", {"path": "ServerScriptService.Main"}),
+                    ("readScript", {"path": "ServerScriptService.Main", "startLine": 1, "endLine": 10}),
+                    ("updateScript", {"path": "ServerScriptService.Main", "newSource": "--[==[ ]=] ]==]"}),
+                    ("updateScript", {"path": "ServerScriptService.Main", "source": "print('hi')"}),
+                    ("updateScript", {"path": "ServerScriptService.Main", "findText": "a", "replaceText": "b"}),
+                ):
+                    code = mux.compile_module_op_luau(
+                        "SharpTreeTools",
+                        op_name,
+                        args,
+                        kind="write" if op_name == "updateScript" else "read",
+                    )
+                    self.assertIsNotNone(code, f"Failed compiling SharpTreeTools.{op_name}")
+                    assert code is not None
+                    self.assertTrue(code.startswith("--!strict"))
+                    self.assertNotIn("\nreturn SharpTreeTools\n", code)
+                    if op_name == "updateScript":
+                        self.assertIn("return SharpUndo.withRecording(", code)
+                        if "newSource" in args:
+                            # Verify ]=] inside args didn't collide with bracket literal
+                            self.assertIn("[===[", code)
+
+                self.assertIsNone(mux.compile_module_op_luau("NonExistentModule", "inspect", {}))
+
+                # execute_module_op routes via StudioMCP when plugin is offline
+                with patch("sharp_mcp.domain_engines.upstream_multiplexer.sys.platform", "win32"), patch.object(
+                    mux, "resolve_active_studio_id", new=AsyncMock(return_value="sid-edit")
+                ), patch.object(
+                    mux,
+                    "call_upstream_studio_mcp",
+                    new=AsyncMock(
+                        return_value={
+                            "ok": True,
+                            "decoded": {
+                                "ok": True,
+                                "recordingStatus": "Committed",
+                                "result": {"updated": True, "verified": True},
+                            },
+                        }
+                    ),
+                ):
+                    ok_mod = await mux.execute_module_op(
+                        module_name="SharpTreeTools",
+                        op="updateScript",
+                        args={"path": "ServerScriptService.Main", "findText": "a", "replaceText": "b"},
+                        kind="write",
+                        invoke_upstream_studiomcp_if_plugin_offline=True,
+                    )
+                    self.assertTrue(ok_mod["ok"])
+                    self.assertEqual(ok_mod["executionMode"], "Upstream_StudioMCP_Subprocess")
+                    self.assertTrue(ok_mod["result"]["verified"])
+
+                with patch("sharp_mcp.domain_engines.upstream_multiplexer.sys.platform", "win32"), patch.object(
+                    mux, "resolve_active_studio_id", new=AsyncMock(return_value=None)
+                ):
+                    offline_mod = await mux.execute_module_op(
+                        module_name="SharpGuiTools",
+                        op="inspect",
+                        args={"maxDepth": 2},
+                        kind="read",
+                        invoke_upstream_studiomcp_if_plugin_offline=True,
+                    )
+                    self.assertFalse(offline_mod["ok"])
+                    self.assertEqual(offline_mod["code"], "PLUGIN_OFFLINE")
+            finally:
+                await broker.stop()
+
+    async def test_luau_scaffold_update_script_args_and_critical_audit_unwrap_and_cli_serve(self) -> None:
+        # 1. sharp_luau_scaffold update_script forwards find_text/replace_text without empty source overwrite
+        with tempfile.TemporaryDirectory(prefix="sharp_scaf_") as td:
+            app = SharpMcpApplication(project_dir=td, bridge_port=0, profile="full", start_bridge=True)
+            scaffold_fn = app.mcp._tool_manager._tools["sharp_luau_scaffold"].fn
+            mock_mod = AsyncMock(return_value={"ok": True, "result": {"verified": True}})
+            with patch.object(app, "_dispatch_module_op", new=mock_mod):
+                await scaffold_fn(
+                    action="update_script",
+                    path="ServerScriptService.Tmp",
+                    find_text="OLD_VAL",
+                    replace_text="NEW_VAL",
+                    detail="complete",
+                )
+            sent_args = mock_mod.await_args.kwargs["args"]
+            self.assertEqual(sent_args["findText"], "OLD_VAL")
+            self.assertEqual(sent_args["replaceText"], "NEW_VAL")
+            self.assertNotIn("source", sent_args)
+            self.assertNotIn("newSource", sent_args)
+
+            with patch.object(app, "_dispatch_module_op", new=mock_mod):
+                await scaffold_fn(
+                    action="update_script",
+                    path="ServerScriptService.Tmp",
+                    source="--!strict\nprint(1)",
+                    detail="complete",
+                )
+            sent_src_args = mock_mod.await_args.kwargs["args"]
+            self.assertEqual(sent_src_args["source"], "--!strict\nprint(1)")
+            self.assertEqual(sent_src_args["newSource"], "--!strict\nprint(1)")
+
+        # 2. CriticalAuditEngine._unwrap_live_report + audit_live across nested envelopes
+        inner_report = {
+            "reports": {
+                "luau_security": {"findings": []},
+                "gui": {"errors": [], "warnings": []},
+                "environment": {"errors": [], "warnings": []},
+            },
+            "telemetry": {"world": {"overlapCount": 0, "floatingCount": 0, "partCount": 12}},
+            "scriptInventory": {
+                "scripts": [
+                    {
+                        "path": "ServerScriptService.CleanServer",
+                        "className": "Script",
+                        "source": "--!strict\nlocal n: number = 1\nprint(n)\n",
+                    }
+                ]
+            },
+        }
+        envelopes = [
+            {"upstreamResponse": {"ok": True, "content": [json.dumps(inner_report)]}},
+            {"upstreamResponse": {"ok": True, "content": [{"text": json.dumps(inner_report)}]}},
+            {"bridgeResponse": {"ok": True, "decoded": {"result": json.dumps(inner_report)}}},
+            {"result": inner_report},
+            {"result": json.dumps(inner_report)},
+        ]
+        ca = CriticalAuditEngine(luau_audit_engine=LuauAuditSnapshotEngine(resolve_default_skills_dir()))
+        for idx, env_obj in enumerate(envelopes):
+            unwrapped = _unwrap_live_report(env_obj)
+            self.assertIn("scriptInventory", unwrapped, f"Envelope {idx} failed unwrap: {unwrapped}")
+            rep = ca.audit_live(live_report=env_obj)
+            self.assertTrue(rep["ok"], f"audit_live failed on envelope {idx}")
+            self.assertTrue(rep["live_executed"])
+            self.assertEqual(rep["summary"]["scripts_scanned"], 1, f"Envelope {idx} lost scriptInventory")
+            self.assertEqual(rep["verdict"], "SHIP")
+        self.assertEqual(_unwrap_live_report(None), {})
+        self.assertEqual(_unwrap_live_report("not-json"), {"raw": "not-json"})
+
+        # 3. cli._cmd_serve copies default_game into ~/.sharp-mcp/projects/ without modifying game_library/default_game/
+        default_game_dir = SERVER_ROOT / "game_library" / "default_game"
+        before_hashes = _snapshot_tree_hashes(default_game_dir)
+        with tempfile.TemporaryDirectory(prefix="sharp_cli_home_") as td:
+            fake_home = Path(td)
+            captured_kwargs: Dict[str, Any] = {}
+
+            class DummyApp:
+                def __init__(
+                    self,
+                    skills_dir: Any = None,
+                    archive_dir: Any = None,
+                    project_dir: Any = None,
+                    project_id: str = "default_game",
+                    library_root: Any = None,
+                    bridge_host: Any = None,
+                    bridge_port: Any = None,
+                    profile: Any = None,
+                    start_bridge: bool = True,
+                ) -> None:
+                    captured_kwargs.update(
+                        skills_dir=skills_dir,
+                        archive_dir=archive_dir,
+                        project_dir=project_dir,
+                        project_id=project_id,
+                        library_root=library_root,
+                        bridge_host=bridge_host,
+                        bridge_port=bridge_port,
+                        profile=profile,
+                        start_bridge=start_bridge,
+                    )
+
+                def run(self, transport: str = "stdio") -> None:
+                    captured_kwargs["transport"] = transport
+
+            ns = SimpleNamespace(
+                project_dir=None,
+                skills_dir=None,
+                bridge_host=None,
+                bridge_port=None,
+                no_bridge_listener=True,
+                profile="full",
+                transport="stdio",
+            )
+            clean_env = {k: v for k, v in os.environ.items() if k not in ("SHARP_PROJECT_DIR", "SHARP_PROJECT_ID")}
+            with patch.dict(os.environ, clean_env, clear=True), patch("sharp_mcp.cli.Path.home", return_value=fake_home), patch(
+                "sharp_mcp.mcp_server.SharpMcpApplication", new=DummyApp
+            ):
+                rc = sharp_cli._cmd_serve(ns)
+            self.assertEqual(rc, 0)
+            expected_dest = fake_home / ".sharp-mcp" / "projects" / "default_game"
+            self.assertEqual(captured_kwargs.get("project_dir"), str(expected_dest))
+            self.assertTrue(expected_dest.is_dir())
+            self.assertEqual(list(expected_dest.rglob("__pycache__")), [])
+            self.assertEqual(_snapshot_tree_hashes(expected_dest), before_hashes)
+        self.assertEqual(_snapshot_tree_hashes(default_game_dir), before_hashes)
 
 
 class TestPackagingCliAndRegistration(unittest.TestCase):

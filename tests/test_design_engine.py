@@ -508,6 +508,92 @@ class DesignEngineTests(unittest.TestCase):
             self.assertEqual(len(sparse_meta["sprites"]), 7)
             self.assertLessEqual(max(sparse_meta["atlas_size"]), 1024)
 
+    def test_design_content_ornaments_and_non_hardcoded_gui_builder(self) -> None:
+        expected_ornaments = {
+            "candy_simulator": "bubble_shine",
+            "anime_neon": "cyber_slash",
+            "cozy_pastel": "stitched_warm",
+            "scifi_holo": "holo_brackets",
+            "arcade_pop": "comic_stripe",
+            "rpg_arcane": "arcane_filigree",
+        }
+        titles = {
+            "candy_simulator": "Sugar Puppies Simulator",
+            "anime_neon": "Neon Cyber Clash",
+            "cozy_pastel": "Sunbeam Tea Bakery",
+            "scifi_holo": "Nebula Mech Protocol",
+            "arcade_pop": "Turbo Kart Mayhem",
+            "rpg_arcane": "Royal Arcane Keep",
+        }
+        seen_roles = set()
+        seen_objectives = set()
+        for preset_id, expected_ornament in expected_ornaments.items():
+            ds = self.engine.generate_design_system(titles[preset_id], genre=preset_id, mood="vibrant", seed=17)
+            content = ds.get("content") or {}
+            self.assertEqual(content.get("ornament_kind"), expected_ornament)
+            self.assertTrue(content.get("role_title"))
+            self.assertTrue(content.get("objective_title"))
+            self.assertTrue(content.get("objective_text"))
+            self.assertEqual(len(content.get("hotbar_skills") or []), 5)
+            seen_roles.add(content["role_title"])
+            seen_objectives.add(content["objective_title"])
+
+            theme_luau = self.engine.compile_theme_luau(ds, module_mode=True)
+            _assert_luau_balanced(self, theme_luau, f"theme_content_{preset_id}")
+            self.assertIn("Content = {", theme_luau)
+            self.assertIn(f'OrnamentKind = "{expected_ornament}"', theme_luau)
+            self.assertIn("RoleTitle =", theme_luau)
+            self.assertIn("ObjectiveTitle =", theme_luau)
+            self.assertIn("HotbarSkills = {", theme_luau)
+            for skill_label in content["hotbar_skills"]:
+                self.assertIn(f'"{skill_label}"', theme_luau)
+
+            built_luau = self.gui_engine.compile_gui_build_luau(design_system=ds)
+            _assert_luau_balanced(self, built_luau, f"gui_build_{preset_id}")
+            self.assertIn(f'OrnamentKind = "{expected_ornament}"', built_luau)
+
+        self.assertEqual(len(seen_roles), 6)
+        self.assertGreaterEqual(len(seen_objectives), 5)
+
+        scripts_dir = SKILLS_DIR / "roblox-gui" / "scripts"
+        ui_kit_src = (scripts_dir / "ui_theme_and_components.luau").read_text(encoding="utf-8")
+        builder_src = (scripts_dir / "build_standard_game_gui.luau").read_text(encoding="utf-8")
+
+        # UIKit.AttachPresetOrnament covers all 6 ornament kinds safely and integrates with panels
+        self.assertIn("function UIKit.AttachPresetOrnament", ui_kit_src)
+        self.assertIn("function UIKit.CreateWindow", ui_kit_src)
+        for kind in expected_ornaments.values():
+            self.assertIn(f'"{kind}"', ui_kit_src)
+        self.assertIn("UIGridStyleLayout", ui_kit_src)
+        self.assertIn("container.Active = false", ui_kit_src)
+        self.assertIn("container.Selectable = false", ui_kit_src)
+        self.assertIn("container.ZIndex = 0", ui_kit_src)
+        self.assertIn("container.ClipsDescendants = true", ui_kit_src)
+        self.assertIn("NoOrnament", ui_kit_src)
+
+        # build_standard_game_gui.luau reads Content & themeColors instead of hardcoded Color3 in 3D preview models / vignette
+        for token in (
+            "contentGameTitle",
+            "contentRoleTitle",
+            "contentObjectiveTitle",
+            "contentObjectiveText",
+            "contentHotbarSkills",
+            "NoOrnament = true",
+        ):
+            self.assertIn(token, builder_src)
+        for fn_start, fn_end in (
+            ("local function buildSwordModel", "local function buildGemRelicModel"),
+            ("local function buildGemRelicModel", "local function buildShieldModel"),
+            ("local function buildShieldModel", "local function buildNpcBustModel"),
+            ("local function buildNpcBustModel", "local swordModel = buildSwordModel()"),
+            ("local vignetteFrame = Instance.new", "local mainHudGui = makeLayer"),
+        ):
+            i0 = builder_src.index(fn_start)
+            i1 = builder_src.index(fn_end, i0)
+            block = builder_src[i0:i1]
+            self.assertNotIn("Color3.fromRGB(", block, f"Hardcoded Color3.fromRGB found in {fn_start}")
+            self.assertIn("themeColors.", block, f"Expected themeColors in {fn_start}")
+
 
 if __name__ == "__main__":
     unittest.main()

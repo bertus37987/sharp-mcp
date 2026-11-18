@@ -636,6 +636,75 @@ def _wcag_contrast(fg_hex: str, bg_hex: str) -> Optional[float]:
     return (hi + 0.05) / (lo + 0.05)
 
 
+def _unwrap_live_report(live_report: Any) -> Dict[str, Any]:
+    """Recursively unwrap Studio/StudioMCP/Bridge envelopes up to depth 6 into a flat report dict."""
+    if live_report is None:
+        return {}
+    curr: Any = live_report
+    for _ in range(6):
+        if isinstance(curr, str):
+            try:
+                parsed = json.loads(curr)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return {"raw": curr}
+            if isinstance(parsed, (dict, str)):
+                curr = parsed
+                continue
+            return {}
+        if not isinstance(curr, dict):
+            return {}
+        if any(k in curr for k in ("reports", "telemetry", "scriptInventory")):
+            return curr
+        unwrapped = False
+        for key in ("upstreamResponse", "bridgeResponse", "decoded", "result", "data"):
+            if key not in curr:
+                continue
+            val = curr[key]
+            if isinstance(val, dict):
+                curr = val
+                unwrapped = True
+                break
+            if isinstance(val, str):
+                try:
+                    parsed = json.loads(val)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    parsed = None
+                if isinstance(parsed, (dict, str)):
+                    curr = parsed
+                    unwrapped = True
+                    break
+        if unwrapped:
+            continue
+        content = curr.get("content")
+        if isinstance(content, list) and content:
+            first = content[0]
+            if isinstance(first, dict) and isinstance(first.get("text"), str):
+                first = first["text"]
+            if isinstance(first, dict):
+                curr = first
+                continue
+            if isinstance(first, str):
+                try:
+                    parsed = json.loads(first)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    parsed = None
+                if isinstance(parsed, (dict, str)):
+                    curr = parsed
+                    continue
+        break
+    if isinstance(curr, dict):
+        return curr
+    if isinstance(curr, str):
+        try:
+            parsed = json.loads(curr)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+        return {"raw": curr}
+    return {}
+
+
 class CriticalAuditEngine:
     """Adversarial, tokenizer-backed, multi-domain audit engine (`static`, `live`, `challenge`, `gate`)."""
 
@@ -2479,23 +2548,7 @@ class CriticalAuditEngine:
                 "note": "No live Studio report supplied; compiledLuau is ready to execute via Studio bridge and pass back into live_report.",
             })
 
-        decoded: Dict[str, Any]
-        if isinstance(live_report, str):
-            try:
-                decoded = json.loads(live_report)
-            except json.JSONDecodeError:
-                decoded = {"raw": live_report}
-        elif isinstance(live_report, dict):
-            decoded = live_report
-        else:
-            decoded = {}
-
-        # Support unwrapped Studio bridgeResponse envelopes
-        if "result" in decoded and isinstance(decoded["result"], str):
-            try:
-                decoded = json.loads(decoded["result"])
-            except json.JSONDecodeError:
-                pass
+        decoded: Dict[str, Any] = _unwrap_live_report(live_report)
 
         live_findings, live_scripts_cnt = self._convert_live_report_findings(
             decoded,

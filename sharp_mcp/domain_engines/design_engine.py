@@ -448,7 +448,88 @@ def _luau_color3(hex_color: str) -> str:
 
 
 def _luau_str(value: str) -> str:
-    return json.dumps(str(value))
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+_PRESET_ORNAMENT_MAP: Dict[str, str] = {
+    "candy_simulator": "bubble_shine",
+    "anime_neon": "cyber_slash",
+    "cozy_pastel": "stitched_warm",
+    "scifi_holo": "holo_brackets",
+    "arcade_pop": "comic_stripe",
+    "rpg_arcane": "arcane_filigree",
+}
+
+_PRESET_CONTENT_PROFILES: Dict[str, Dict[str, Any]] = {
+    "candy_simulator": {
+        "ornament_kind": "bubble_shine",
+        "role_default": "Rebirth XII • x25",
+        "role_with_ctx": "Rebirth XII • {ctx} x25",
+        "objective_title": "SWEET GOAL",
+        "objective_text": "Hatch 3 {ctx_sp}Pets & collect 500 Drops (2/3)",
+        "hotbar_skills": ("Sugar Scoop", "Pet Magnet", "Bubble Boost", "Candy Drop", "Rebirth Pop"),
+    },
+    "anime_neon": {
+        "ornament_kind": "cyber_slash",
+        "role_default": "Rank S • Awakening",
+        "role_with_ctx": "Rank S • {ctx} Wake",
+        "objective_title": "AWAKENING TRIAL",
+        "objective_text": "Chain a 25-hit {ctx_sp}Combo & break 3 Seals (2/3)",
+        "hotbar_skills": ("Flash Step", "Gale Cleave", "Aura Surge", "Parry Guard", "Zenith Nova"),
+    },
+    "cozy_pastel": {
+        "ornament_kind": "stitched_warm",
+        "role_default": "Cosy Lv. 8 • Keeper",
+        "role_with_ctx": "Cosy Lv. 8 • {ctx}",
+        "objective_title": "DAILY HARVEST",
+        "objective_text": "Craft 4 {ctx_sp}Treats & greet Villagers (3/4)",
+        "hotbar_skills": ("Water Can", "Harvest Basket", "Warm Whisk", "Cozy Lantern", "Seed Pouch"),
+    },
+    "scifi_holo": {
+        "ornament_kind": "holo_brackets",
+        "role_default": "Cmdr.MkIV • 100%",
+        "role_with_ctx": "Cmdr.MkIV • {ctx} 100%",
+        "objective_title": "ACTIVE DIRECTIVE",
+        "objective_text": "Stabilize 3 {ctx_sp}Relays & scan Sector 7 (2/3)",
+        "hotbar_skills": ("Pulse Rifle", "Holo Aegis", "Nano Patch", "Thruster Dash", "Orbital Ping"),
+    },
+    "arcade_pop": {
+        "ornament_kind": "comic_stripe",
+        "role_default": "COMBO x9 • PRO",
+        "role_with_ctx": "COMBO x9 • {ctx} PRO",
+        "objective_title": "BONUS ROUND",
+        "objective_text": "Score 5,000 {ctx_sp}Points before timer hits 0 (3/5)",
+        "hotbar_skills": ("Turbo Boost", "Power Smash", "Mega Bounce", "Nitro Dash", "Super Star"),
+    },
+    "rpg_arcane": {
+        "ornament_kind": "arcane_filigree",
+        "role_default": "Lv. 24 • Arcane",
+        "role_with_ctx": "Lv. 24 • {ctx}",
+        "objective_title": "ACTIVE QUEST",
+        "objective_text": "Purify 3 {ctx_sp}Runestones in Sanctum (2/3)",
+        "hotbar_skills": ("Runeblade", "Aegis Ward", "Elixir Flask", "Blink Step", "Arcane Sigil"),
+    },
+}
+
+_GENERIC_CONTEXT_TOKENS = frozenset({
+    "the", "a", "an", "of", "and", "in", "on", "to", "for", "with",
+    "game", "custom", "untitled", "experience", "test", "realm", "world",
+    "simulator", "sim", "tycoon", "rpg", "obby", "adventure", "arena",
+    "candy", "anime", "neon", "cozy", "pastel", "scifi", "holo", "arcade", "pop", "arcane",
+})
+
+
+def _extract_title_context(game_title: str, genre: str) -> str:
+    """Return a concise single-token title/genre keyword suitable for compact HUD labels."""
+    words = re.findall(r"[A-Za-z0-9]+", str(game_title or ""))
+    for w in words:
+        if len(w) >= 3 and w.lower() not in _GENERIC_CONTEXT_TOKENS:
+            return w[:12]
+    genre_words = re.findall(r"[A-Za-z0-9]+", str(genre or ""))
+    for w in genre_words:
+        if len(w) >= 3 and w.lower() not in _GENERIC_CONTEXT_TOKENS:
+            return w[:12].capitalize()
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -874,6 +955,13 @@ class DesignEngine:
         if delta_e_cie76(key_bg_hex, primary) < 28.0 or delta_e_cie76(key_bg_hex, accent) < 28.0:
             key_bg_hex = "#00FF7F"
 
+        content = self._build_theme_content(
+            game_title=title_clean,
+            genre=genre_clean,
+            preset_id=str(preset["preset_id"]),
+            overrides=cfg.get("content") if isinstance(cfg.get("content"), dict) else None,
+        )
+
         return {
             "ok": True,
             "game_title": title_clean,
@@ -885,6 +973,7 @@ class DesignEngine:
             "surface_mode": surface_mode,
             "harmony": harmony,
             "palette": palette,
+            "content": content,
             "tokens": {
                 "radii": radii,
                 "spacing": {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24},
@@ -929,6 +1018,76 @@ class DesignEngine:
             },
             "style_signature": style_signature,
             "key_background_hex": key_bg_hex,
+        }
+
+    @staticmethod
+    def _build_theme_content(
+        game_title: str,
+        genre: str,
+        preset_id: str,
+        overrides: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Build game- and preset-tailored Content tokens for HUD & modal wiring."""
+        title_clean = str(game_title or "Custom Game").strip() or "Custom Game"
+        genre_clean = str(genre or "adventure").strip() or "adventure"
+        pid_clean = str(preset_id or "rpg_arcane").strip() or "rpg_arcane"
+        profile_key = pid_clean if pid_clean in _PRESET_CONTENT_PROFILES else "rpg_arcane"
+        prof = _PRESET_CONTENT_PROFILES[profile_key]
+
+        ctx = _extract_title_context(title_clean, genre_clean)
+        ctx_sp = f"{ctx} " if ctx else ""
+        genre_l = genre_clean.lower()
+
+        role_title = prof["role_with_ctx"].format(ctx=ctx) if ctx else prof["role_default"]
+        objective_title = str(prof["objective_title"])
+        objective_text = prof["objective_text"].format(ctx=ctx, ctx_sp=ctx_sp)
+        skills = list(prof["hotbar_skills"])
+
+        if profile_key == "candy_simulator":
+            if "tycoon" in genre_l:
+                objective_title = "TYCOON MILESTONE"
+                objective_text = f"Upgrade 3 {ctx_sp}Droppers & collect Cash (2/3)"
+                skills = ["Collect Cash", "Upgrader", "Dropper Boost", "Auto-Merge", "VIP Rebirth"]
+            elif "obby" in genre_l:
+                objective_title = "COURSE STAGE"
+                objective_text = f"Clear 3 {ctx_sp}Stages & reach Checkpoints (2/3)"
+                skills = ["Jump Coil", "Speed Gum", "Sugar Dash", "Bubble Float", "Star Warp"]
+        elif profile_key == "cozy_pastel":
+            if any(w in genre_l for w in ("farm", "garden", "crop")):
+                objective_title = "MORNING CHORES"
+                objective_text = f"Water 6 {ctx_sp}Planters & harvest Blooms (4/6)"
+            elif any(w in genre_l for w in ("cafe", "bakery", "cook", "tea")):
+                objective_title = "CAFE ORDERS"
+                objective_text = f"Serve 4 {ctx_sp}Pastries to regular Guests (3/4)"
+        elif profile_key == "arcade_pop" and any(w in genre_l for w in ("race", "kart", "drift")):
+            objective_title = "LAP CHALLENGE"
+            objective_text = f"Hit 5 {ctx_sp}Boost Pads & win Lap 3 (3/5)"
+            skills = ["Nitro Boost", "Drift Shield", "Shock Horn", "Slipstream", "Hyper Star"]
+
+        ornament_kind = _PRESET_ORNAMENT_MAP.get(pid_clean, prof["ornament_kind"])
+
+        ov = overrides or {}
+
+        def pick_ov(snake: str, pascal: str, default_val: Any) -> Any:
+            val = ov.get(pascal, ov.get(snake))
+            return val if val is not None and val != "" else default_val
+
+        raw_skills = ov.get("HotbarSkills", ov.get("hotbar_skills"))
+        if isinstance(raw_skills, (list, tuple)) and len(raw_skills) > 0:
+            merged_skills = [str(s) for s in raw_skills[:5]]
+            while len(merged_skills) < 5:
+                merged_skills.append(skills[len(merged_skills)])
+            skills = merged_skills
+
+        return {
+            "game_title": str(pick_ov("game_title", "GameTitle", title_clean)),
+            "genre": str(pick_ov("genre", "Genre", genre_clean)),
+            "preset_id": str(pick_ov("preset_id", "PresetId", pid_clean)),
+            "ornament_kind": str(pick_ov("ornament_kind", "OrnamentKind", ornament_kind)),
+            "role_title": str(pick_ov("role_title", "RoleTitle", role_title)),
+            "objective_title": str(pick_ov("objective_title", "ObjectiveTitle", objective_title)),
+            "objective_text": str(pick_ov("objective_text", "ObjectiveText", objective_text)),
+            "hotbar_skills": skills[:5],
         }
 
     # -----------------------------------------------------------------------
@@ -1438,6 +1597,17 @@ class DesignEngine:
         sweep_rot = int(sweep.get("rotation", -25))
         sweep_dur = float(sweep.get("duration_s", 0.65))
 
+        game_title = str(ds.get("game_title", "Custom Game"))
+        genre = str(ds.get("genre", "adventure"))
+        preset_id = str(ds.get("preset_id", "rpg_arcane"))
+        content = self._build_theme_content(
+            game_title=game_title,
+            genre=genre,
+            preset_id=preset_id,
+            overrides=ds.get("content") if isinstance(ds.get("content"), dict) else None,
+        )
+        hotbar_luau = "{ " + ", ".join(_luau_str(skill) for skill in content["hotbar_skills"]) + " }"
+
         lines = [
             "--!strict" if module_mode else "-- DesignSystem tokens block",
             f"-- Generated DesignSystem for {_luau_str(ds.get('game_title', 'Game'))} ({ds.get('preset_id', 'custom')} / {ds.get('harmony', 'triadic')})",
@@ -1542,6 +1712,16 @@ class DesignEngine:
             f"\t\tRayCount = {int(motifs.get('ray_count', 12))},",
             f"\t\tBadgeRotation = {int(motifs.get('badge_rotation_deg', -5))},",
             f"\t\tSurfacePattern = {_luau_str(motifs.get('surface_pattern', 'glossy'))},",
+            "\t},",
+            "\tContent = {",
+            f"\t\tGameTitle = {_luau_str(content['game_title'])},",
+            f"\t\tGenre = {_luau_str(content['genre'])},",
+            f"\t\tPresetId = {_luau_str(content['preset_id'])},",
+            f"\t\tOrnamentKind = {_luau_str(content['ornament_kind'])},",
+            f"\t\tRoleTitle = {_luau_str(content['role_title'])},",
+            f"\t\tObjectiveTitle = {_luau_str(content['objective_title'])},",
+            f"\t\tObjectiveText = {_luau_str(content['objective_text'])},",
+            f"\t\tHotbarSkills = {hotbar_luau},",
             "\t},",
             f"\tMinTouchPx = {int(tok.get('min_touch_px', 44))},",
             "}",

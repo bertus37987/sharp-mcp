@@ -722,6 +722,53 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
             self.assertTrue(s41["mvp_unlocked"])
             self.assertEqual(s41["next_step_id"], "S3.1")
 
+    def test_audit_live_unwrap_envelopes_and_all_13_anim_presets(self) -> None:
+        skills = resolve_default_skills_dir()
+        archive = resolve_default_archive_dir()
+        ca = CriticalAuditEngine(luau_audit_engine=LuauAuditSnapshotEngine(skills, archive))
+
+        live_inner = {
+            "reports": {
+                "luau_security": {"findings": []},
+                "gui": {"errors": [], "warnings": []},
+                "environment": {"errors": [], "warnings": []},
+            },
+            "telemetry": {"world": {"overlapCount": 0, "floatingCount": 0, "partCount": 18}},
+            "scriptInventory": {
+                "scripts": [
+                    {
+                        "path": "ServerScriptService.BadLegacy",
+                        "className": "Script",
+                        "source": "wait(1)\nloadstring('x')()\n",
+                    }
+                ]
+            },
+        }
+        envelopes = [
+            {"upstreamResponse": {"ok": True, "content": [json.dumps(live_inner)]}},
+            {"upstreamResponse": {"ok": True, "content": [{"text": json.dumps(live_inner)}]}},
+            {"bridgeResponse": {"ok": True, "decoded": {"result": json.dumps(live_inner)}}},
+            {"result": live_inner},
+            {"result": json.dumps(live_inner)},
+        ]
+        for idx, env in enumerate(envelopes):
+            rep = ca.audit_live(live_report=env)
+            self.assertTrue(rep["ok"], f"Envelope {idx} failed")
+            self.assertTrue(rep["live_executed"])
+            self.assertEqual(rep["summary"]["scripts_scanned"], 1, f"Envelope {idx} lost scriptInventory")
+            self.assertEqual(rep["verdict"], "REJECT", f"Envelope {idx} missed static findings inside live inventory")
+
+        rig = RigAnimationEngine(skills, archive)
+        cat = rig.list_procedural_presets()
+        self.assertEqual(len(cat["presets"]), 13)
+        for p_name in ("sword_slash_single", "dash_roll", "jump_land", "cast_spell"):
+            clip = rig.generate_procedural_preset(p_name)
+            analysis = rig.analyze_clip(clip, expected_kind=p_name)
+            self.assertTrue(analysis["passed"], f"{p_name} failed: {analysis}")
+            self.assertGreaterEqual(analysis["quality_score"], 85)
+            luau = rig.compile_animation_from_clips_luau({"clips": {clip["name"]: clip}}, anim_format="KeyframeSequence")
+            self.assertIn(clip["name"], luau)
+
 
 class TestV04StdioE2E(unittest.IsolatedAsyncioTestCase):
     async def test_v04_tools_and_prompts_over_stdio(self) -> None:

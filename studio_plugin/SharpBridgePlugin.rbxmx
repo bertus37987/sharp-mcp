@@ -2509,6 +2509,8 @@ function SharpTreeTools.updateScript(args: { [string]: any }?): (boolean, { [str
 	local function buildUpdatedSource(baseSrc: string): (boolean, string, string?)
 		if typeof(opts.newSource) == "string" then
 			return true, opts.newSource, nil
+		elseif typeof(opts.source) == "string" then
+			return true, opts.source, nil
 		end
 		if typeof(opts.findText) == "string" and typeof(opts.replaceText) == "string" then
 			local idx = string.find(baseSrc, opts.findText, 1, true)
@@ -2519,7 +2521,7 @@ function SharpTreeTools.updateScript(args: { [string]: any }?): (boolean, { [str
 			local afterPart = string.sub(baseSrc, idx + #opts.findText)
 			return true, beforePart .. opts.replaceText .. afterPart, nil
 		end
-		return false, baseSrc, "Must provide either newSource or findText + replaceText"
+		return false, baseSrc, "Must provide either newSource, source, or findText + replaceText"
 	end
 
 	local okPrep, targetSrc, prepErr = buildUpdatedSource(currentSrc)
@@ -5572,6 +5574,16 @@ UIKit.Tokens = {
 		BadgeRotation = -5,
 		SurfacePattern = "gilded_arcane_filigree",
 	},
+	Content = {
+		GameTitle = "Sharp Stylized UI",
+		Genre = "adventure",
+		PresetId = "rpg_arcane",
+		OrnamentKind = "arcane_filigree",
+		RoleTitle = "Lv. 24 • Arcane",
+		ObjectiveTitle = "ACTIVE QUEST",
+		ObjectiveText = "Purify 3 Arcane Runestones in Sanctum (2/3)",
+		HotbarSkills = { "Runeblade", "Aegis Ward", "Elixir Flask", "Blink Step", "Arcane Sigil" },
+	},
 	MinTouchPx = 44,
 	Fonts = {
 		Title = safeFont("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold, Enum.FontStyle.Normal),
@@ -5630,6 +5642,14 @@ UIKit.Presets = {
 		Shadows = { OffsetX = 0, OffsetY = 6, PressOffsetY = 3, BlurRadius = 6, Transparency = 0.24, Color = Color3.fromRGB(22, 10, 36) },
 		Fonts = { TitleFamily = "rbxasset://fonts/families/FredokaOne.json" },
 		Motifs = { PresetId = "candy_simulator", RaysEnabled = true, RayCount = 12, BadgeRotation = -6, SurfacePattern = "glossy_candy_bubbles" },
+		Content = {
+			PresetId = "candy_simulator",
+			OrnamentKind = "bubble_shine",
+			RoleTitle = "Rebirth XII • x25",
+			ObjectiveTitle = "SWEET GOAL",
+			ObjectiveText = "Hatch 3 Sugar Pets &amp; collect 500 Drops (2/3)",
+			HotbarSkills = { "Sugar Scoop", "Pet Magnet", "Bubble Boost", "Candy Drop", "Rebirth Pop" },
+		},
 	},
 	anime_neon = {
 		Meta = { PresetId = "anime_neon", SurfaceMode = "dark", Harmony = "split_complementary" },
@@ -5666,6 +5686,14 @@ UIKit.Presets = {
 		Shadows = { OffsetX = 3, OffsetY = 5, PressOffsetY = 3, BlurRadius = 2, Transparency = 0.18, Color = Color3.fromRGB(10, 8, 20) },
 		Fonts = { TitleFamily = "rbxasset://fonts/families/Bangers.json" },
 		Motifs = { PresetId = "anime_neon", RaysEnabled = true, RayCount = 14, BadgeRotation = -5, SurfacePattern = "diagonal_speed_lines" },
+		Content = {
+			PresetId = "anime_neon",
+			OrnamentKind = "cyber_slash",
+			RoleTitle = "Rank S • Awakening",
+			ObjectiveTitle = "AWAKENING TRIAL",
+			ObjectiveText = "Chain a 25-hit Combo &amp; break 3 Seals (2/3)",
+			HotbarSkills = { "Flash Step", "Gale Cleave", "Aura Surge", "Parry Guard", "Zenith Nova" },
+		},
 	},
 	cozy_pastel = {
 		Meta = { PresetId = "cozy_pastel", SurfaceMode = "light", Harmony = "analogous" },
@@ -5702,6 +5730,14 @@ UIKit.Presets = {
 		Shadows = { OffsetX = 0, OffsetY = 5, PressOffsetY = 3, BlurRadius = 8, Transparency = 0.34, Color = Color3.fromRGB(72, 48, 32) },
 		Fonts = { TitleFamily = "rbxasset://fonts/families/Nunito.json", HeadingFamily = "rbxasset://fonts/families/Nunito.json" },
 		Motifs = { PresetId = "cozy_pastel", RaysEnabled = false, RayCount = 8, BadgeRotation = 4, SurfacePattern = "warm_linen_stitches" },
+		Content = {
+			PresetId = "cozy_pastel",
+			OrnamentKind = "stitched_warm",
+			RoleTitle = "Cosy Lv. 8 • Keeper",
+			ObjectiveTitle = "DAILY HARVEST",
+			ObjectiveText = "Craft 4 Warm Treats &amp; greet Villagers (3/4)",
+			HotbarSkills = { "Water Can", "Harvest Basket", "Warm Whisk", "Cozy Lantern", "Seed Pouch" },
+		},
 	},
 	scifi_holo = {
 		Meta = { PresetId = "scifi_holo", SurfaceMode = "dark", Harmony = "tetradic" },
@@ -5738,6 +5774,14 @@ UIKit.Presets = {
 		Shadows = { OffsetX = 0, OffsetY = 4, PressOffsetY = 2, BlurRadius = 10, Transparency = 0.28, Color = Color3.fromRGB(6, 16, 22) },
 		Fonts = { TitleFamily = "rbxasset://fonts/families/Michroma.json" },
 		Motifs = { PresetId = "scifi_holo", RaysEnabled = false, RayCount = 10, BadgeRotation = -3, SurfacePattern = "precision_hex_scanlines" },
+		Content = {
+			PresetId = "scifi_holo",
+			OrnamentKind = "holo_brackets",
+			RoleTitle = "Cmdr.MkIV • 100%",
+			ObjectiveTitle = "ACTIVE DIRECTIVE",
+			ObjectiveText = "Stabilize 3 Relay Nodes &amp; scan Sector 7 (2/3)",
+			HotbarSkills = { "Pulse Rifle", "Holo Aegis", "Nano Patch", "Thruster Dash", "Orbital Ping" },
+		},
 	},
 	arcade_pop = {
 		Meta = { PresetId = "arcade_pop", SurfaceMode = "dark", Harmony = "tetradic" },
@@ -5774,6 +5818,14 @@ UIKit.Presets = {
 		Shadows = { OffsetX = 3, OffsetY = 5, PressOffsetY = 3, BlurRadius = 0, Transparency = 0.12, Color = Color3.fromRGB(10, 6, 18) },
 		Fonts = { TitleFamily = "rbxasset://fonts/families/Bangers.json" },
 		Motifs = { PresetId = "arcade_pop", RaysEnabled = true, RayCount = 16, BadgeRotation = -7, SurfacePattern = "comic_halftone_dots" },
+		Content = {
+			PresetId = "arcade_pop",
+			OrnamentKind = "comic_stripe",
+			RoleTitle = "COMBO x9 • PRO",
+			ObjectiveTitle = "BONUS ROUND",
+			ObjectiveText = "Score 5,000 Arena Points before timer hits 0 (3/5)",
+			HotbarSkills = { "Turbo Boost", "Power Smash", "Mega Bounce", "Nitro Dash", "Super Star" },
+		},
 	},
 	rpg_arcane = {
 		Meta = { PresetId = "rpg_arcane", SurfaceMode = "dark", Harmony = "triadic" },
@@ -5810,6 +5862,14 @@ UIKit.Presets = {
 		Shadows = { OffsetX = 0, OffsetY = 5, PressOffsetY = 3, BlurRadius = 8, Transparency = 0.28, Color = Color3.fromRGB(14, 10, 24) },
 		Fonts = { TitleFamily = "rbxasset://fonts/families/Fondamento.json" },
 		Motifs = { PresetId = "rpg_arcane", RaysEnabled = true, RayCount = 10, BadgeRotation = -4, SurfacePattern = "gilded_arcane_filigree" },
+		Content = {
+			PresetId = "rpg_arcane",
+			OrnamentKind = "arcane_filigree",
+			RoleTitle = "Lv. 24 • Arcane",
+			ObjectiveTitle = "ACTIVE QUEST",
+			ObjectiveText = "Purify 3 Arcane Runestones in Sanctum (2/3)",
+			HotbarSkills = { "Runeblade", "Aegis Ward", "Elixir Flask", "Blink Step", "Arcane Sigil" },
+		},
 	},
 }
 
@@ -5852,6 +5912,15 @@ local function syncLiveStyleSheetTokens()
 	tokensSheet:SetAttribute("RadiusBadge", r.Badge)
 end
 
+local PRESET_ORNAMENT_MAP: { [string]: string } = {
+	candy_simulator = "bubble_shine",
+	anime_neon = "cyber_slash",
+	cozy_pastel = "stitched_warm",
+	scifi_holo = "holo_brackets",
+	arcade_pop = "comic_stripe",
+	rpg_arcane = "arcane_filigree",
+}
+
 function UIKit.ApplyDesignSystem(dsOrPreset: any): { [string]: any }
 	local ds = dsOrPreset
 	if typeof(dsOrPreset) == "string" then
@@ -5869,8 +5938,9 @@ function UIKit.ApplyDesignSystem(dsOrPreset: any): { [string]: any }
 	end
 
 	if typeof(ds.Meta) == "table" then
+		local tMeta = UIKit.Tokens.Meta :: any
 		for k, v in pairs(ds.Meta) do
-			(UIKit.Tokens.Meta :: any)[k] = v
+			tMeta[k] = v
 		end
 	end
 
@@ -5883,9 +5953,10 @@ function UIKit.ApplyDesignSystem(dsOrPreset: any): { [string]: any }
 		end
 		-- Rebuild default glossy gradients for color keys unless explicitly overridden below
 		local gradMap = { "Primary", "Secondary", "Accent", "Success", "Warning", "Danger", "Gold" }
+		local tGrad = UIKit.Tokens.Gradients :: any
 		for _, gk in ipairs(gradMap) do
 			if ds.Colors[gk] and (typeof(ds.Gradients) ~= "table" or ds.Gradients[gk] == nil) then
-				(UIKit.Tokens.Gradients :: any)[gk] = {
+				tGrad[gk] = {
 					Rotation = -38,
 					Type = "Linear",
 					Stops = makeGlossyStops(ds.Colors[gk]),
@@ -5974,6 +6045,76 @@ function UIKit.ApplyDesignSystem(dsOrPreset: any): { [string]: any }
 		end
 	end
 
+	local tContent = UIKit.Tokens.Content :: any
+	if typeof(ds.Content) ~= "table" and typeof(ds.Meta) == "table" and typeof(ds.Meta.PresetId) == "string" and ds.Preset == nil then
+		local metaPreset = (UIKit.Presets :: any)[ds.Meta.PresetId]
+		if typeof(metaPreset) == "table" and typeof(metaPreset.Content) == "table" then
+			for ck, cv in pairs(metaPreset.Content) do
+				if ck == "HotbarSkills" and typeof(cv) == "table" then
+					local prevSkills = if typeof(tContent.HotbarSkills) == "table" then tContent.HotbarSkills else {}
+					local copied: { string } = {}
+					for i = 1, 5 do
+						local item = cv[i]
+						copied[i] = if typeof(item) == "string" and item ~= ""
+							then item
+							elseif typeof(prevSkills[i]) == "string" and prevSkills[i] ~= ""
+							then prevSkills[i]
+							else ("Skill " .. tostring(i))
+					end
+					tContent.HotbarSkills = copied
+				elseif cv ~= nil then
+					tContent[ck] = cv
+				end
+			end
+		end
+	end
+
+	if typeof(ds.Meta) == "table" then
+		if typeof(ds.Meta.GameTitle) == "string" and ds.Meta.GameTitle ~= "" then
+			tContent.GameTitle = ds.Meta.GameTitle
+		end
+		if typeof(ds.Meta.Genre) == "string" and ds.Meta.Genre ~= "" then
+			tContent.Genre = ds.Meta.Genre
+		end
+		if typeof(ds.Meta.PresetId) == "string" and ds.Meta.PresetId ~= "" then
+			tContent.PresetId = ds.Meta.PresetId
+			if typeof(ds.Content) ~= "table" or ds.Content.OrnamentKind == nil then
+				local mappedOrn = PRESET_ORNAMENT_MAP[ds.Meta.PresetId]
+				if mappedOrn then
+					tContent.OrnamentKind = mappedOrn
+				end
+			end
+		end
+	end
+
+	if typeof(ds.Content) == "table" then
+		for k, v in pairs(ds.Content) do
+			if k == "HotbarSkills" and typeof(v) == "table" then
+				local prevSkills = if typeof(tContent.HotbarSkills) == "table" then tContent.HotbarSkills else {}
+				local skills: { string } = {}
+				for i = 1, 5 do
+					local item = v[i]
+					if typeof(item) == "string" and item ~= "" then
+						skills[i] = item
+					elseif typeof(prevSkills[i]) == "string" and prevSkills[i] ~= "" then
+						skills[i] = prevSkills[i]
+					else
+						skills[i] = "Skill " .. tostring(i)
+					end
+				end
+				tContent.HotbarSkills = skills
+			elseif v ~= nil then
+				tContent[k] = v
+			end
+		end
+		if typeof(ds.Content.PresetId) == "string" and ds.Content.OrnamentKind == nil then
+			local mappedOrn = PRESET_ORNAMENT_MAP[ds.Content.PresetId]
+			if mappedOrn then
+				tContent.OrnamentKind = mappedOrn
+			end
+		end
+	end
+
 	if typeof(ds.MinTouchPx) == "number" then
 		UIKit.Tokens.MinTouchPx = math.max(44, ds.MinTouchPx)
 	end
@@ -6027,9 +6168,10 @@ end
 
 function UIKit.Tween(instance: Instance, tweenInfo: TweenInfo, props: { [string]: any }): Tween?
 	if UIKit.IsReducedMotion() then
+		local instAny = instance :: any
 		for k, v in pairs(props) do
 			pcall(function()
-				(instance :: any)[k] = v
+				instAny[k] = v
 			end)
 		end
 		return nil
@@ -6549,8 +6691,9 @@ local function tryAttachUIShadow(
 		return errOrInst
 	end
 	if created then
+		local createdInst = created :: Instance
 		pcall(function()
-			(created :: Instance):Destroy()
+			createdInst:Destroy()
 		end)
 	end
 	return nil
@@ -6995,6 +7138,174 @@ function UIKit.AttachButtonJuice(button: GuiButton, visualTarget: GuiObject?, on
 	end)
 end
 
+function UIKit.AttachPresetOrnament(target: GuiObject, ornamentKind: string?): Instance?
+	if target:FindFirstChildWhichIsA("UIGridStyleLayout") ~= nil then
+		return nil
+	end
+
+	local existing = target:FindFirstChild("PresetOrnament")
+	if existing then
+		existing:Destroy()
+	end
+
+	local resolvedKind = ornamentKind
+	if not resolvedKind or resolvedKind == "" then
+		local tContent = UIKit.Tokens.Content :: any
+		resolvedKind = if typeof(tContent) == "table" and typeof(tContent.OrnamentKind) == "string" and tContent.OrnamentKind ~= ""
+			then tContent.OrnamentKind
+			else (PRESET_ORNAMENT_MAP[UIKit.Tokens.Meta.PresetId] or "arcane_filigree")
+	end
+
+	local c = UIKit.Tokens.Colors
+	local container = Instance.new("Frame")
+	container.Name = "PresetOrnament"
+	container.Size = UDim2.fromScale(1, 1)
+	container.Position = UDim2.fromOffset(0, 0)
+	container.BackgroundTransparency = 1
+	container.BorderSizePixel = 0
+	container.ClipsDescendants = true
+	container.Active = false
+	container.Selectable = false
+	container.ZIndex = 0
+	container:SetAttribute("OrnamentKind", resolvedKind)
+
+	local existingCorner = target:FindFirstChildOfClass("UICorner")
+	if existingCorner then
+		local cnr = Instance.new("UICorner")
+		cnr.Name = "Corner"
+		cnr.CornerRadius = existingCorner.CornerRadius
+		cnr.Parent = container
+	end
+
+	local function makeDecor(
+		name: string,
+		size: UDim2,
+		pos: UDim2,
+		anchor: Vector2,
+		color: Color3,
+		trans: number,
+		rot: number?
+	): Frame
+		local f = Instance.new("Frame")
+		f.Name = name
+		f.Size = size
+		f.Position = pos
+		f.AnchorPoint = anchor
+		f.BackgroundColor3 = color
+		f.BackgroundTransparency = trans
+		f.BorderSizePixel = 0
+		f.Rotation = rot or 0
+		f.Active = false
+		f.Selectable = false
+		f.ZIndex = 0
+		f.Parent = container
+		return f
+	end
+
+	if resolvedKind == "holo_brackets" then
+		local bracketColor = c.BorderBright
+		local accentColor = c.Accent
+		makeDecor("BracketTL_H", UDim2.fromOffset(10, 2), UDim2.fromOffset(4, 4), Vector2.new(0, 0), bracketColor, 0.12)
+		makeDecor("BracketTL_V", UDim2.fromOffset(2, 10), UDim2.fromOffset(4, 4), Vector2.new(0, 0), bracketColor, 0.12)
+		makeDecor("BracketTR_H", UDim2.fromOffset(10, 2), UDim2.new(1, -4, 0, 4), Vector2.new(1, 0), bracketColor, 0.12)
+		makeDecor("BracketTR_V", UDim2.fromOffset(2, 10), UDim2.new(1, -4, 0, 4), Vector2.new(1, 0), bracketColor, 0.12)
+		makeDecor("BracketBL_H", UDim2.fromOffset(10, 2), UDim2.new(0, 4, 1, -4), Vector2.new(0, 1), bracketColor, 0.12)
+		makeDecor("BracketBL_V", UDim2.fromOffset(2, 10), UDim2.new(0, 4, 1, -4), Vector2.new(0, 1), bracketColor, 0.12)
+		makeDecor("BracketBR_H", UDim2.fromOffset(10, 2), UDim2.new(1, -4, 1, -4), Vector2.new(1, 1), bracketColor, 0.12)
+		makeDecor("BracketBR_V", UDim2.fromOffset(2, 10), UDim2.new(1, -4, 1, -4), Vector2.new(1, 1), bracketColor, 0.12)
+		makeDecor("HoloTickTL", UDim2.fromOffset(4, 2), UDim2.fromOffset(16, 4), Vector2.new(0, 0), accentColor, 0.25)
+		makeDecor("HoloTickBR", UDim2.fromOffset(4, 2), UDim2.new(1, -16, 1, -4), Vector2.new(1, 1), accentColor, 0.25)
+		makeDecor("HoloTopScan", UDim2.new(0.28, 0, 0, 1), UDim2.new(0.5, 0, 0, 4), Vector2.new(0.5, 0), accentColor, 0.55)
+	elseif resolvedKind == "cyber_slash" then
+		local s1 = makeDecor("SlashTL_Main", UDim2.fromOffset(24, 3), UDim2.fromOffset(20, 9), Vector2.new(0.5, 0.5), c.Accent, 0.16, -18)
+		local g1 = Instance.new("UIGradient")
+		g1.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.05),
+			NumberSequenceKeypoint.new(0.7, 0.15),
+			NumberSequenceKeypoint.new(1, 0.85),
+		})
+		g1.Parent = s1
+		makeDecor("SlashTL_Sub", UDim2.fromOffset(14, 2), UDim2.fromOffset(24, 14), Vector2.new(0.5, 0.5), c.Primary, 0.24, -18)
+
+		local s2 = makeDecor("SlashBR_Main", UDim2.fromOffset(24, 3), UDim2.new(1, -20, 1, -9), Vector2.new(0.5, 0.5), c.Primary, 0.16, -18)
+		local g2 = Instance.new("UIGradient")
+		g2.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.85),
+			NumberSequenceKeypoint.new(0.3, 0.15),
+			NumberSequenceKeypoint.new(1, 0.05),
+		})
+		g2.Parent = s2
+		makeDecor("SlashBR_Sub", UDim2.fromOffset(14, 2), UDim2.new(1, -24, 1, -14), Vector2.new(0.5, 0.5), c.Accent, 0.24, -18)
+	elseif resolvedKind == "bubble_shine" then
+		local sheen = makeDecor("GlossPillTL", UDim2.new(0.32, 0, 0, 5), UDim2.fromOffset(10, 5), Vector2.new(0, 0), c.InnerHighlight, 0.60)
+		local sc = Instance.new("UICorner")
+		sc.CornerRadius = UDim.new(1, 0)
+		sc.Parent = sheen
+		local sg = Instance.new("UIGradient")
+		sg.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.0),
+			NumberSequenceKeypoint.new(0.65, 0.25),
+			NumberSequenceKeypoint.new(1, 1.0),
+		})
+		sg.Parent = sheen
+
+		local d1 = makeDecor("SpecularDotA", UDim2.fromOffset(6, 6), UDim2.new(1, -14, 0, 6), Vector2.new(0.5, 0), c.InnerHighlight, 0.56)
+		local c1 = Instance.new("UICorner")
+		c1.CornerRadius = UDim.new(1, 0)
+		c1.Parent = d1
+
+		local d2 = makeDecor("SpecularDotB", UDim2.fromOffset(4, 4), UDim2.new(1, -23, 0, 8), Vector2.new(0.5, 0), c.InnerHighlight, 0.66)
+		local c2 = Instance.new("UICorner")
+		c2.CornerRadius = UDim.new(1, 0)
+		c2.Parent = d2
+	elseif resolvedKind == "comic_stripe" then
+		local stripe1 = makeDecor("ComicRibbonTR", UDim2.fromOffset(22, 5), UDim2.new(1, -20, 0, 10), Vector2.new(0.5, 0.5), c.Accent, 0.14, -16)
+		local st1 = Instance.new("UIStroke")
+		st1.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		st1.Color = c.OutlineInk
+		st1.Thickness = 1.4
+		st1.Transparency = 0.15
+		st1.Parent = stripe1
+
+		makeDecor("ComicRibbonTR_Sub", UDim2.fromOffset(12, 3), UDim2.new(1, -15, 0, 16), Vector2.new(0.5, 0.5), c.Primary, 0.20, -16)
+		makeDecor("ComicRibbonBL", UDim2.fromOffset(14, 4), UDim2.new(0, 16, 1, -9), Vector2.new(0.5, 0.5), c.Accent, 0.24, -16)
+	elseif resolvedKind == "stitched_warm" then
+		local inset = makeDecor("WarmInsetBorder", UDim2.new(1, -10, 1, -10), UDim2.fromOffset(5, 5), Vector2.new(0, 0), c.Gold, 1)
+		local insetCorner = Instance.new("UICorner")
+		local baseR = if existingCorner then existingCorner.CornerRadius else UIKit.Tokens.Radii.Panel
+		insetCorner.CornerRadius = UDim.new(baseR.Scale, math.max(0, baseR.Offset - 4))
+		insetCorner.Parent = inset
+		local insetStroke = Instance.new("UIStroke")
+		insetStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		insetStroke.Color = c.Gold
+		insetStroke.Thickness = 1.2
+		insetStroke.Transparency = 0.58
+		insetStroke.Parent = inset
+
+		local function makeStitch(sName: string, pos: UDim2, anchor: Vector2, col: Color3)
+			local st = makeDecor(sName, UDim2.fromOffset(7, 2), pos, anchor, col, 0.45)
+			local sc = Instance.new("UICorner")
+			sc.CornerRadius = UDim.new(1, 0)
+			sc.Parent = st
+		end
+		makeStitch("StitchTL", UDim2.fromOffset(14, 4), Vector2.new(0, 0), c.InnerHighlight)
+		makeStitch("StitchTR", UDim2.new(1, -14, 0, 4), Vector2.new(1, 0), c.Gold)
+		makeStitch("StitchBL", UDim2.new(0, 14, 1, -4), Vector2.new(0, 1), c.Gold)
+		makeStitch("StitchBR", UDim2.new(1, -14, 1, -4), Vector2.new(1, 1), c.InnerHighlight)
+	else
+		-- "arcane_filigree" (default)
+		makeDecor("DiamondTL", UDim2.fromOffset(6, 6), UDim2.fromOffset(8, 8), Vector2.new(0.5, 0.5), c.Gold, 0.18, 45)
+		makeDecor("DiamondTR", UDim2.fromOffset(6, 6), UDim2.new(1, -8, 0, 8), Vector2.new(0.5, 0.5), c.Accent, 0.24, 45)
+		makeDecor("DiamondBL", UDim2.fromOffset(6, 6), UDim2.new(0, 8, 1, -8), Vector2.new(0.5, 0.5), c.Accent, 0.24, 45)
+		makeDecor("DiamondBR", UDim2.fromOffset(6, 6), UDim2.new(1, -8, 1, -8), Vector2.new(0.5, 0.5), c.Gold, 0.18, 45)
+		makeDecor("FiligreeTop", UDim2.new(1, -30, 0, 1), UDim2.fromOffset(15, 7), Vector2.new(0, 0), c.Gold, 0.58)
+		makeDecor("FiligreeBottom", UDim2.new(1, -30, 0, 1), UDim2.new(0, 15, 1, -8), Vector2.new(0, 0), c.Gold, 0.58)
+	end
+
+	container.Parent = target
+	return container
+end
+
 export type PanelOptions = {
 	Name: string?,
 	Parent: Instance?,
@@ -7009,6 +7320,7 @@ export type PanelOptions = {
 	Use9Slice: boolean?,
 	AddShadow: boolean?,
 	Glossy: boolean?,
+	NoOrnament: boolean?,
 }
 
 function UIKit.CreatePanel(opts: PanelOptions): GuiObject
@@ -7024,6 +7336,9 @@ function UIKit.CreatePanel(opts: PanelOptions): GuiObject
 		img.ScaleType = Enum.ScaleType.Slice
 		img.SliceCenter = assets.Panel9SliceCenter
 		img.SliceScale = assets.PanelSliceScale or 0.22
+		if opts.NoOrnament ~= true then
+			UIKit.AttachPresetOrnament(img)
+		end
 		img.Parent = opts.Parent
 		return img
 	end
@@ -7059,6 +7374,10 @@ function UIKit.CreatePanel(opts: PanelOptions): GuiObject
 		InnerTransparency = 0.72,
 		CornerRadius = radius,
 	})
+
+	if opts.NoOrnament ~= true then
+		UIKit.AttachPresetOrnament(frame)
+	end
 
 	frame.Parent = opts.Parent
 	if opts.AddShadow then
@@ -7398,6 +7717,7 @@ export type GlossyPanelOptions = {
 	ShowRays: boolean?,
 	ShowClose: boolean?,
 	ZIndex: number?,
+	NoOrnament: boolean?,
 }
 
 function UIKit.CreateGlossyPanel(opts: GlossyPanelOptions)
@@ -7459,6 +7779,10 @@ function UIKit.CreateGlossyPanel(opts: GlossyPanelOptions)
 	)
 	if uiShadow then
 		dropShadow.Visible = false
+	end
+
+	if opts.NoOrnament ~= true then
+		UIKit.AttachPresetOrnament(face)
 	end
 
 	if opts.ShowRays and UIKit.Tokens.Motifs.RaysEnabled then
@@ -7542,6 +7866,10 @@ function UIKit.CreateGlossyPanel(opts: GlossyPanelOptions)
 		TitleLabel = titleLbl,
 		CloseButton = closeBtn,
 	}
+end
+
+function UIKit.CreateWindow(opts: GlossyPanelOptions)
+	return UIKit.CreateGlossyPanel(opts)
 end
 
 function UIKit.CreateBadgeIcon(

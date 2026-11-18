@@ -48,6 +48,23 @@ UIKit.SetAssets(CONFIG.Assets)
 
 local styleSheet = UIKit.BuildStyleSheet(ReplicatedStorage)
 
+local themeColors = UIKit.Tokens.Colors :: { [string]: Color3 }
+local tokensContent = (UIKit.Tokens.Content or {}) :: { [string]: any }
+local tokensMeta = (UIKit.Tokens.Meta or {}) :: { [string]: any }
+local contentGameTitle = if typeof(tokensContent.GameTitle) == "string" and tokensContent.GameTitle ~= ""
+	then tokensContent.GameTitle
+	else tostring(tokensMeta.GameTitle or "Sharp Stylized UI")
+local contentRoleTitle = if typeof(tokensContent.RoleTitle) == "string" and tokensContent.RoleTitle ~= ""
+	then tokensContent.RoleTitle
+	else "Lv. 14 • Vanguard"
+local contentObjectiveTitle = if typeof(tokensContent.ObjectiveTitle) == "string" and tokensContent.ObjectiveTitle ~= ""
+	then tokensContent.ObjectiveTitle
+	else "ACTIVE QUEST"
+local contentObjectiveText = if typeof(tokensContent.ObjectiveText) == "string" and tokensContent.ObjectiveText ~= ""
+	then tokensContent.ObjectiveText
+	else "Purify 3 Arcane Runestones in Sanctum (2/3)"
+local contentHotbarSkills = (if typeof(tokensContent.HotbarSkills) == "table" then tokensContent.HotbarSkills else {}) :: { any }
+
 -- Clean previous generated ScreenGuis cleanly
 local GUI_NAMES = {
 	"BackdropVignetteGui",
@@ -132,13 +149,14 @@ modelsFolder.Name = "GuiPreviewModels"
 modelsFolder.Parent = ReplicatedStorage
 
 local function buildSwordModel(): Model
+	local surfaceCol = themeColors.BgSurface or themeColors.BgPanel
 	local m = Instance.new("Model")
 	m.Name = "GoldenSword"
 	local blade = Instance.new("Part")
 	blade.Name = "Blade"
 	blade.Anchored = true
 	blade.Size = Vector3.new(0.45, 3.6, 0.14)
-	blade.Color = Color3.fromRGB(220, 232, 248)
+	blade.Color = themeColors.TextPrimary:Lerp(themeColors.Accent, 0.20)
 	blade.Material = Enum.Material.Metal
 	blade.CFrame = CFrame.new(0, 1.4, 0)
 	blade.Parent = m
@@ -147,7 +165,7 @@ local function buildSwordModel(): Model
 	fuller.Name = "Fuller"
 	fuller.Anchored = true
 	fuller.Size = Vector3.new(0.16, 2.8, 0.18)
-	fuller.Color = Color3.fromRGB(64, 178, 255)
+	fuller.Color = themeColors.Accent
 	fuller.Material = Enum.Material.Neon
 	fuller.CFrame = CFrame.new(0, 1.35, 0)
 	fuller.Parent = m
@@ -156,7 +174,7 @@ local function buildSwordModel(): Model
 	guard.Name = "Guard"
 	guard.Anchored = true
 	guard.Size = Vector3.new(1.65, 0.3, 0.38)
-	guard.Color = Color3.fromRGB(245, 192, 68)
+	guard.Color = themeColors.Gold
 	guard.Material = Enum.Material.Metal
 	guard.CFrame = CFrame.new(0, -0.45, 0)
 	guard.Parent = m
@@ -165,7 +183,7 @@ local function buildSwordModel(): Model
 	grip.Name = "Grip"
 	grip.Anchored = true
 	grip.Size = Vector3.new(0.28, 1.1, 0.28)
-	grip.Color = Color3.fromRGB(62, 42, 34)
+	grip.Color = surfaceCol:Lerp(themeColors.Secondary, 0.35)
 	grip.Material = Enum.Material.SmoothPlastic
 	grip.CFrame = CFrame.new(0, -1.1, 0)
 	grip.Parent = m
@@ -175,7 +193,7 @@ local function buildSwordModel(): Model
 	pommel.Anchored = true
 	pommel.Shape = Enum.PartType.Ball
 	pommel.Size = Vector3.new(0.5, 0.5, 0.5)
-	pommel.Color = Color3.fromRGB(245, 192, 68)
+	pommel.Color = themeColors.Gold
 	pommel.Material = Enum.Material.Metal
 	pommel.CFrame = CFrame.new(0, -1.75, 0)
 	pommel.Parent = m
@@ -193,7 +211,7 @@ local function buildGemRelicModel(): Model
 	core.Name = "Crystal"
 	core.Anchored = true
 	core.Size = Vector3.new(1.5, 2.3, 1.5)
-	core.Color = Color3.fromRGB(56, 212, 255)
+	core.Color = themeColors.Accent
 	core.Material = Enum.Material.Glass
 	core.CFrame = CFrame.Angles(math.rad(25), math.rad(35), math.rad(15))
 	core.Parent = m
@@ -202,7 +220,7 @@ local function buildGemRelicModel(): Model
 	ring.Name = "Ring"
 	ring.Anchored = true
 	ring.Size = Vector3.new(2.4, 0.22, 2.4)
-	ring.Color = Color3.fromRGB(248, 196, 76)
+	ring.Color = themeColors.Gold
 	ring.Material = Enum.Material.Metal
 	ring.CFrame = CFrame.Angles(math.rad(-20), 0, math.rad(12))
 	ring.Parent = m
@@ -219,7 +237,7 @@ local function buildShieldModel(): Model
 	plate.Name = "Plate"
 	plate.Anchored = true
 	plate.Size = Vector3.new(2.3, 2.8, 0.28)
-	plate.Color = Color3.fromRGB(168, 38, 46)
+	plate.Color = themeColors.Primary
 	plate.Material = Enum.Material.SmoothPlastic
 	plate.Parent = m
 
@@ -227,7 +245,7 @@ local function buildShieldModel(): Model
 	rim.Name = "Rim"
 	rim.Anchored = true
 	rim.Size = Vector3.new(2.55, 3.05, 0.2)
-	rim.Color = Color3.fromRGB(240, 188, 68)
+	rim.Color = themeColors.Gold
 	rim.Material = Enum.Material.Metal
 	rim.CFrame = CFrame.new(0, 0, -0.05)
 	rim.Parent = m
@@ -237,7 +255,7 @@ local function buildShieldModel(): Model
 	boss.Anchored = true
 	boss.Shape = Enum.PartType.Ball
 	boss.Size = Vector3.new(0.85, 0.85, 0.45)
-	boss.Color = Color3.fromRGB(248, 206, 92)
+	boss.Color = themeColors.Secondary:Lerp(themeColors.Gold, 0.40)
 	boss.Material = Enum.Material.Metal
 	boss.CFrame = CFrame.new(0, 0.15, 0.14)
 	boss.Parent = m
@@ -248,13 +266,14 @@ local function buildShieldModel(): Model
 end
 
 local function buildNpcBustModel(): Model
+	local surfaceCol = themeColors.BgSurface or themeColors.BgPanel
 	local m = Instance.new("Model")
 	m.Name = "MerchantNpcBust"
 	local torso = Instance.new("Part")
 	torso.Name = "Torso"
 	torso.Anchored = true
 	torso.Size = Vector3.new(2.1, 1.8, 1.1)
-	torso.Color = Color3.fromRGB(44, 72, 128)
+	torso.Color = themeColors.Secondary
 	torso.Material = Enum.Material.SmoothPlastic
 	torso.CFrame = CFrame.new(0, -0.7, 0)
 	torso.Parent = m
@@ -263,7 +282,7 @@ local function buildNpcBustModel(): Model
 	collar.Name = "Collar"
 	collar.Anchored = true
 	collar.Size = Vector3.new(2.2, 0.35, 1.2)
-	collar.Color = Color3.fromRGB(240, 188, 72)
+	collar.Color = themeColors.Gold
 	collar.Material = Enum.Material.Metal
 	collar.CFrame = CFrame.new(0, 0.15, 0)
 	collar.Parent = m
@@ -272,7 +291,7 @@ local function buildNpcBustModel(): Model
 	head.Name = "Head"
 	head.Anchored = true
 	head.Size = Vector3.new(1.35, 1.35, 1.35)
-	head.Color = Color3.fromRGB(242, 206, 170)
+	head.Color = themeColors.TextPrimary:Lerp(themeColors.Gold, 0.25)
 	head.Material = Enum.Material.SmoothPlastic
 	head.CFrame = CFrame.new(0, 1.05, 0)
 	head.Parent = m
@@ -281,7 +300,7 @@ local function buildNpcBustModel(): Model
 	visor.Name = "HatBrim"
 	visor.Anchored = true
 	visor.Size = Vector3.new(1.85, 0.22, 1.85)
-	visor.Color = Color3.fromRGB(30, 40, 64)
+	visor.Color = surfaceCol:Lerp(themeColors.Primary, 0.20)
 	visor.Material = Enum.Material.SmoothPlastic
 	visor.CFrame = CFrame.new(0, 1.72, 0)
 	visor.Parent = m
@@ -290,7 +309,7 @@ local function buildNpcBustModel(): Model
 	crown.Name = "HatCrown"
 	crown.Anchored = true
 	crown.Size = Vector3.new(1.3, 0.65, 1.3)
-	crown.Color = Color3.fromRGB(218, 162, 54)
+	crown.Color = themeColors.Primary
 	crown.Material = Enum.Material.SmoothPlastic
 	crown.CFrame = CFrame.new(0, 2.08, 0)
 	crown.Parent = m
@@ -312,7 +331,7 @@ local backdropVignetteGui = makeLayer("BackdropVignetteGui", 0, Enum.ScreenInset
 local vignetteFrame = Instance.new("Frame")
 vignetteFrame.Name = "DamageVignette"
 vignetteFrame.Size = UDim2.fromScale(1, 1)
-vignetteFrame.BackgroundColor3 = Color3.fromRGB(190, 28, 42)
+vignetteFrame.BackgroundColor3 = themeColors.Danger
 vignetteFrame.BackgroundTransparency = 1
 vignetteFrame.Active = false
 vignetteFrame.BorderSizePixel = 0
@@ -339,16 +358,17 @@ local playerStatus = UIKit.CreatePanel({
 	Position = UDim2.fromOffset(10, 8),
 	AnchorPoint = Vector2.zero,
 })
-makeLabel(
+local levelTitleLbl = makeLabel(
 	playerStatus,
 	"LevelTitle",
-	"Lv. 14  Vanguard",
+	contentRoleTitle,
 	UDim2.new(1, -20, 0, 20),
 	UDim2.fromOffset(10, 6),
 	14,
 	UIKit.Tokens.Fonts.Title,
 	UIKit.Tokens.Colors.TextPrimary
 )
+levelTitleLbl.TextTruncate = Enum.TextTruncate.AtEnd
 local hpTrack = Instance.new("Frame")
 hpTrack.Name = "HpTrack"
 hpTrack.Size = UDim2.new(1, -20, 0, 14)
@@ -416,6 +436,7 @@ local currencyBar = UIKit.CreatePanel({
 	Size = UDim2.fromOffset(276, 56),
 	Position = UDim2.new(1, -10, 0, 8),
 	AnchorPoint = Vector2.new(1, 0),
+	NoOrnament = true,
 })
 local cRow = Instance.new("UIListLayout")
 cRow.FillDirection = Enum.FillDirection.Horizontal
@@ -477,26 +498,28 @@ local objectiveCard = UIKit.CreatePanel({
 	AnchorPoint = Vector2.new(1, 0),
 })
 objectiveCard:AddTag("CompactHide")
-makeLabel(
+local objHeading = makeLabel(
 	objectiveCard,
 	"QuestHeading",
-	"ACTIVE QUEST",
+	contentObjectiveTitle,
 	UDim2.new(1, -64, 0, 20),
 	UDim2.fromOffset(12, 8),
 	11,
 	UIKit.Tokens.Fonts.Title,
 	UIKit.Tokens.Colors.Gold
 )
+objHeading.TextTruncate = Enum.TextTruncate.AtEnd
 local objBody = makeLabel(
 	objectiveCard,
 	"QuestBody",
-	"Defeat 5 Sentinel Golems (3/5)",
+	contentObjectiveText,
 	UDim2.new(1, -64, 0, 42),
 	UDim2.fromOffset(12, 30),
 	13,
 	UIKit.Tokens.Fonts.Body,
 	UIKit.Tokens.Colors.TextSecondary
 )
+objBody.TextTruncate = Enum.TextTruncate.AtEnd
 objBody.TextWrapped = true
 objBody.TextYAlignment = Enum.TextYAlignment.Top
 
@@ -644,6 +667,9 @@ local hotbarItems = {
 	{ Name = "Relic", Sprite = "chest", Glyph = "RL", Accent = UIKit.Tokens.Rarity.Epic },
 }
 for slotIdx, item in ipairs(hotbarItems) do
+	local rawSkill = contentHotbarSkills[slotIdx]
+	local skillName = if typeof(rawSkill) == "string" and rawSkill ~= "" then rawSkill else item.Name
+
 	local slot = Instance.new("TextButton")
 	slot.Name = "Slot" .. tostring(slotIdx)
 	slot.Size = UDim2.fromOffset(54, 54)
@@ -653,6 +679,7 @@ for slotIdx, item in ipairs(hotbarItems) do
 	slot.Text = ""
 	slot.AutoButtonColor = false
 	slot.BorderSizePixel = 0
+	slot:SetAttribute("SkillName", skillName)
 	slot.Parent = actionHotbar
 	makeCorner(slot, UIKit.Tokens.Radii.Button)
 	local stroke = makeStroke(
@@ -678,9 +705,24 @@ for slotIdx, item in ipairs(hotbarItems) do
 	aspect.Parent = slot
 	UIKit.EnsureMinTouchTarget(slot, 52)
 
-	local icon = UIKit.CreateBadgeIcon(slot, item.Sprite, item.Glyph, item.Accent, 28)
-	icon.Position = UDim2.fromScale(0.5, 0.52)
+	local icon = UIKit.CreateBadgeIcon(slot, item.Sprite, item.Glyph, item.Accent, 24)
+	icon.Position = UDim2.fromScale(0.5, 0.39)
 	icon.AnchorPoint = Vector2.new(0.5, 0.5)
+
+	local skillLbl = makeLabel(
+		slot,
+		"SkillName",
+		skillName,
+		UDim2.new(1, -6, 0, 14),
+		UDim2.new(0, 3, 1, -15),
+		9,
+		UIKit.Tokens.Fonts.Body,
+		UIKit.Tokens.Colors.TextPrimary,
+		Enum.TextXAlignment.Center
+	)
+	skillLbl.TextTruncate = Enum.TextTruncate.AtEnd
+	skillLbl.ZIndex = 3
+	UIKit.AttachTextStroke(skillLbl, UIKit.Tokens.Colors.OutlineInk, 1.2, 0.15)
 
 	local keyPill = Instance.new("TextLabel")
 	keyPill.Name = "KeybindPill"
@@ -709,6 +751,7 @@ local topbarPill = UIKit.CreatePanel({
 	AnchorPoint = Vector2.new(0.5, 0),
 	BackgroundTransparency = 0.25,
 	CornerRadius = UIKit.Tokens.Radii.Pill,
+	NoOrnament = true,
 })
 makeLabel(
 	topbarPill,
@@ -779,12 +822,23 @@ local function buildModalShell(modalName: string, titleText: string, accent: Col
 		panel,
 		"Title",
 		titleText,
-		UDim2.new(1, -92, 0, 44),
-		UDim2.fromOffset(22, 12),
+		UDim2.new(1, -92, 0, 26),
+		UDim2.fromOffset(22, 10),
 		20,
 		UIKit.Tokens.Fonts.Title,
 		UIKit.Tokens.Colors.TextPrimary
 	)
+	local subtitleLbl = makeLabel(
+		panel,
+		"Subtitle",
+		contentGameTitle,
+		UDim2.new(1, -92, 0, 18),
+		UDim2.fromOffset(22, 36),
+		12,
+		UIKit.Tokens.Fonts.Body,
+		UIKit.Tokens.Colors.TextSecondary
+	)
+	subtitleLbl.TextTruncate = Enum.TextTruncate.AtEnd
 
 	local closeBtn = UIKit.CreateButton({
 		Name = "CloseButton",
@@ -1036,6 +1090,7 @@ local inspector = UIKit.CreatePanel({
 	Position = UDim2.new(0.58, 6, 0, 0),
 	AnchorPoint = Vector2.zero,
 	BackgroundColor3 = UIKit.Tokens.Colors.BgCard,
+	NoOrnament = true,
 })
 local inspPad = Instance.new("UIPadding")
 inspPad.PaddingTop = UDim.new(0, 8)
@@ -1574,7 +1629,8 @@ for i = 1, 5 do
 			selectHotbar(i)
 		end)
 		tooltip:BindHover(slot, function()
-			return { title = "Action Slot " .. tostring(i), subtitle = "Hotbar", body = "Press [" .. tostring(i) .. "] or tap to activate." }
+			local skillTitle = tostring(slot:GetAttribute("SkillName") or ("Action Slot " .. tostring(i)))
+			return { title = skillTitle, subtitle = "Hotbar [" .. tostring(i) .. "]", body = "Press [" .. tostring(i) .. "] or tap to activate." }
 		end)
 	end
 end

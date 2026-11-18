@@ -136,6 +136,24 @@ def build_server_instructions(
         )
         + f"9. ACTIVE TOOLS ({len(enabled_tools)}): "
         + ", ".join(enabled_tools)
+        + "\n\nNEW AGENT 5-STEP QUICKSTART & PARAMETER CHEATSHEET:\n"
+        "Step 1 (Route & Intake): `sharp_route_task(task_description, detail='summary')` -> `sharp_game_plan(action='intake_questions', title, genre)` -> user answers -> `sharp_game_plan(action='create', title, genre, pitch, platforms, granularity='micro')`.\n"
+        "Step 2 (Theme, Art & UI): `sharp_design_system(action='generate', game_title, genre, mood, seed, save_to_project=True)` -> `sharp_art_studio(action='create_2d_kit'|'create_font_kit'|'create_vfx')` -> `sharp_gui_build` -> `sharp_gui_inspect` / `sharp_gui_patch`.\n"
+        "Step 3 (Scaffold & Micro-Build): `sharp_luau_scaffold` + domain builders (`sharp_terrain_build`, `sharp_environment_apply`, `sharp_combat_and_controllers`, `sharp_equipment_attach`, `sharp_world_assembly_and_optimization`).\n"
+        "Step 4 (Multimodal & Critical Audit): `sharp_media_qa` (vision/video/audio) + `sharp_critical_audit(mode='static'|'live'|'challenge'|'gate')`.\n"
+        "Step 5 (Snapshot & Advance): `sharp_game_library(action='snapshot', description=...)` -> `sharp_game_plan(action='complete_step', step_id, evidence)` -> `sharp_game_plan(action='next_step')`.\n"
+        "CHEATSHEET:\n"
+        "- `sharp_game_plan`: action='intake_questions'|'create'|'status'|'next_step'|'subagent_brief'|'complete_step'|'stages'|'cut_list'|'set_design_system'; params: title, genre, pitch, platforms, granularity='micro'|'standard', step_id, role_focus, evidence, design_system, detail.\n"
+        "- `sharp_design_system`: action='generate'|'lint'|'get'|'presets'|'compile_theme_luau'|'image_prompts'|'render_swatch'; params: game_title, genre, mood, seed, save_to_project=True, design_system, output_swatch_path, detail.\n"
+        "- `sharp_gui_build`: params: panel_asset_id, button_asset_id, atlas_asset_id, design_system, run_audit_after=True, execute_in_studio=True, studio_id.\n"
+        "- `sharp_gui_inspect`: action='inspect'|'list_devices'|'get_device'|'set_device'|'set_resolution'|'set_orientation'|'stop'; params: action, target, root_path, root_handle, max_depth, include_props, device_id, width, height, orientation, detail.\n"
+        "- `sharp_gui_patch`: params: patches, path, sharp_handle, set_properties, reset_properties, style_rule_updates.\n"
+        "- `sharp_luau_scaffold`: action='apply'|'cleanup'|'search_tree'|'inspect_instance'|'read_script'|'update_script'; params: action, path, sharp_handle, query, class_name, source, find_text, replace_text, expected_revision, start_line, end_line, detail.\n"
+        "- `sharp_equipment_attach`: action='catalog'|'validate'|'load_sidecar'|'verify'|'attach'|'generate_preset_clip'|'analyze_clip'|'compile_playback_test'|'blender_attach'; params: action, mode, rig_path, item_path, preset, slot, limb_part, limb_attachment, preset_name, clip_data, prop_kind, sidecar_path, detail.\n"
+        "- `sharp_art_studio`: action='create_2d_kit'|'create_font_kit'|'create_vfx'|'generate_ai_art'; params: action, game_title, genre, vfx_mode, asset_kind, subject, grid, names, design_system, output_dir.\n"
+        "- `sharp_media_qa`: action='inspect_gui_vision'|'inspect_video'|'inspect_audio'|'batch_check'; params: action, image_path, before_image_path, video_path, audio_path, focus, screen_name, max_frames, design_system.\n"
+        "- `sharp_world_assembly_and_optimization`: action='install'|'scatter_and_optimize'|'audit_overlaps'|'fix_overlaps'|'smoke_test'|'cleanup'; params: action, min_xz, max_xz, min_spacing_studs, max_count, tolerance_studs, float_tolerance_studs, max_iterations.\n"
+        "- `sharp_critical_audit`: mode='static'|'live'|'challenge'|'gate'; params: mode, stage_id, step_id, luau_sources, file_paths, live_report, gui_spec, world_stats, anim_clips, domains, detail."
     )
 
 
@@ -295,13 +313,18 @@ class SharpMcpApplication:
                 "bridgeListenerDisabled": True,
                 "compiledLuau": compiled_luau,
             }
+        eff_upstream = (
+            invoke_upstream_studiomcp_if_plugin_offline or self.start_bridge
+            if (self.start_bridge and os.environ.get("SHARP_DISABLE_AUTO_STUDIOMCP") != "1")
+            else invoke_upstream_studiomcp_if_plugin_offline
+        )
         return await self.multiplexer.execute_studio_job(
             tool_name=tool_name,
             compiled_luau=compiled_luau,
             kind=kind,
             studio_id=studio_id,
             prefer_plugin_bridge=True,
-            invoke_upstream_studiomcp_if_plugin_offline=invoke_upstream_studiomcp_if_plugin_offline,
+            invoke_upstream_studiomcp_if_plugin_offline=eff_upstream,
             expected_place_id=expected_place_id,
             expected_session_nonce=expected_session_nonce,
         )
@@ -316,6 +339,8 @@ class SharpMcpApplication:
         lease_ms: int = 15000,
         expected_place_id: Optional[int] = None,
         expected_session_nonce: Optional[str] = None,
+        studio_id: Optional[str] = None,
+        invoke_upstream_studiomcp_if_plugin_offline: bool = False,
     ) -> Dict[str, Any]:
         module_req = {
             "mode": "module_op",
@@ -332,6 +357,11 @@ class SharpMcpApplication:
                 "message": "Bridge HTTP listener is disabled (start_bridge=False / --no-bridge-listener).",
                 "moduleOp": module_req,
             }
+        eff_upstream = (
+            invoke_upstream_studiomcp_if_plugin_offline or self.start_bridge
+            if (self.start_bridge and os.environ.get("SHARP_DISABLE_AUTO_STUDIOMCP") != "1")
+            else invoke_upstream_studiomcp_if_plugin_offline
+        )
         res = await self.multiplexer.execute_module_op(
             module_name=module_name,
             op=op,
@@ -340,6 +370,8 @@ class SharpMcpApplication:
             lease_ms=lease_ms,
             expected_place_id=expected_place_id,
             expected_session_nonce=expected_session_nonce,
+            studio_id=studio_id,
+            invoke_upstream_studiomcp_if_plugin_offline=eff_upstream,
         )
         res.setdefault("moduleOp", module_req)
         return res
@@ -997,7 +1029,7 @@ class SharpMcpApplication:
                 )
                 return build_mcp_result(
                     {"ok": True, "action": act, "rig_path": rig_path, **exec_res},
-                    untrusted_source="live_rig_probe" if "bridgeResponse" in exec_res else None,
+                    untrusted_source="live_rig_probe" if ("bridgeResponse" in exec_res or "upstreamResponse" in exec_res) else None,
                 )
 
             if act == "export_rbxmx":
@@ -1112,6 +1144,8 @@ class SharpMcpApplication:
             query: Optional[str] = None,
             class_name: Optional[str] = None,
             source: Optional[str] = None,
+            find_text: Optional[str] = None,
+            replace_text: Optional[str] = None,
             expected_revision: Optional[str] = None,
             expected_length: Optional[int] = None,
             start_line: Optional[int] = None,
@@ -1143,7 +1177,9 @@ class SharpMcpApplication:
                         "startLine": start_line, "endLine": end_line,
                     }.items() if v is not None}),
                     "update_script": ("updateScript", "write", {k: v for k, v in {
-                        "path": path, "sharpHandle": sharp_handle, "source": source or "",
+                        "path": path, "sharpHandle": sharp_handle,
+                        "newSource": source, "source": source,
+                        "findText": find_text, "replaceText": replace_text,
                         "expectedRevision": expected_revision, "expectedLength": expected_length,
                     }.items() if v is not None}),
                 }
@@ -1156,6 +1192,8 @@ class SharpMcpApplication:
                     lease_ms=20000 if kind == "write" else 15000,
                     expected_place_id=expected_place_id,
                     expected_session_nonce=expected_session_nonce,
+                    studio_id=studio_id,
+                    invoke_upstream_studiomcp_if_plugin_offline=invoke_upstream_studiomcp_if_plugin_offline,
                 )
                 untrusted = f"live_place_{act}" if res.get("ok") else None
                 if detail != "complete" and res.get("ok"):
@@ -1245,6 +1283,8 @@ class SharpMcpApplication:
                     kind="read",
                     expected_place_id=expected_place_id,
                     expected_session_nonce=expected_session_nonce,
+                    studio_id=studio_id,
+                    invoke_upstream_studiomcp_if_plugin_offline=invoke_upstream_studiomcp_if_plugin_offline,
                 )
 
             static_findings: List[Dict[str, Any]] = []
@@ -1256,7 +1296,7 @@ class SharpMcpApplication:
                     if re_match_deprecated(line):
                         static_findings.append({"line": idx, "rule": "deprecated-wait-spawn-delay", "severity": "warning"})
 
-            has_live_place_data = ("bridgeResponse" in exec_res) or (
+            has_live_place_data = ("bridgeResponse" in exec_res) or ("upstreamResponse" in exec_res) or (
                 isinstance(console_res, dict) and console_res.get("ok")
             )
             untrusted = "live_audit_and_logs" if has_live_place_data else None
@@ -1309,7 +1349,7 @@ class SharpMcpApplication:
                 expected_place_id=expected_place_id,
                 expected_session_nonce=expected_session_nonce,
             )
-            has_live = "bridgeResponse" in exec_res
+            has_live = "bridgeResponse" in exec_res or "upstreamResponse" in exec_res
             return build_mcp_result(
                 {"ok": True, "tool": "sharp_snapshot_and_undo", "action": action, **exec_res},
                 untrusted_source="live_snapshot_and_undo" if has_live else None,
@@ -1535,7 +1575,7 @@ class SharpMcpApplication:
                     target_domain="world_assembly_and_optimization",
                     luau_source=luau,
                 )
-            has_live = "bridgeResponse" in exec_res
+            has_live = "bridgeResponse" in exec_res or "upstreamResponse" in exec_res
             return build_mcp_result(
                 {"ok": True, "tool": "sharp_world_assembly_and_optimization", **exec_res},
                 untrusted_source="live_world_assembly_audit" if has_live else None,
@@ -1679,7 +1719,7 @@ class SharpMcpApplication:
                 expected_place_id=expected_place_id,
                 expected_session_nonce=expected_session_nonce,
             )
-            has_live = "bridgeResponse" in exec_res
+            has_live = "bridgeResponse" in exec_res or "upstreamResponse" in exec_res
             return build_mcp_result(
                 {"ok": True, "tool": "sharp_playtest_scenario", "scenario": scenario, **exec_res},
                 untrusted_source="live_playtest_scenario" if has_live else None,
@@ -1972,7 +2012,7 @@ class SharpMcpApplication:
                         expected_place_id=expected_place_id,
                         expected_session_nonce=expected_session_nonce,
                     )
-                    has_live = "bridgeResponse" in exec_res
+                    has_live = "bridgeResponse" in exec_res or "upstreamResponse" in exec_res or "upstreamResponse" in exec_res
                     return build_mcp_result(
                         {"ok": True, "tool": "sharp_equipment_attach", "action": act, "rig_path": rig_path, **exec_res},
                         untrusted_source="live_equipment_verify" if has_live else None,
@@ -2021,7 +2061,7 @@ class SharpMcpApplication:
                             target_domain="equipment_attach",
                             luau_source=luau,
                         )
-                    has_live = "bridgeResponse" in exec_res
+                    has_live = "bridgeResponse" in exec_res or "upstreamResponse" in exec_res or "upstreamResponse" in exec_res
                     return build_mcp_result(
                         {
                             "ok": True,
@@ -2080,7 +2120,7 @@ class SharpMcpApplication:
                         expected_place_id=expected_place_id,
                         expected_session_nonce=expected_session_nonce,
                     )
-                    has_live = "bridgeResponse" in exec_res
+                    has_live = "bridgeResponse" in exec_res or "upstreamResponse" in exec_res or "upstreamResponse" in exec_res
                     return build_mcp_result(
                         {"ok": True, "tool": "sharp_equipment_attach", "action": act, "rig_path": rig_path, **exec_res},
                         untrusted_source="live_equipment_playback" if has_live else None,

@@ -477,6 +477,8 @@ function SharpTreeTools.updateScript(args: { [string]: any }?): (boolean, { [str
 	local function buildUpdatedSource(baseSrc: string): (boolean, string, string?)
 		if typeof(opts.newSource) == "string" then
 			return true, opts.newSource, nil
+		elseif typeof(opts.source) == "string" then
+			return true, opts.source, nil
 		end
 		if typeof(opts.findText) == "string" and typeof(opts.replaceText) == "string" then
 			local idx = string.find(baseSrc, opts.findText, 1, true)
@@ -487,7 +489,7 @@ function SharpTreeTools.updateScript(args: { [string]: any }?): (boolean, { [str
 			local afterPart = string.sub(baseSrc, idx + #opts.findText)
 			return true, beforePart .. opts.replaceText .. afterPart, nil
 		end
-		return false, baseSrc, "Must provide either newSource or findText + replaceText"
+		return false, baseSrc, "Must provide either newSource, source, or findText + replaceText"
 	end
 
 	local okPrep, targetSrc, prepErr = buildUpdatedSource(currentSrc)

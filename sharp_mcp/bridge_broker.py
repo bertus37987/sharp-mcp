@@ -681,7 +681,12 @@ class BridgeBroker:
         self._app = self.create_web_app()
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
-        self._site = web.TCPSite(self._runner, self.host, self.port)
+        self._site = web.TCPSite(
+            self._runner,
+            self.host,
+            self.port,
+            reuse_address=(os.name != "nt"),
+        )
         await self._site.start()
         # Resolve actual bound port if port=0 was passed in unit tests
         if self._site._server and self._site._server.sockets:
