@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,13 +51,32 @@ def _sanitize_project_id(project_id: str) -> str:
     return cleaned or "default_game"
 
 
+def _user_sharp_home() -> Path:
+    sharp_home = os.environ.get("SHARP_HOME", "").strip()
+    if sharp_home:
+        return Path(sharp_home).expanduser().resolve()
+    return (Path.home() / ".sharp-mcp").resolve()
+
+
+def _user_library_root() -> Path:
+    return (_user_sharp_home() / "game_library").resolve()
+
+
+def _legacy_user_library_root() -> Path:
+    return (Path.home() / ".sharp" / "game_library").resolve()
+
+
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _bindings_file(library_root: Optional[Path] = None) -> Path:
-    base = library_root or DEFAULT_LIBRARY_ROOT
+    base = library_root or _user_library_root()
     try:
         base.mkdir(parents=True, exist_ok=True)
         return base / "place_bindings.json"
     except Exception:
-        fallback = Path.home() / ".sharp" / "game_library"
+        fallback = _user_library_root()
         fallback.mkdir(parents=True, exist_ok=True)
         return fallback / "place_bindings.json"
 
@@ -75,10 +95,11 @@ def resolve_project_directory(
     1. Explicit ``project_dir`` argument
     2. ``SHARP_PROJECT_DIR`` environment variable
     3. Explicit ``library_root`` / ``project_id``
-    4. Active ``place_id`` binding from ``place_bindings.json``
+    4. Active ``place_id`` binding from ``place_bindings.json`` (checks ``~/.sharp-mcp/game_library``,
+       repo ``game_library``, and read-only legacy ``~/.sharp/game_library`` if present)
     5. Local workspace ``.sharp/<project_id>`` when ``.sharp/`` exists in ``cwd``
-    6. Bundled/repo ``<server_root>/game_library/<project_id>``
-    7. User fallback ``~/.sharp/game_library/<project_id>``
+    6. In-repo ``<server_root>/game_library/<project_id>`` ONLY when ``SHARP_ALLOW_IN_REPO_LIBRARY`` is truthy
+    7. User fallback ``~/.sharp-mcp/game_library/<project_id>`` (respecting ``SHARP_HOME``)
     """
     safe_id = _sanitize_project_id(project_id)
 
@@ -93,11 +114,16 @@ def resolve_project_directory(
         return (Path(library_root).expanduser().resolve() / safe_id).resolve()
 
     if place_id and int(place_id) > 0:
-        for bfile in (_bindings_file(DEFAULT_LIBRARY_ROOT), _bindings_file(Path.home() / ".sharp" / "game_library")):
-            if bfile.exists():
+        candidate_bindings = (
+            _user_library_root() / "place_bindings.json",
+            DEFAULT_LIBRARY_ROOT / "place_bindings.json",
+            _legacy_user_library_root() / "place_bindings.json",
+        )
+        for bfile in candidate_bindings:
+            if bfile.is_file():
                 try:
                     data = json.loads(bfile.read_text(encoding="utf-8"))
-                    bound = data.get(str(int(place_id)))
+                    bound = data.get(str(int(place_id))) if isinstance(data, dict) else None
                     if bound:
                         return Path(bound).expanduser().resolve()
                 except Exception:
@@ -108,11 +134,12 @@ def resolve_project_directory(
     if sharp_hidden.exists() and sharp_hidden.is_dir():
         return (sharp_hidden / safe_id).resolve()
 
-    repo_target = DEFAULT_LIBRARY_ROOT / safe_id
-    if repo_target.exists() or os.access(SERVER_ROOT, os.W_OK):
-        return repo_target.resolve()
+    if _env_truthy("SHARP_ALLOW_IN_REPO_LIBRARY"):
+        repo_target = DEFAULT_LIBRARY_ROOT / safe_id
+        if repo_target.exists() or os.access(SERVER_ROOT, os.W_OK):
+            return repo_target.resolve()
 
-    return (Path.home() / ".sharp" / "game_library" / safe_id).resolve()
+    return (_user_library_root() / safe_id).resolve()
 
 
 class ProjectLibraryManager:
@@ -127,10 +154,19 @@ class ProjectLibraryManager:
         place_id: Optional[int] = None,
     ) -> None:
         self.project_id = _sanitize_project_id(project_id)
+        self._explicit_library_root: Optional[Path] = (
+            Path(library_root).expanduser().resolve() if library_root else None
+        )
         self.library_root = (
-            Path(library_root).expanduser().resolve()
-            if library_root
-            else DEFAULT_LIBRARY_ROOT.resolve()
+            self._explicit_library_root
+            if self._explicit_library_root is not None
+            else (DEFAULT_LIBRARY_ROOT.resolve() if _env_truthy("SHARP_ALLOW_IN_REPO_LIBRARY") else _user_library_root())
+        )
+        self._seed_from_repo = (
+            project_dir is None
+            and library_root is None
+            and not os.environ.get("SHARP_PROJECT_DIR", "").strip()
+            and not _env_truthy("SHARP_ALLOW_IN_REPO_LIBRARY")
         )
         self.project_dir = resolve_project_directory(
             project_dir=project_dir,
@@ -185,7 +221,7 @@ class ProjectLibraryManager:
         """Persist a ``place_id -> project_dir`` binding in ``place_bindings.json``."""
         if not place_id or int(place_id) <= 0:
             return {"ok": False, "error": "place_id must be a positive integer."}
-        bfile = _bindings_file(self.library_root)
+        bfile = _bindings_file(self._explicit_library_root)
         bindings: Dict[str, str] = {}
         if bfile.exists():
             try:
@@ -202,6 +238,15 @@ class ProjectLibraryManager:
         }
 
     def _init_or_load(self) -> None:
+        if self._seed_from_repo and not self.project_dir.exists():
+            seed_src = (DEFAULT_LIBRARY_ROOT / self.project_id).resolve()
+            if seed_src.is_dir() and seed_src != self.project_dir.resolve():
+                self.project_dir.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(
+                    seed_src,
+                    self.project_dir,
+                    ignore=shutil.ignore_patterns("__pycache__"),
+                )
         self.project_dir.mkdir(parents=True, exist_ok=True)
         for sub in (
             self.assets_dir,

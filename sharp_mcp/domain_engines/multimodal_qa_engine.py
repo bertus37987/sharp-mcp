@@ -25,6 +25,7 @@ except ImportError:  # pragma: no cover - optional fallback for minimal environm
 
 from ..credentials_store import resolve_provider_and_model
 from ..ai_http import AIRequestError, post_json, redact_error, response_text
+from ..process_utils import detached_subprocess_kwargs
 from .gui_engine import compute_visual_diff
 
 
@@ -83,14 +84,6 @@ FOCUS_RUBRICS: Dict[str, str] = {
         "4) click feedback micro-animations (press tween, ripple/burst VFX) and layout clipping/overlap."
     ),
 }
-
-
-def _detached_subprocess_kwargs() -> Dict[str, Any]:
-    """Return subprocess kwargs preventing Windows MCP stdio pipe inheritance and console popups."""
-    kwargs: Dict[str, Any] = {"stdin": subprocess.DEVNULL}
-    if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-    return kwargs
 
 
 def find_ffmpeg_executable() -> Optional[str]:
@@ -283,7 +276,7 @@ def _extract_video_telemetry_via_ffmpeg(
             str(max(1, max_frames)),
             str(out_pat),
         ]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, **_detached_subprocess_kwargs())
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, **detached_subprocess_kwargs())
         frame_files = sorted(Path(tmp_d).glob("frame_*.png"))
         if not frame_files:
             return {
@@ -794,7 +787,7 @@ class MultimodalQAEngine:
             capture_output=True,
             text=True,
             timeout=60,
-            **_detached_subprocess_kwargs(),
+            **detached_subprocess_kwargs(),
         )
         return proc.returncode == 0 and out_wav.is_file() and out_wav.stat().st_size > 44
 

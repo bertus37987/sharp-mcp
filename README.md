@@ -10,7 +10,7 @@ Cross-platform Model Context Protocol (MCP) server unifying **Roblox Studio (`Sh
 
 ## 1. Quick Start (`npx` / `uv` / Python CLI)
 
-First-class target clients: **Antigravity**, **Claude (Claude Code & Claude Desktop)**, **OpenAI Codex CLI**, and **OpenCode (V2)**.
+First-class target clients: **Antigravity**, **Claude (Claude Code & Claude Desktop)**, **OpenAI Codex CLI**, **OpenCode (V2)**, and **Devin** (`devin`).
 
 Requires Python `>=3.11` and `mcp>=1.7.0,<2`: 1.7 adds the tool annotations Sharp uses; MCP 2.x removed `mcp.server.fastmcp`. `doctor` checks actual server importability. For OpenCV-backed media QA, install the optional extra with `python -m pip install '.[media]'` (`opencv-python-headless`); video analysis falls back to `ffmpeg` on PATH when OpenCV is unavailable.
 
@@ -20,14 +20,18 @@ npx --yes ./06_sharp_mcp_server doctor
 # Or via Python CLI:
 python -m sharp_mcp.cli doctor
 
-# Manage OpenRouter & Gemini API keys cleanly OUTSIDE version control (~/.sharp-mcp/credentials.json)
+# Manage OpenRouter, Gemini & Roblox Open Cloud API keys cleanly OUTSIDE version control (~/.sharp-mcp/credentials.json)
 python -m sharp_mcp.cli keys status
 python -m sharp_mcp.cli keys models
 python -m sharp_mcp.cli keys set --provider openrouter --stdin
 python -m sharp_mcp.cli keys set --provider gemini --stdin
+python -m sharp_mcp.cli keys set --provider roblox_open_cloud --stdin
+# Or open the local loopback browser prompt (also available via sharp_ai_studio action='keys_prompt_browser'):
+python -m sharp_mcp.cli keys prompt
 
-# Register Sharp across Antigravity, Claude, Codex, and OpenCode (atomic JSON/TOML merge + .bak)
+# Register Sharp across Antigravity, Claude, Codex, OpenCode, and Devin (atomic JSON/TOML merge + .bak)
 python -m sharp_mcp.cli register --client all --prune-legacy
+python -m sharp_mcp.cli register --client devin
 
 # Install SharpBridgePlugin.rbxmx into Roblox Studio Plugins (%LOCALAPPDATA%\Roblox\Plugins or ~/Documents/Roblox/Plugins)
 python -m sharp_mcp.cli install-plugin
@@ -43,15 +47,15 @@ python -m sharp_mcp.cli install-blender --dry-run
 | Component | Path | Description |
 | :--- | :--- | :--- |
 | **CLI & `npx` Wrapper** | `bin/sharp-mcp.mjs`, `sharp_mcp/cli.py`, `package.json`, `pyproject.toml` | Cross-platform Node ESM wrapper delegating cleanly to Python `>=3.11` / `uv` + subcommands `serve`, `install-plugin`, `install-blender`, `register`, `keys`, `doctor`, and `self-test`. |
-| **External AI Keys Store** | `sharp_mcp/credentials_store.py` | Stores `GEMINI_API_KEY` / `OPENROUTER_API_KEY` outside repos (`~/.sharp-mcp/credentials.json` or `SHARP_CREDENTIALS_PATH`), prefers env vars, and never echoes raw secrets. Image presets use `gemini-2.5-flash-image` / `gemini-3-pro-image` (OpenRouter: `google/` prefix); Imagen is retired. Other presets include `google/gemini-2.5-flash-lite`, `qwen/qwen2.5-vl-72b-instruct` (vision), `anthropic/claude-sonnet-4.5`, and `qwen/qwen-2.5-coder-32b-instruct` (text-only GUI code). Run `keys models` for the full list. |
-| **Client Registrar** | `sharp_mcp/client_registry.py` | Atomic config registration with `.bak` backups and legacy pruning for Antigravity, Claude Code (`~/.claude.json` / `.mcp.json`), Claude Desktop, Codex (`~/.codex/config.toml`), and OpenCode V2 (`mcp.servers` JSON/JSONC). |
+| **External AI & Open Cloud Keys Store** | `sharp_mcp/credentials_store.py` | Stores `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, and `ROBLOX_OPEN_CLOUD_API_KEY` (`roblox_open_cloud`) outside repos (`~/.sharp-mcp/credentials.json` or `SHARP_CREDENTIALS_PATH`), supports local browser setup (`keys_prompt_browser`), prefers env vars, and never echoes raw secrets. Image presets use `gemini-2.5-flash-image` / `gemini-3-pro-image` (OpenRouter: `google/` prefix); Imagen is retired. Other presets include `google/gemini-2.5-flash-lite`, `qwen/qwen2.5-vl-72b-instruct` (vision), `anthropic/claude-sonnet-4.5`, and `qwen/qwen-2.5-coder-32b-instruct` (text-only GUI code). Run `keys models` for the full list. |
+| **Client Registrar** | `sharp_mcp/client_registry.py` | Atomic config registration with `.bak` backups and legacy pruning for Antigravity, Claude Code (`~/.claude.json` / `.mcp.json`), Claude Desktop, Codex (`~/.codex/config.toml`), OpenCode V2 (`mcp.servers` JSON/JSONC), and Devin (`Devin/mcp_config.json`, `--client devin`). |
 | **Skill Router (`<3 KB`)** | `sharp_mcp/skill_router.py` | Indexes **13 local skills** (9 Roblox + 4 optional Blender), built-in Studio `rbx-*` hints, and role-scoped `subagent_delegations` in `detail="complete"`. Token-budgeted rule cards in `detail="summary"` (`<3 KB`) with progressive loading via `sharp_load_skill` or `sharp://skills/{name}/SKILL.md`. |
 | **Effects, Annotations & Pagination** | `sharp_mcp/tool_effects.py` | Declarative `TOOL_EFFECT_AUDIT` generating MCP `ToolAnnotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) for all **34 tools**, retained `SnapshotViewStore` cursor pagination (`sharp_inspect_snapshot_view`), and untrusted-content `_meta` framing. |
 | **Security-Hardened Bridge** | `sharp_mcp/bridge_broker.py` | Async loopback broker (`127.0.0.1:58421`) with IPv4/IPv6 loopback verification, strict `Host` allowlist, `Sec-Fetch-*` & `Origin` rejection (`403`), `secrets.compare_digest` Bearer (`401`), `X-Sharp-Server-Epoch` (`409`), stale `placeId`/`studioSessionId` guards, 1-writer/4-reader mutex, UTF-8 chunking, and 5s `/v1/heartbeat` leases. |
 | **Single-Use Transient HTTP** | `sharp_mcp/transient_http.py` | Ephemeral `127.0.0.1:0` server with `Host`/loopback/`Sec-Fetch-*`/`Origin` guards, `60s` default TTL, and strictly single-use `(token, filename)` binary URLs. |
 | **Standalone Studio Plugin** | `studio_plugin/SharpBridgePlugin.rbxmx` | Built by `studio_plugin/build_plugin_rbxmx.py` with **29 embedded `--!strict` `ModuleScript`s** (`SharpUndo` with post-write readback rollback, `DockWidget` onboarding when `HttpEnabled=false`, `SharpGuiTools`, `SharpTreeTools` + GUID `SharpHandle`s + `ScriptEditorService:UpdateSourceAsync`, and 25 skill modules). |
-| **Domain Engines** | `sharp_mcp/domain_engines/` | `art_creation_engine.py` (procedural 2x SSAA 9-slice/ray/icon kits, Roblox font pairings + custom stroked BitmapFonts, 4×4 2D UI & 3D World VFX flipbooks + `SharpUiVfx`/`SharpWorldVfx` Luau, AI UI/image gen), `multimodal_qa_engine.py` (`inspect_video` telemetry + contact sheet + `ffmpeg` audio extraction, `inspect_audio` DSP peak/RMS/clip/DC/silence, `inspect_gui_vision` anti-slop Gemini/OpenRouter QA), `design_engine.py`, `attachment_engine.py`, `game_planner.py` (`intake_questions`, `granularity="micro"` step-by-step MVP lock, `subagent_brief`), `critical_audit_engine.py` (incl. `WORLD-OVERLAP-001` / `WORLD-FLOAT-001`), `gui_engine.py`, `blender_engine.py`, `toolchain_engine.py`, `terrain_env_engine.py`, `rig_anim_engine.py`, `luau_audit_engine.py`, `gameplay_systems_engine.py`, and `upstream_multiplexer.py`. |
-| **Game Plan & Asset Library** | `sharp_mcp/project_library.py` | Project-relative `GAME_PLAN.md`, `plan.json`, persisted `design_system`, snapshots `v0001..vNNNN`, relative-path `asset_manifest.json`, and generated `--!strict` `SharpAssetRegistry.luau` bound to `--project-dir` or active `placeId`. |
+| **Domain Engines** | `sharp_mcp/domain_engines/` | `art_creation_engine.py` (procedural 2x SSAA 9-slice/ray/icon kits, Roblox font pairings + custom stroked BitmapFonts, 4×4 2D UI & 3D World VFX flipbooks + `SharpUiVfx`/`SharpWorldVfx` Luau, AI UI/image gen), `multimodal_qa_engine.py` (`inspect_video` telemetry + contact sheet + `ffmpeg` audio extraction, `inspect_audio` DSP peak/RMS/clip/DC/silence, `inspect_gui_vision` anti-slop Gemini/OpenRouter QA), `design_engine.py`, `attachment_engine.py` (avatar-bundle-adaptive `armor_set` scaling & surface-aligned `RigidConstraint` anchoring + `inspect_attachment_fit`), `game_planner.py` (`intake_questions`, `granularity="micro"` step-by-step MVP lock, `subagent_brief`), `critical_audit_engine.py` (incl. `WORLD-OVERLAP-001`, `WORLD-FLOAT-001`, `LUAU-AIM-001`, `WEAPON-PIVOT-001` / `WEAPON-AMMO-001` / `WEAPON-QUIVER-001` / `WEAPON-GRIP-001`, and `ANIM-IK-001`), `gui_engine.py`, `blender_engine.py`, `toolchain_engine.py`, `terrain_env_engine.py`, `rig_anim_engine.py`, `luau_audit_engine.py`, `gameplay_systems_engine.py`, and `upstream_multiplexer.py` (including Open Cloud `upload_roblox_asset` + Blender sidecar origin normalization). |
+| **Game Plan & Asset Library** | `sharp_mcp/project_library.py` | Project-relative `GAME_PLAN.md`, `plan.json`, persisted `design_system`, snapshots `v0001..vNNNN`, relative-path `asset_manifest.json`, and generated `--!strict` `SharpAssetRegistry.luau` bound to `--project-dir`, active `placeId`, or `~/.sharp-mcp/game_library/<project_id>` (treating repo `game_library/` as a read-only seed by default). |
 
 ---
 
@@ -91,10 +95,10 @@ python -m sharp_mcp.cli install-blender --dry-run
 26. `sharp_inspect_snapshot_view` — Paged inspection (`offset`, `limit`, `json_path`) of cached large snapshots/outputs.
 27. `sharp_upstream_call` — Optional forwarder when external `Roblox_Studio` MCP is explicitly configured.
 28. `sharp_design_system` — Bespoke per-game palette/typography/UI-token generator (`presets`, `generate` with auto-persistence, `get`, anti-slop `lint`, `compile_theme_luau`, `image_prompts`, `render_swatch`).
-29. `sharp_equipment_attach` — R15 weapon/armor/IK attachment compiler (`attach`, `verify`, `catalog`, `validate`, `load_sidecar`, `generate_preset_clip`, `analyze_clip`, `compile_playback_test`, `blender_attach`; enabled in `full` + `blender`).
+29. `sharp_equipment_attach` — R15 weapon/armor/IK attachment compiler (`attach` with avatar-bundle-adaptive `armor_set` scaling & surface-aligned `RigidConstraint` anchoring, `verify`, `inspect_attachment_fit`, `custom_bmesh`, `catalog`, `validate`, `load_sidecar`, `generate_preset_clip`, `analyze_clip`, `compile_playback_test`, `blender_attach`; enabled in `full` + `blender`).
 30. `sharp_game_plan` — Concept intake & MVP-first structured game planner (`intake_questions`, `create` with `granularity='standard'|'micro'`, `status`, `next_step`, `subagent_brief`, `complete_step`, `stages`, `cut_list`, `set_design_system`).
-31. `sharp_critical_audit` — Skeptical release auditor & stage gate (`static`, `live`, `challenge`, `gate`) including `WORLD-OVERLAP-001` & `WORLD-FLOAT-001`, returning `SHIP`/`FIX_FIRST`/`REJECT`.
-32. `sharp_ai_studio` — External Gemini & OpenRouter credentials (`keys_status`, `keys_set`, `keys_clear`, `model_presets`), bespoke UI concept generator (`generate_ui_concept`), and palette-locked AI art generator (`generate_image_art`).
+31. `sharp_critical_audit` — Skeptical release auditor & stage gate (`static`, `contracts`, `live`, `challenge`, `gate`) including `WORLD-OVERLAP-001`, `WORLD-FLOAT-001`, `LUAU-AIM-001` (ViewportPointToRay parallax check), `WEAPON-*` (`WEAPON-PIVOT-001`, `WEAPON-AMMO-001`, `WEAPON-QUIVER-001`, `WEAPON-GRIP-001`), and `ANIM-IK-001`, returning `SHIP`/`FIX_FIRST`/`REJECT`.
+32. `sharp_ai_studio` — External Gemini, OpenRouter & Roblox Open Cloud (`roblox_open_cloud` / `ROBLOX_OPEN_CLOUD_API_KEY`) credentials (`keys_status`, `keys_set`, `keys_prompt_browser`, `keys_clear`, `model_presets`), direct Roblox Open Cloud asset upload & Studio insertion (`upload_roblox_asset`), bespoke UI concept generator (`generate_ui_concept`), and palette-locked AI art generator (`generate_image_art`).
 33. `sharp_media_qa` — Multimodal QA engine (`inspect_video` for playtest/animation video telemetry + contact sheet + Gemini/OpenRouter analysis, `inspect_audio` soundtest DSP + Gemini audio check, `inspect_gui_vision` anti-slop screenshot QA, and `batch_check`).
 34. `sharp_art_studio` — Code-driven 2D/3D game art & VFX suite (`create_2d_kit` 2x SSAA 9-slice/icons, `create_font_kit` Roblox fonts + custom stroked BitmapFont + `SharpBitmapFont.luau`, `create_vfx` 4×4 flipbooks + `SharpUiVfx.luau`/`SharpWorldVfx.luau`, and `generate_ai_art`).
 

@@ -597,6 +597,7 @@ class TestBridgeBrokerAndTransientHttp(unittest.IsolatedAsyncioTestCase):
                 await asyncio.sleep(0.05)
                 async with client.post(
                     f"{self.base_url}/v1/hello",
+                    headers=self._auth_headers(),
                     json={"studioSessionId": "sess_B", "placeId": 4242},
                 ) as r2:
                     self.assertEqual(r2.status, 200)

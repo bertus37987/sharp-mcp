@@ -26,6 +26,7 @@ import aiohttp
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from ..ai_http import redact_error
 from ..bridge_broker import BridgeBroker
 from ..credentials_store import get_api_key, get_credentials_status
 
@@ -645,48 +646,93 @@ class UpstreamMultiplexer:
         file_ctype = content_type_map.get(suffix) or mimetypes.guess_type(resolved_file.name)[0] or "application/octet-stream"
         form = aiohttp.FormData()
         form.add_field("request", json.dumps(request_payload), content_type="application/json")
-        file_bytes = resolved_file.read_bytes()
+        file_bytes = await asyncio.to_thread(resolved_file.read_bytes)
         form.add_field("fileContent", file_bytes, filename=resolved_file.name, content_type=file_ctype)
 
         headers = {"x-api-key": api_key}
-        deadline = time.monotonic() + max(10.0, float(timeout_sec))
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=max(10.0, float(timeout_sec)))) as session:
-            async with session.post(url, data=form, headers=headers) as resp:
-                raw_text = await resp.text()
-                try:
-                    decoded = json.loads(raw_text) if raw_text.strip() else {}
-                except json.JSONDecodeError:
-                    decoded = {"raw": raw_text[:600]}
-                if resp.status >= 400:
-                    return {
-                        "ok": False,
-                        "status_code": resp.status,
-                        "error": f"Open Cloud asset upload failed (HTTP {resp.status}).",
-                        "response": decoded,
-                    }
+        total_timeout = max(10.0, float(timeout_sec))
+        deadline = time.monotonic() + total_timeout
+        op_id: Optional[str] = None
+        op_payload: Dict[str, Any] = {}
+        asset_id: Optional[str] = None
+        transient_statuses = {429, 502, 503, 504}
+        max_transient_retries = 5
 
-            op_payload = decoded if isinstance(decoded, dict) else {}
-            asset_id = self._extract_asset_id(op_payload)
-            op_id = self._extract_operation_id(op_payload)
-            while not asset_id and not op_payload.get("done") and op_id and time.monotonic() < deadline:
-                await asyncio.sleep(1.0)
-                op_url = f"https://apis.roblox.com/assets/v1/operations/{op_id}"
-                async with session.get(op_url, headers=headers) as poll_resp:
-                    poll_text = await poll_resp.text()
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=total_timeout)) as session:
+                async with session.post(url, data=form, headers=headers) as resp:
+                    raw_text = await resp.text()
                     try:
-                        poll_dec = json.loads(poll_text) if poll_text.strip() else {}
+                        decoded = json.loads(raw_text) if raw_text.strip() else {}
                     except json.JSONDecodeError:
-                        poll_dec = {"raw": poll_text[:600]}
-                    if poll_resp.status >= 400:
+                        decoded = {"raw": redact_error(raw_text[:600], api_key)}
+                    if resp.status >= 400:
                         return {
                             "ok": False,
-                            "status_code": poll_resp.status,
-                            "operation_id": op_id,
-                            "error": f"Open Cloud operation poll failed (HTTP {poll_resp.status}).",
-                            "response": poll_dec,
+                            "status_code": resp.status,
+                            "error": redact_error(f"Open Cloud asset upload failed (HTTP {resp.status}).", api_key),
+                            "response": decoded,
                         }
-                    op_payload = poll_dec if isinstance(poll_dec, dict) else {}
-                    asset_id = self._extract_asset_id(op_payload)
+
+                op_payload = decoded if isinstance(decoded, dict) else {}
+                asset_id = self._extract_asset_id(op_payload)
+                op_id = self._extract_operation_id(op_payload)
+                transient_retries = 0
+                poll_delay = 1.0
+                while not asset_id and not op_payload.get("done") and op_id and time.monotonic() < deadline:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    await asyncio.sleep(min(poll_delay, remaining))
+                    op_url = f"https://apis.roblox.com/assets/v1/operations/{op_id}"
+                    async with session.get(op_url, headers=headers) as poll_resp:
+                        poll_text = await poll_resp.text()
+                        try:
+                            poll_dec = json.loads(poll_text) if poll_text.strip() else {}
+                        except json.JSONDecodeError:
+                            poll_dec = {"raw": redact_error(poll_text[:600], api_key)}
+                        if (
+                            poll_resp.status in transient_statuses
+                            and transient_retries < max_transient_retries
+                            and time.monotonic() < deadline
+                        ):
+                            transient_retries += 1
+                            backoff = min(8.0, 0.5 * (2 ** transient_retries))
+                            retry_after = (
+                                poll_resp.headers.get("Retry-After")
+                                if hasattr(poll_resp, "headers") and poll_resp.headers
+                                else None
+                            )
+                            if retry_after:
+                                try:
+                                    backoff = max(0.1, min(8.0, float(retry_after)))
+                                except ValueError:
+                                    pass
+                            poll_delay = backoff
+                            continue
+                        if poll_resp.status >= 400:
+                            return {
+                                "ok": False,
+                                "status_code": poll_resp.status,
+                                "operation_id": op_id,
+                                "error": redact_error(
+                                    f"Open Cloud operation poll failed (HTTP {poll_resp.status}).",
+                                    api_key,
+                                ),
+                                "response": poll_dec,
+                            }
+                        transient_retries = 0
+                        poll_delay = 1.0
+                        op_payload = poll_dec if isinstance(poll_dec, dict) else {}
+                        asset_id = self._extract_asset_id(op_payload)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            err_payload: Dict[str, Any] = {
+                "ok": False,
+                "error": redact_error(f"Open Cloud asset upload request failed ({type(exc).__name__}): {exc}", api_key),
+            }
+            if op_id:
+                err_payload["operation_id"] = op_id
+            return err_payload
 
         if op_payload.get("error"):
             return {
@@ -905,6 +951,8 @@ class UpstreamMultiplexer:
                     sc_data = json.loads(sc_file.read_text(encoding="utf-8"))
                     slots_json = json.dumps(sc_data.get("material_slots_split") or [], ensure_ascii=False)
                     atts_json = json.dumps(sc_data.get("attachments") or [], ensure_ascii=False)
+                    slots_lit = _luau_long_string(slots_json)
+                    atts_lit = _luau_long_string(atts_json)
                     parent_expr = json.dumps((parent_path or "Workspace").strip())
                     name_expr = json.dumps(eff_name)
                     luau_cfg = f"""
@@ -936,20 +984,27 @@ for i = #candidates, 1, -1 do
 \tend
 end
 if not targetInst then return "NO_TARGET:" .. {name_expr} end
-local slots = HttpService:JSONDecode({json.dumps(slots_json)})
-local atts = HttpService:JSONDecode({json.dumps(atts_json)})
+local slots = HttpService:JSONDecode({slots_lit})
+local atts = HttpService:JSONDecode({atts_lit})
 local parts = {{}}
 for _, d in ipairs(targetInst:GetDescendants()) do
-\tif d:IsA("BasePart") then table.insert(parts, d) end
+\tif d:IsA("PackageLink") then
+\t\tpcall(function() d:Destroy() end)
+\telseif d:IsA("BasePart") then
+\t\ttable.insert(parts, d)
+\tend
 end
 if targetInst:IsA("BasePart") then table.insert(parts, targetInst) end
 local slotColored = 0
+local refPart = nil
+local refBbox = nil
+local refIsSlot0 = false
 for _, p in ipairs(parts) do
 \tp.Anchored = false
 \tp.CanCollide = false
 \tp.Massless = true
 \tlocal pname = p.Name
-\tfor _, sl in ipairs(slots) do
+\tfor slIdx, sl in ipairs(slots) do
 \t\tlocal sname = tostring(sl.slot_name or "")
 \t\tif sname ~= "" and (string.find(pname, sname, 1, true) or #slots == 1) then
 \t\t\tlocal rgb = sl.srgb_color
@@ -960,14 +1015,38 @@ for _, p in ipairs(parts) do
 \t\t\tpcall(function() p.Material = (Enum.Material :: any)[rmat] end)
 \t\t\tlocal sa = p:FindFirstChildOfClass("SurfaceAppearance")
 \t\t\tif sa then sa:Destroy() end
+\t\t\tlocal bb = sl.bbox_center_blender
+\t\t\tif type(bb) == "table" and #bb >= 3 then
+\t\t\t\tlocal isSlot0 = (sl.slot_index == 0) or (sl.slot_index == nil and slIdx == 1)
+\t\t\t\tif refPart == nil or (isSlot0 and not refIsSlot0) then
+\t\t\t\t\trefPart = p
+\t\t\t\t\trefBbox = bb
+\t\t\t\t\trefIsSlot0 = isSlot0
+\t\t\t\tend
+\t\t\tend
 \t\t\tslotColored += 1
 \t\t\tbreak
 \t\tend
 \tend
 end
+local recoveredOrigin = nil
+if refPart and refBbox then
+\tlocal bx = tonumber(refBbox[1]) or 0
+\tlocal by = tonumber(refBbox[2]) or 0
+\tlocal bz = tonumber(refBbox[3]) or 0
+\tif not targetInst:GetAttribute("SharpNormalizedOrigin") then
+\t\tlocal origin = refPart.Position - Vector3.new(-bx, bz, by)
+\t\tfor _, part in ipairs(parts) do
+\t\t\tpart.CFrame = CFrame.new(origin) * CFrame.Angles(0, math.pi, 0) * CFrame.new(-origin) * part.CFrame
+\t\tend
+\t\ttargetInst:SetAttribute("SharpNormalizedOrigin", true)
+\t\trecoveredOrigin = origin
+\telse
+\t\trecoveredOrigin = refPart.Position - Vector3.new(bx, bz, -by)
+\tend
+end
 if targetInst:IsA("Model") then
-\tlocal _, bsz = targetInst:GetBoundingBox()
-\tlocal pivCF = targetInst:GetPivot()
+\tlocal pivCF = if recoveredOrigin then CFrame.new(recoveredOrigin) else targetInst:GetPivot()
 \tlocal handle = targetInst:FindFirstChild("Handle")
 \tif not handle or not handle:IsA("BasePart") then
 \t\thandle = Instance.new("Part")

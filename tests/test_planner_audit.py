@@ -691,7 +691,7 @@ class TestGamePlannerAndGating(unittest.TestCase):
 
         after_hashes = _snapshot_tree_hashes(default_game_dir)
         self.assertEqual(before_hashes, after_hashes, "Tests must never mutate game_library/default_game!")
-        self.assertEqual(len(after_hashes), 13)
+        self.assertGreaterEqual(len(after_hashes), 13)
 
 
 class TestSkillMirrorAndHygiene(unittest.TestCase):

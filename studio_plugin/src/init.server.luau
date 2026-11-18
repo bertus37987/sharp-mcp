@@ -92,6 +92,21 @@ local function makeAuthHeaders(includeContentType: boolean): { [string]: string 
 	return hdrs
 end
 
+local function postBridgeJson(path: string, bodyJson: string): (boolean, number)
+	local ok, resp = pcall(function()
+		return HttpService:RequestAsync({
+			Url = BRIDGE_BASE .. path,
+			Method = "POST",
+			Headers = makeAuthHeaders(true),
+			Body = bodyJson,
+		})
+	end)
+	if ok and typeof(resp) == "table" and typeof(resp.StatusCode) == "number" then
+		return resp.StatusCode >= 200 and resp.StatusCode < 300, resp.StatusCode
+	end
+	return false, 0
+end
+
 local function sendResult(requestId: string, envelope: { [string]: any })
 	envelope.requestId = requestId
 	envelope.placeId = game.PlaceId
@@ -99,40 +114,55 @@ local function sendResult(requestId: string, envelope: { [string]: any })
 	local encoded = HttpService:JSONEncode(envelope)
 
 	if #encoded <= 900000 then
-		pcall(function()
-			HttpService:RequestAsync({
-				Url = BRIDGE_BASE .. "/v1/result",
-				Method = "POST",
-				Headers = makeAuthHeaders(true),
-				Body = encoded,
-			})
-		end)
+		local okSend, statusCode = postBridgeJson("/v1/result", encoded)
+		if not okSend then
+			ui:appendLog(string.format("[ERR] result post failed (HTTP %d)", statusCode))
+		end
 	else
 		local parts = splitUtf8Chunks(encoded, 800000)
+		local allChunksOk = true
 		for idx, part in ipairs(parts) do
-			pcall(function()
-				HttpService:RequestAsync({
-					Url = BRIDGE_BASE .. "/v1/result_chunk",
-					Method = "POST",
-					Headers = makeAuthHeaders(true),
-					Body = HttpService:JSONEncode({
-						requestId = requestId,
-						chunkIndex = idx,
-						chunkData = part,
-					}),
-				})
-			end)
-		end
-		pcall(function()
-			HttpService:RequestAsync({
-				Url = BRIDGE_BASE .. "/v1/result_commit",
-				Method = "POST",
-				Headers = makeAuthHeaders(true),
-				Body = HttpService:JSONEncode({ requestId = requestId }),
+			local chunkBody = HttpService:JSONEncode({
+				requestId = requestId,
+				chunkIndex = idx,
+				chunkData = part,
 			})
-		end)
+			local chunkOk = false
+			local lastStatus = 0
+			for attempt = 1, 3 do
+				chunkOk, lastStatus = postBridgeJson("/v1/result_chunk", chunkBody)
+				if chunkOk then
+					break
+				end
+				if lastStatus >= 400 and lastStatus < 500 and lastStatus ~= 408 and lastStatus ~= 429 then
+					break
+				end
+				if attempt < 3 then
+					task.wait(0.25 * attempt)
+				end
+			end
+			if not chunkOk then
+				allChunksOk = false
+				ui:appendLog(string.format("[ERR] result_chunk %d/%d failed (HTTP %d); aborting commit", idx, #parts, lastStatus))
+				break
+			end
+		end
+		if not allChunksOk then
+			return
+		end
+		local commitOk, commitStatus = postBridgeJson("/v1/result_commit", HttpService:JSONEncode({ requestId = requestId }))
+		if not commitOk then
+			ui:appendLog(string.format("[ERR] result_commit failed (HTTP %d)", commitStatus))
+		end
 	end
 end
+
+local DESTRUCTIVE_CLEAR_SERVICES: { string } = {
+	"Workspace",
+	"StarterGui",
+	"ReplicatedStorage",
+	"ServerScriptService",
+}
 
 local function isDestructiveRequest(toolName: string, args: { [string]: any }, compiledLuau: string?): boolean
 	local opArgs = if typeof(args.args) == "table" then args.args :: { [string]: any } else {}
@@ -147,12 +177,21 @@ local function isDestructiveRequest(toolName: string, args: { [string]: any }, c
 		return true
 	end
 	if typeof(compiledLuau) == "string" and #compiledLuau > 0 then
-		if string.find(compiledLuau, "Workspace:ClearAllChildren()", 1, true)
-			or string.find(compiledLuau, "StarterGui:ClearAllChildren()", 1, true)
-			or string.find(compiledLuau, "ReplicatedStorage:ClearAllChildren()", 1, true)
-			or string.find(compiledLuau, "ServerScriptService:ClearAllChildren()", 1, true)
-		then
+		if string.find(compiledLuau, "Terrain%s*:%s*Clear%s*%(") then
 			return true
+		end
+		if string.find(compiledLuau, "workspace%s*:%s*ClearAllChildren%s*%(") then
+			return true
+		end
+		for _, svcName in ipairs(DESTRUCTIVE_CLEAR_SERVICES) do
+			if string.find(compiledLuau, svcName .. "%s*:%s*ClearAllChildren%s*%(")
+				or string.find(
+					compiledLuau,
+					":%s*GetService%s*%(?%s*[\"']" .. svcName .. "[\"']%s*%)?%s*:%s*ClearAllChildren%s*%("
+				)
+			then
+				return true
+			end
 		end
 	end
 	return false
@@ -351,7 +390,11 @@ local function executeJobAsync(job: { [string]: any })
 				)
 			else
 				okRun, runOut = xpcall(fn :: () -> any, debug.traceback)
-				recStatus = if okRun then "Committed" else "Cancelled"
+				if kind == "read" then
+					recStatus = "None"
+				else
+					recStatus = if okRun then "Committed" else "Cancelled"
+				end
 			end
 		end)
 

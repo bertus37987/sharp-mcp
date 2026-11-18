@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import html
+import ipaddress
 import json
 import os
 import secrets
@@ -137,13 +138,42 @@ def _read_store(path: Path) -> Dict[str, Any]:
 
 def _write_store(path: Path, data: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(path)
+    payload_bytes = (json.dumps(data, indent=2) + "\n").encode("utf-8")
+    tmp = path.parent / f".{path.name}.{secrets.token_hex(8)}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd: Optional[int] = None
     try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
+        fd = os.open(str(tmp), flags, 0o600)
+        if os.name != "nt":
+            try:
+                os.fchmod(fd, 0o600)
+            except (AttributeError, OSError):
+                pass
+        with os.fdopen(fd, "wb") as f:
+            fd = None
+            f.write(payload_bytes)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(str(tmp), str(path))
+        if os.name != "nt":
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass
+    except BaseException:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def get_api_key(
@@ -342,12 +372,72 @@ def resolve_provider_and_model(
 
 def _is_loopback_peer(request: web.Request) -> bool:
     peer_ip: Optional[str] = None
-    if request.transport is not None:
-        peer = request.transport.get_extra_info("peername")
-        if isinstance(peer, tuple) and peer:
-            peer_ip = str(peer[0])
-    remote = peer_ip or str(request.remote or "")
-    return remote in ("127.0.0.1", "::1", "::ffff:127.0.0.1", "")
+    transport = getattr(request, "transport", None)
+    if transport is not None:
+        peer = transport.get_extra_info("peername")
+        if isinstance(peer, tuple) and len(peer) >= 1 and isinstance(peer[0], str) and peer[0].strip():
+            peer_ip = peer[0].strip()
+        elif isinstance(peer, str) and peer.strip():
+            peer_ip = peer.strip()
+    if not peer_ip:
+        remote_val = getattr(request, "remote", None)
+        if isinstance(remote_val, str) and remote_val.strip():
+            peer_ip = remote_val.strip()
+    if not peer_ip:
+        return False
+    cleaned_ip = peer_ip.split("%", 1)[0]
+    try:
+        addr = ipaddress.ip_address(cleaned_ip)
+    except ValueError:
+        return False
+    return addr.is_loopback or (
+        isinstance(addr, ipaddress.IPv6Address)
+        and addr.ipv4_mapped is not None
+        and addr.ipv4_mapped.is_loopback
+    )
+
+
+def _resolve_active_port(request: web.Request, expected_port: Optional[int] = None) -> Optional[int]:
+    active_port = expected_port
+    transport = getattr(request, "transport", None)
+    if transport is not None:
+        sockname = transport.get_extra_info("sockname")
+        if (
+            isinstance(sockname, tuple)
+            and len(sockname) >= 2
+            and isinstance(sockname[1], int)
+            and sockname[1] > 0
+        ):
+            active_port = sockname[1]
+    return active_port
+
+
+def _is_valid_loopback_host(request: web.Request, expected_port: Optional[int] = None) -> bool:
+    active_port = _resolve_active_port(request, expected_port)
+    host_hdr = (request.headers.get("Host") or "").strip().lower()
+    if active_port is not None and active_port > 0:
+        allowed_hosts = {
+            f"127.0.0.1:{active_port}",
+            f"localhost:{active_port}",
+            f"[::1]:{active_port}",
+        }
+        return host_hdr in allowed_hosts
+    return host_hdr in {"127.0.0.1", "localhost", "[::1]"}
+
+
+def _is_valid_loopback_origin(request: web.Request, expected_port: Optional[int] = None) -> bool:
+    origin_hdr = (request.headers.get("Origin") or "").strip().lower()
+    if not origin_hdr:
+        return True
+    active_port = _resolve_active_port(request, expected_port)
+    if active_port is not None and active_port > 0:
+        allowed_origins = {
+            f"http://127.0.0.1:{active_port}",
+            f"http://localhost:{active_port}",
+            f"http://[::1]:{active_port}",
+        }
+        return origin_hdr in allowed_origins
+    return origin_hdr in {"http://127.0.0.1", "http://localhost", "http://[::1]"}
 
 
 def _render_credentials_setup_html(
@@ -506,6 +596,11 @@ def _render_credentials_setup_html(
   </div>
 <script>
 const TOKEN = {token_js};
+if (window.location.search && window.history && window.history.replaceState) {{
+  try {{
+    window.history.replaceState({{}}, document.title, window.location.pathname);
+  }} catch (_e) {{}}
+}}
 function toggleVis(id, btn) {{
   const el = document.getElementById(id);
   if (!el) return;
@@ -584,14 +679,20 @@ async def async_prompt_credentials_in_browser(
     token = secrets.token_urlsafe(16)
     done_event = asyncio.Event()
     result_box: Dict[str, Any] = {"saved": False, "cancelled": False, "status": get_credentials_status(credentials_path)}
+    bound_port_box: List[int] = [0]
+    setup_cookie_name = "sharp_setup_token"
 
     def _valid_token(candidate: Optional[str]) -> bool:
         return isinstance(candidate, str) and bool(candidate) and hmac.compare_digest(candidate, token)
 
     async def handle_setup(request: web.Request) -> web.Response:
+        expected_port = bound_port_box[0] or None
         if not _is_loopback_peer(request):
             return web.Response(status=403, text="Forbidden: loopback peer required")
-        if not _valid_token(request.query.get("token")):
+        if not _is_valid_loopback_host(request, expected_port=expected_port):
+            return web.Response(status=403, text="Forbidden: invalid Host header")
+        supplied_token = request.query.get("token") or request.cookies.get(setup_cookie_name)
+        if not _valid_token(supplied_token):
             return web.Response(status=403, text="Forbidden: invalid or missing session token")
         cur_status = get_credentials_status(credentials_path)
         body = _render_credentials_setup_html(
@@ -599,11 +700,23 @@ async def async_prompt_credentials_in_browser(
             status=cur_status,
             default_creator_id=default_creator_id,
         )
-        return web.Response(
+        resp = web.Response(
             text=body,
             content_type="text/html",
-            headers={"Cache-Control": "no-store"},
+            headers={
+                "Cache-Control": "no-store",
+                "Referrer-Policy": "no-referrer",
+            },
         )
+        resp.set_cookie(
+            setup_cookie_name,
+            token,
+            httponly=True,
+            samesite="Strict",
+            path="/",
+            max_age=max(60, int(timeout_sec)),
+        )
+        return resp
 
     async def _parse_payload(request: web.Request) -> Dict[str, Any]:
         ctype = (request.content_type or "").lower()
@@ -615,14 +728,19 @@ async def async_prompt_credentials_in_browser(
         return {k: (v[0] if isinstance(v, list) and v else "") for k, v in parsed_qs.items()}
 
     async def handle_save(request: web.Request) -> web.Response:
+        expected_port = bound_port_box[0] or None
         if not _is_loopback_peer(request):
             return web.json_response({"ok": False, "error": "Loopback peer required"}, status=403)
+        if not _is_valid_loopback_host(request, expected_port=expected_port):
+            return web.json_response({"ok": False, "error": "FORBIDDEN_HOST_HEADER"}, status=403)
+        if not _is_valid_loopback_origin(request, expected_port=expected_port):
+            return web.json_response({"ok": False, "error": "FORBIDDEN_ORIGIN_HEADER"}, status=403)
         try:
             data = await _parse_payload(request)
         except Exception:
             return web.json_response({"ok": False, "error": "Invalid request payload"}, status=400)
 
-        if not _valid_token(str(data.get("token") or request.query.get("token") or "")):
+        if not _valid_token(str(data.get("token") or request.cookies.get(setup_cookie_name) or "")):
             return web.json_response({"ok": False, "error": "Invalid or missing session token"}, status=403)
 
         status = set_credentials(
@@ -640,22 +758,27 @@ async def async_prompt_credentials_in_browser(
         if "application/json" in accept or "application/json" in (request.content_type or "").lower():
             return web.json_response(
                 {"ok": True, "saved": True, "updated": status.get("updated", []), "status": status},
-                headers={"Cache-Control": "no-store"},
+                headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
         return web.Response(
             text="<html><body style='font-family:sans-serif;background:#0f131a;color:#eef2f7;padding:32px;'><h2>Keys saved!</h2><p>You can close this browser tab.</p></body></html>",
             content_type="text/html",
-            headers={"Cache-Control": "no-store"},
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
         )
 
     async def handle_cancel(request: web.Request) -> web.Response:
+        expected_port = bound_port_box[0] or None
         if not _is_loopback_peer(request):
             return web.json_response({"ok": False, "error": "Loopback peer required"}, status=403)
+        if not _is_valid_loopback_host(request, expected_port=expected_port):
+            return web.json_response({"ok": False, "error": "FORBIDDEN_HOST_HEADER"}, status=403)
+        if not _is_valid_loopback_origin(request, expected_port=expected_port):
+            return web.json_response({"ok": False, "error": "FORBIDDEN_ORIGIN_HEADER"}, status=403)
         try:
             data = await _parse_payload(request)
         except Exception:
             data = {}
-        if not _valid_token(str(data.get("token") or request.query.get("token") or "")):
+        if not _valid_token(str(data.get("token") or request.cookies.get(setup_cookie_name) or "")):
             return web.json_response({"ok": False, "error": "Invalid session token"}, status=403)
         result_box["cancelled"] = True
         done_event.set()
@@ -674,6 +797,7 @@ async def async_prompt_credentials_in_browser(
     bound_port = 0
     if site._server and site._server.sockets:
         bound_port = int(site._server.sockets[0].getsockname()[1])
+    bound_port_box[0] = bound_port
     setup_url = f"http://127.0.0.1:{bound_port}/setup?token={token}"
     if announce_url:
         print(f"Sharp MCP Setup URL: {setup_url}", file=sys.stderr, flush=True)

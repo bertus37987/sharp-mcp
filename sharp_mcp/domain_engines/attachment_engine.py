@@ -331,7 +331,36 @@ SOCKET_PRESETS: Dict[str, Dict[str, Any]] = {
 }
 
 
-# Canonical armor slot -> R15 limb + attachment mapping.
+# Classic Blocky R15 reference limb sizes (studs) used for avatar-bundle-adaptive armor scaling.
+BLOCKY_R15_REF_SIZES: Dict[str, List[float]] = {
+    "HumanoidRootPart": [2.0, 2.0, 1.0],
+    "Head": [1.2, 1.2, 1.2],
+    "UpperTorso": [2.0, 1.6, 1.0],
+    "LowerTorso": [2.0, 0.4, 1.0],
+    "LeftUpperArm": [1.0, 1.2, 1.0],
+    "LeftLowerArm": [1.0, 1.05, 1.0],
+    "LeftHand": [1.0, 0.3, 1.0],
+    "RightUpperArm": [1.0, 1.2, 1.0],
+    "RightLowerArm": [1.0, 1.05, 1.0],
+    "RightHand": [1.0, 0.3, 1.0],
+    "LeftUpperLeg": [1.0, 1.2, 1.0],
+    "LeftLowerLeg": [1.0, 1.05, 1.0],
+    "LeftFoot": [1.0, 0.3, 1.0],
+    "RightUpperLeg": [1.0, 1.2, 1.0],
+    "RightLowerLeg": [1.0, 1.05, 1.0],
+    "RightFoot": [1.0, 0.3, 1.0],
+}
+
+SURFACE_ANCHOR_MODES: Tuple[str, ...] = (
+    "head_top",
+    "torso_back_top",
+    "top_cap",
+    "front_shin",
+    "foot_sole",
+    "center",
+)
+
+# Canonical armor slot -> R15 limb + attachment + surface anchor mapping.
 ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
     "helmet": {
         "limb_part": "Head",
@@ -339,6 +368,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "HatAttachment",
         "offset_pos": [0.0, -0.45, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "head_top",
     },
     "face_visor": {
         "limb_part": "Head",
@@ -346,6 +376,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "FaceFrontAttachment",
         "offset_pos": [0.0, 0.0, 0.5],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "center",
     },
     "chest": {
         "limb_part": "UpperTorso",
@@ -353,6 +384,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "BodyFrontAttachment",
         "offset_pos": [0.0, 0.0, 0.5],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "center",
     },
     "cloak": {
         "limb_part": "UpperTorso",
@@ -360,6 +392,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "BodyBackAttachment",
         "offset_pos": [0.0, -0.55, 0.2],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "torso_back_top",
     },
     "belt": {
         "limb_part": "LowerTorso",
@@ -367,6 +400,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "WaistCenterAttachment",
         "offset_pos": [0.0, 0.0, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "center",
     },
     "left_pauldron": {
         "limb_part": "LeftUpperArm",
@@ -374,6 +408,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "LeftShoulderAttachment",
         "offset_pos": [0.0, -0.25, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "top_cap",
     },
     "right_pauldron": {
         "limb_part": "RightUpperArm",
@@ -381,6 +416,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "RightShoulderAttachment",
         "offset_pos": [0.0, -0.25, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "top_cap",
     },
     "left_gauntlet": {
         "limb_part": "LeftLowerArm",
@@ -388,6 +424,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "LeftWristRigAttachment",
         "offset_pos": [0.0, 0.35, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "center",
     },
     "right_gauntlet": {
         "limb_part": "RightLowerArm",
@@ -395,6 +432,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "RightWristRigAttachment",
         "offset_pos": [0.0, 0.35, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "center",
     },
     "left_thigh": {
         "limb_part": "LeftUpperLeg",
@@ -402,6 +440,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "LeftHipRigAttachment",
         "offset_pos": [0.0, -0.55, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "center",
     },
     "right_thigh": {
         "limb_part": "RightUpperLeg",
@@ -409,6 +448,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "RightHipRigAttachment",
         "offset_pos": [0.0, -0.55, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "center",
     },
     "left_greave": {
         "limb_part": "LeftLowerLeg",
@@ -416,6 +456,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "LeftKneeRigAttachment",
         "offset_pos": [0.0, -0.35, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "front_shin",
     },
     "right_greave": {
         "limb_part": "RightLowerLeg",
@@ -423,6 +464,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "RightKneeRigAttachment",
         "offset_pos": [0.0, -0.35, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "front_shin",
     },
     "left_boot": {
         "limb_part": "LeftFoot",
@@ -430,6 +472,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "LeftFootAttachment",
         "offset_pos": [0.0, 0.12, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "foot_sole",
     },
     "right_boot": {
         "limb_part": "RightFoot",
@@ -437,6 +480,7 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "item_attachment": "RightFootAttachment",
         "offset_pos": [0.0, 0.12, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
+        "surface_anchor": "foot_sole",
     },
 }
 
@@ -448,7 +492,6 @@ ARMOR_SLOT_ALIASES: Dict[str, str] = {
     "cuirass": "chest",
     "torso": "chest",
     "chestplate": "chest",
-    "cuirass": "chest",
     "lorica": "chest",
     "cape": "cloak",
     "sagum": "cloak",
@@ -622,6 +665,8 @@ class AttachmentEngine:
             "socket_presets": presets,
             "armor_slots": ARMOR_SLOTS,
             "armor_slot_aliases": ARMOR_SLOT_ALIASES,
+            "blocky_r15_ref_sizes": BLOCKY_R15_REF_SIZES,
+            "surface_anchor_modes": list(SURFACE_ANCHOR_MODES),
             "valid_modes": list(VALID_ATTACH_MODES),
         }
 
@@ -1890,6 +1935,7 @@ return HttpService:JSONEncode({{
         armor_slot_map: Optional[Dict[str, str]] = None,
         sidecar_path: Optional[str] = None,
         sidecar_data: Optional[Dict[str, Any]] = None,
+        adaptive_scale: bool = True,
     ) -> str:
         """Compile Edit-mode Luau for attaching, configuring, or verifying R15 equipment & IKControls."""
         norm_mode = _normalize_attach_mode(mode, "accessory_rigid")
@@ -1976,6 +2022,8 @@ return HttpService:JSONEncode({{
                         "itemAttachment": ac["item_attachment"],
                         "offsetPos": ac["offset_pos"],
                         "offsetRot": ac["offset_rot_deg"],
+                        "surfaceAnchor": ac.get("surface_anchor", "center"),
+                        "refSize": BLOCKY_R15_REF_SIZES.get(ac["limb_part"], [1.0, 1.0, 1.0]),
                     })
             elif not effective_slot or effective_slot.strip().lower() == "all":
                 for ak, ac in ARMOR_SLOTS.items():
@@ -1990,6 +2038,8 @@ return HttpService:JSONEncode({{
                         "itemAttachment": ac["item_attachment"],
                         "offsetPos": ac["offset_pos"],
                         "offsetRot": ac["offset_rot_deg"],
+                        "surfaceAnchor": ac.get("surface_anchor", "center"),
+                        "refSize": BLOCKY_R15_REF_SIZES.get(ac["limb_part"], [1.0, 1.0, 1.0]),
                     })
             else:
                 ak = _resolve_armor_slot(effective_slot)
@@ -2005,6 +2055,8 @@ return HttpService:JSONEncode({{
                     "itemAttachment": ac["item_attachment"],
                     "offsetPos": ac["offset_pos"],
                     "offsetRot": ac["offset_rot_deg"],
+                    "surfaceAnchor": ac.get("surface_anchor", "center"),
+                    "refSize": BLOCKY_R15_REF_SIZES.get(ac["limb_part"], [1.0, 1.0, 1.0]),
                 })
 
         return f"""--!strict
@@ -2019,6 +2071,7 @@ local LIMB_ATT_NAME = {json.dumps(resolved["limb_attachment"])}
 local ITEM_ATT_NAME = {json.dumps(resolved["item_attachment"])}
 local REPLACE_EXISTING_WELDS = {"true" if replace_existing_welds else "false"}
 local CLONE_ITEM = {"true" if clone_item else "false"}
+local ADAPTIVE_SCALE = {"true" if adaptive_scale else "false"}
 
 local LIMB_ATT_DEFAULT_CF = {limb_att_cf_expr}
 local ITEM_ATT_CF = {item_att_cf_expr}
@@ -2297,6 +2350,98 @@ local function findArmorPiece(container: Instance, slotName: string, limbName: s
 	return nil
 end
 
+local function computeAdaptiveScale(limbPart: BasePart, refSize: Vector3): (number, Vector3)
+	local lsz = limbPart.Size
+	local rx = math.clamp(lsz.X / math.max(0.05, refSize.X), 0.45, 2.2)
+	local ry = math.clamp(lsz.Y / math.max(0.05, refSize.Y), 0.45, 2.2)
+	local rz = math.clamp(lsz.Z / math.max(0.05, refSize.Z), 0.45, 2.2)
+	local uniformScale = math.clamp((rx * ry * rz) ^ (1 / 3), 0.5, 2.0)
+	return uniformScale, Vector3.new(rx, ry, rz)
+end
+
+local function applyAdaptiveScale(pieceInst: Instance, targetScale: number): number
+	local prevAttr = pieceInst:GetAttribute("SharpAppliedAdaptiveScale")
+	local prevScale = if typeof(prevAttr) == "number" and prevAttr > 0 then prevAttr else 1.0
+	local deltaScale = targetScale / prevScale
+	if math.abs(deltaScale - 1.0) > 0.015 then
+		if pieceInst:IsA("Model") then
+			local okScale = pcall(function()
+				local curScale = pieceInst:GetScale()
+				pieceInst:ScaleTo(curScale * deltaScale)
+			end)
+			if not okScale then
+				for _, d in ipairs(pieceInst:GetDescendants()) do
+					if d:IsA("BasePart") then
+						d.Size *= deltaScale
+					end
+				end
+			end
+		elseif pieceInst:IsA("BasePart") then
+			pieceInst.Size *= deltaScale
+		end
+		pieceInst:SetAttribute("SharpAppliedAdaptiveScale", targetScale)
+	end
+	return targetScale
+end
+
+local function computeSurfaceAnchorFromSize(size: Vector3, surfaceAnchor: string): CFrame
+	local half = size * 0.5
+	if surfaceAnchor == "head_top" then
+		return CFrame.new(0, half.Y, 0)
+	elseif surfaceAnchor == "torso_back_top" then
+		return CFrame.new(0, size.Y * 0.42, half.Z)
+	elseif surfaceAnchor == "top_cap" then
+		return CFrame.new(0, half.Y, 0)
+	elseif surfaceAnchor == "front_shin" then
+		return CFrame.new(0, 0, -half.Z)
+	elseif surfaceAnchor == "foot_sole" then
+		return CFrame.new(0, -half.Y, 0)
+	end
+	return CFrame.identity
+end
+
+local function computePieceLocalBounds(pieceInst: Instance, handle: BasePart): (Vector3, Vector3)
+	if pieceInst:IsA("Model") then
+		local okBox, bcf, bsz = pcall(function()
+			return pieceInst:GetBoundingBox()
+		end)
+		if okBox and typeof(bcf) == "CFrame" and typeof(bsz) == "Vector3" then
+			return handle.CFrame:PointToObjectSpace(bcf.Position), bsz
+		end
+	end
+	return Vector3.zero, handle.Size
+end
+
+local function computeItemSurfaceAnchorCFrame(
+	pieceInst: Instance,
+	handle: BasePart,
+	surfaceAnchor: string,
+	offsetCf: CFrame,
+	axisRatio: Vector3
+): CFrame
+	local localCenter, bsz = computePieceLocalBounds(pieceInst, handle)
+	local half = bsz * 0.5
+	local rotOnly = offsetCf - offsetCf.Position
+	local pos = localCenter
+	if surfaceAnchor == "head_top" or surfaceAnchor == "top_cap" then
+		pos = Vector3.new(localCenter.X, localCenter.Y + half.Y * 0.7, localCenter.Z)
+	elseif surfaceAnchor == "torso_back_top" then
+		pos = Vector3.new(localCenter.X, localCenter.Y + half.Y, localCenter.Z - half.Z)
+	elseif surfaceAnchor == "front_shin" then
+		pos = Vector3.new(localCenter.X, localCenter.Y, localCenter.Z + half.Z)
+	elseif surfaceAnchor == "foot_sole" then
+		pos = Vector3.new(localCenter.X, localCenter.Y - half.Y, localCenter.Z)
+	else
+		local scaledOff = Vector3.new(
+			offsetCf.Position.X * axisRatio.X,
+			offsetCf.Position.Y * axisRatio.Y,
+			offsetCf.Position.Z * axisRatio.Z
+		)
+		pos = localCenter - scaledOff
+	end
+	return CFrame.new(pos) * rotOnly:Inverse()
+end
+
 local activePluginRec = ChangeHistoryService:GetAttribute("__SharpActiveRecordingId")
 local recId = if activePluginRec then nil else ChangeHistoryService:TryBeginRecording("SharpEquipmentAttach", "Sharp MCP: Attach Equipment (" .. ATTACH_MODE .. ")")
 local ok, resOrErr = xpcall(function()
@@ -2327,13 +2472,47 @@ local ok, resOrErr = xpcall(function()
 						* CFrame.Angles(math.rad(entry.limbRot[1]), math.rad(entry.limbRot[2]), math.rad(entry.limbRot[3]))
 					local oDef = CFrame.new(entry.offsetPos[1], entry.offsetPos[2], entry.offsetPos[3])
 						* CFrame.Angles(math.rad(entry.offsetRot[1]), math.rad(entry.offsetRot[2]), math.rad(entry.offsetRot[3]))
-					local info = attachViaRigidConstraint(rig, lp, entry.limbAttachment, lDef, pieceInst, entry.itemAttachment, oDef:Inverse(), true)
-					info.slot = entry.slot
-					table.insert(attachedPieces, info)
+					if ADAPTIVE_SCALE then
+						local refArr = entry.refSize
+						local refSz = if type(refArr) == "table" and #refArr >= 3
+							then Vector3.new(refArr[1], refArr[2], refArr[3])
+							else Vector3.new(1, 1, 1)
+						local uniformScale, axisRatio = computeAdaptiveScale(lp, refSz)
+						local appliedScale = applyAdaptiveScale(pieceInst, uniformScale)
+						local surfaceAnchor = tostring(entry.surfaceAnchor or "center")
+						local surfaceCf = computeSurfaceAnchorFromSize(lp.Size, surfaceAnchor)
+						local surfaceAttName = "SharpSurface_" .. tostring(entry.slot)
+						local surfAtt = ensureAttachment(lp, surfaceAttName, surfaceCf)
+						surfAtt.CFrame = surfaceCf
+
+						local itemAttCf = oDef:Inverse()
+						local hasAuthoredAtt = pieceInst:FindFirstChild(entry.itemAttachment, true)
+						if not (hasAuthoredAtt and hasAuthoredAtt:IsA("Attachment")) then
+							local handle = getPrimaryHandle(pieceInst)
+							if handle then
+								itemAttCf = computeItemSurfaceAnchorCFrame(pieceInst, handle, surfaceAnchor, oDef, axisRatio)
+							end
+						else
+							local refSurfaceCf = computeSurfaceAnchorFromSize(refSz, surfaceAnchor)
+							local surfaceDelta = surfaceCf.Position - refSurfaceCf.Position
+							surfAtt.CFrame = CFrame.new(lDef.Position + surfaceDelta) * (lDef - lDef.Position)
+						end
+
+						local info = attachViaRigidConstraint(rig, lp, surfaceAttName, surfAtt.CFrame, pieceInst, entry.itemAttachment, itemAttCf, true)
+						info.slot = entry.slot
+						info.adaptiveScale = appliedScale
+						info.axisScaleRatio = {{ axisRatio.X, axisRatio.Y, axisRatio.Z }}
+						info.surfaceAnchor = surfaceAnchor
+						table.insert(attachedPieces, info)
+					else
+						local info = attachViaRigidConstraint(rig, lp, entry.limbAttachment, lDef, pieceInst, entry.itemAttachment, oDef:Inverse(), true)
+						info.slot = entry.slot
+						table.insert(attachedPieces, info)
+					end
 				end
 			end
 		end
-		return {{ mode = ATTACH_MODE, rig = rig:GetFullName(), attachedCount = #attachedPieces, pieces = attachedPieces }}
+		return {{ mode = ATTACH_MODE, rig = rig:GetFullName(), adaptiveScale = ADAPTIVE_SCALE, attachedCount = #attachedPieces, pieces = attachedPieces }}
 	end
 
 	assert(item ~= nil, "Item not found at path: " .. TARGET_ITEM_PATH)

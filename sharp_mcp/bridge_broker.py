@@ -40,34 +40,39 @@ def validate_local_http_request(
     transport = getattr(request, "transport", None)
     if transport is not None:
         peername = transport.get_extra_info("peername")
-        if isinstance(peername, tuple) and len(peername) >= 1 and isinstance(peername[0], str):
-            peer_ip = peername[0]
-        elif isinstance(peername, str) and peername:
-            peer_ip = peername
+        if isinstance(peername, tuple) and len(peername) >= 1 and isinstance(peername[0], str) and peername[0].strip():
+            peer_ip = peername[0].strip()
+        elif isinstance(peername, str) and peername.strip():
+            peer_ip = peername.strip()
     if peer_ip is None:
         remote_val = getattr(request, "remote", None)
-        if isinstance(remote_val, str) and remote_val:
-            peer_ip = remote_val
+        if isinstance(remote_val, str) and remote_val.strip():
+            peer_ip = remote_val.strip()
 
-    if peer_ip is not None:
-        cleaned_ip = peer_ip.split("%", 1)[0]
-        try:
-            addr = ipaddress.ip_address(cleaned_ip)
-        except ValueError:
-            return web.json_response(
-                {"ok": False, "error": "FORBIDDEN_NON_LOOPBACK", "remote": peer_ip},
-                status=403,
-            )
-        is_loopback = addr.is_loopback or (
-            isinstance(addr, ipaddress.IPv6Address)
-            and addr.ipv4_mapped is not None
-            and addr.ipv4_mapped.is_loopback
+    if not peer_ip:
+        return web.json_response(
+            {"ok": False, "error": "FORBIDDEN_NON_LOOPBACK", "remote": peer_ip},
+            status=403,
         )
-        if not is_loopback:
-            return web.json_response(
-                {"ok": False, "error": "FORBIDDEN_NON_LOOPBACK", "remote": peer_ip},
-                status=403,
-            )
+
+    cleaned_ip = peer_ip.split("%", 1)[0]
+    try:
+        addr = ipaddress.ip_address(cleaned_ip)
+    except ValueError:
+        return web.json_response(
+            {"ok": False, "error": "FORBIDDEN_NON_LOOPBACK", "remote": peer_ip},
+            status=403,
+        )
+    is_loopback = addr.is_loopback or (
+        isinstance(addr, ipaddress.IPv6Address)
+        and addr.ipv4_mapped is not None
+        and addr.ipv4_mapped.is_loopback
+    )
+    if not is_loopback:
+        return web.json_response(
+            {"ok": False, "error": "FORBIDDEN_NON_LOOPBACK", "remote": peer_ip},
+            status=403,
+        )
 
     active_port = expected_port
     if transport is not None:
@@ -139,6 +144,7 @@ class BridgeBroker:
 
     MAX_READERS = 4
     DEDUP_CACHE_LIMIT = 500
+    MAX_CHUNK_BUFFER_BYTES = 16 * 1024 * 1024
     EPOCH_HEADER = "X-Sharp-Server-Epoch"
 
     def __init__(
@@ -169,6 +175,7 @@ class BridgeBroker:
         self.in_flight: Dict[str, BridgeJob] = {}
         self.dedup_cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
         self.chunk_buffers: Dict[str, List[Tuple[int, str]]] = {}
+        self._chunk_buffer_bytes: Dict[str, int] = {}
         self.action_log: List[Dict[str, Any]] = []
 
         self._app: Optional[web.Application] = None
@@ -212,6 +219,10 @@ class BridgeBroker:
         else:
             self.active_readers.add(request_id)
         return True
+
+    def _purge_chunk_buffer(self, req_id: str) -> None:
+        self.chunk_buffers.pop(req_id, None)
+        self._chunk_buffer_bytes.pop(req_id, None)
 
     def _release_mutex(self, request_id: str) -> None:
         if self.active_writer == request_id:
@@ -351,9 +362,35 @@ class BridgeBroker:
             body = await request.json()
         except Exception:
             return web.json_response({"ok": False, "error": "INVALID_JSON"}, status=400)
+        if not isinstance(body, dict):
+            return web.json_response({"ok": False, "error": "INVALID_JSON"}, status=400)
+
+        incoming_session_id = body.get("studioSessionId", "unknown")
+        if self.is_plugin_online() and self.connected_studio is not None:
+            active_session_id = self.connected_studio.get("studioSessionId")
+            same_session = (
+                isinstance(active_session_id, str)
+                and active_session_id not in ("", "unknown")
+                and incoming_session_id == active_session_id
+            )
+            if not same_session:
+                auth = request.headers.get("Authorization", "")
+                expected = f"Bearer {self.session_token}"
+                if not secrets.compare_digest(auth, expected):
+                    return web.json_response(
+                        {
+                            "ok": False,
+                            "error": "SESSION_ALREADY_ACTIVE",
+                            "message": (
+                                "Another Studio plugin session is currently active; "
+                                "present valid Bearer authorization to take over."
+                            ),
+                        },
+                        status=409,
+                    )
 
         self.connected_studio = {
-            "studioSessionId": body.get("studioSessionId", "unknown"),
+            "studioSessionId": incoming_session_id,
             "placeId": body.get("placeId", 0),
             "universeId": body.get("universeId", 0),
             "placeName": body.get("placeName", "UnknownPlace"),
@@ -401,6 +438,7 @@ class BridgeBroker:
 
             stale_err = self._check_stale_target(job.expected_place_id, job.expected_session_nonce)
             if stale_err is not None:
+                self._purge_chunk_buffer(job.request_id)
                 self._release_mutex(job.request_id)
                 job.status = "failed"
                 job.result = stale_err
@@ -446,6 +484,7 @@ class BridgeBroker:
         )
         if stale_err is not None:
             self.in_flight.pop(req_id, None)
+            self._purge_chunk_buffer(req_id)
             self._release_mutex(req_id)
             job.status = "failed"
             job.result = stale_err
@@ -474,16 +513,51 @@ class BridgeBroker:
             body = await request.json()
         except Exception:
             return web.json_response({"ok": False, "error": "INVALID_JSON"}, status=400)
+        if not isinstance(body, dict):
+            return web.json_response({"ok": False, "error": "INVALID_JSON"}, status=400)
         req_id = str(body.get("requestId", ""))
-        idx = int(body.get("chunkIndex", 0))
+        if not req_id or req_id not in self.in_flight:
+            return web.json_response({"ok": False, "error": "UNKNOWN_IN_FLIGHT_JOB"}, status=404)
+        try:
+            idx = int(body.get("chunkIndex", 0))
+        except (TypeError, ValueError):
+            return web.json_response({"ok": False, "error": "INVALID_CHUNK_INDEX"}, status=400)
         data = str(body.get("chunkData", ""))
+        chunk_bytes = len(data.encode("utf-8"))
 
-        if req_id not in self.chunk_buffers:
-            self.chunk_buffers[req_id] = []
-        self.chunk_buffers[req_id].append((idx, data))
+        existing = self.chunk_buffers.get(req_id)
+        if existing is None:
+            existing = []
+            self.chunk_buffers[req_id] = existing
+
+        replaced_bytes = 0
+        replace_pos: Optional[int] = None
+        for pos, (existing_idx, existing_data) in enumerate(existing):
+            if existing_idx == idx:
+                replace_pos = pos
+                replaced_bytes = len(existing_data.encode("utf-8"))
+                break
+
+        current_total = self._chunk_buffer_bytes.get(req_id, 0)
+        new_total = current_total - replaced_bytes + chunk_bytes
+        if new_total > self.MAX_CHUNK_BUFFER_BYTES:
+            return web.json_response(
+                {
+                    "ok": False,
+                    "error": "PAYLOAD_TOO_LARGE",
+                    "maxBytes": self.MAX_CHUNK_BUFFER_BYTES,
+                },
+                status=413,
+            )
+
+        if replace_pos is not None:
+            existing[replace_pos] = (idx, data)
+        else:
+            existing.append((idx, data))
+        self._chunk_buffer_bytes[req_id] = new_total
+
         self.last_seen_monotonic = time.monotonic()
-        if req_id in self.in_flight:
-            self.in_flight[req_id].last_heartbeat_at = self.last_seen_monotonic
+        self.in_flight[req_id].last_heartbeat_at = self.last_seen_monotonic
         return web.json_response({"ok": True, "receivedChunk": idx})
 
     async def handle_result_commit(self, request: web.Request) -> web.Response:
@@ -494,8 +568,11 @@ class BridgeBroker:
             body = await request.json()
         except Exception:
             return web.json_response({"ok": False, "error": "INVALID_JSON"}, status=400)
+        if not isinstance(body, dict):
+            return web.json_response({"ok": False, "error": "INVALID_JSON"}, status=400)
         req_id = str(body.get("requestId", ""))
         chunks = self.chunk_buffers.pop(req_id, [])
+        self._chunk_buffer_bytes.pop(req_id, None)
         chunks.sort(key=lambda x: x[0])
         reassembled = "".join(part for _, part in chunks)
         try:
@@ -510,6 +587,7 @@ class BridgeBroker:
     def _finalize_job_result(self, body: Dict[str, Any]) -> web.Response:
         req_id = str(body.get("requestId", ""))
         self.last_seen_monotonic = time.monotonic()
+        self._purge_chunk_buffer(req_id)
 
         # Idempotent deduplication check
         if req_id in self.dedup_cache:
@@ -611,6 +689,7 @@ class BridgeBroker:
                 )
                 if midflight_stale is not None:
                     self.in_flight.pop(req_id, None)
+                    self._purge_chunk_buffer(req_id)
                     self._release_mutex(req_id)
                     job.status = "failed"
                     job.result = midflight_stale
@@ -622,6 +701,7 @@ class BridgeBroker:
                 if (now - ref_time) > lease_sec:
                     # Lease expired! Remove from in_flight & release mutex.
                     self.in_flight.pop(req_id, None)
+                    self._purge_chunk_buffer(req_id)
                     self._release_mutex(req_id)
                     job.status = "outcome_unknown" if kind == "write" else "failed"
                     return {
@@ -636,6 +716,7 @@ class BridgeBroker:
                     }
             return await fut
         finally:
+            self._purge_chunk_buffer(req_id)
             self._release_mutex(req_id)
 
     async def send_module_op(

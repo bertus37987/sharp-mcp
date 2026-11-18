@@ -97,6 +97,21 @@ local function makeAuthHeaders(includeContentType: boolean): { [string]: string 
 	return hdrs
 end
 
+local function postBridgeJson(path: string, bodyJson: string): (boolean, number)
+	local ok, resp = pcall(function()
+		return HttpService:RequestAsync({
+			Url = BRIDGE_BASE .. path,
+			Method = "POST",
+			Headers = makeAuthHeaders(true),
+			Body = bodyJson,
+		})
+	end)
+	if ok and typeof(resp) == "table" and typeof(resp.StatusCode) == "number" then
+		return resp.StatusCode &gt;= 200 and resp.StatusCode &lt; 300, resp.StatusCode
+	end
+	return false, 0
+end
+
 local function sendResult(requestId: string, envelope: { [string]: any })
 	envelope.requestId = requestId
 	envelope.placeId = game.PlaceId
@@ -104,40 +119,55 @@ local function sendResult(requestId: string, envelope: { [string]: any })
 	local encoded = HttpService:JSONEncode(envelope)
 
 	if #encoded &lt;= 900000 then
-		pcall(function()
-			HttpService:RequestAsync({
-				Url = BRIDGE_BASE .. "/v1/result",
-				Method = "POST",
-				Headers = makeAuthHeaders(true),
-				Body = encoded,
-			})
-		end)
+		local okSend, statusCode = postBridgeJson("/v1/result", encoded)
+		if not okSend then
+			ui:appendLog(string.format("[ERR] result post failed (HTTP %d)", statusCode))
+		end
 	else
 		local parts = splitUtf8Chunks(encoded, 800000)
+		local allChunksOk = true
 		for idx, part in ipairs(parts) do
-			pcall(function()
-				HttpService:RequestAsync({
-					Url = BRIDGE_BASE .. "/v1/result_chunk",
-					Method = "POST",
-					Headers = makeAuthHeaders(true),
-					Body = HttpService:JSONEncode({
-						requestId = requestId,
-						chunkIndex = idx,
-						chunkData = part,
-					}),
-				})
-			end)
-		end
-		pcall(function()
-			HttpService:RequestAsync({
-				Url = BRIDGE_BASE .. "/v1/result_commit",
-				Method = "POST",
-				Headers = makeAuthHeaders(true),
-				Body = HttpService:JSONEncode({ requestId = requestId }),
+			local chunkBody = HttpService:JSONEncode({
+				requestId = requestId,
+				chunkIndex = idx,
+				chunkData = part,
 			})
-		end)
+			local chunkOk = false
+			local lastStatus = 0
+			for attempt = 1, 3 do
+				chunkOk, lastStatus = postBridgeJson("/v1/result_chunk", chunkBody)
+				if chunkOk then
+					break
+				end
+				if lastStatus &gt;= 400 and lastStatus &lt; 500 and lastStatus ~= 408 and lastStatus ~= 429 then
+					break
+				end
+				if attempt &lt; 3 then
+					task.wait(0.25 * attempt)
+				end
+			end
+			if not chunkOk then
+				allChunksOk = false
+				ui:appendLog(string.format("[ERR] result_chunk %d/%d failed (HTTP %d); aborting commit", idx, #parts, lastStatus))
+				break
+			end
+		end
+		if not allChunksOk then
+			return
+		end
+		local commitOk, commitStatus = postBridgeJson("/v1/result_commit", HttpService:JSONEncode({ requestId = requestId }))
+		if not commitOk then
+			ui:appendLog(string.format("[ERR] result_commit failed (HTTP %d)", commitStatus))
+		end
 	end
 end
+
+local DESTRUCTIVE_CLEAR_SERVICES: { string } = {
+	"Workspace",
+	"StarterGui",
+	"ReplicatedStorage",
+	"ServerScriptService",
+}
 
 local function isDestructiveRequest(toolName: string, args: { [string]: any }, compiledLuau: string?): boolean
 	local opArgs = if typeof(args.args) == "table" then args.args :: { [string]: any } else {}
@@ -152,12 +182,21 @@ local function isDestructiveRequest(toolName: string, args: { [string]: any }, c
 		return true
 	end
 	if typeof(compiledLuau) == "string" and #compiledLuau &gt; 0 then
-		if string.find(compiledLuau, "Workspace:ClearAllChildren()", 1, true)
-			or string.find(compiledLuau, "StarterGui:ClearAllChildren()", 1, true)
-			or string.find(compiledLuau, "ReplicatedStorage:ClearAllChildren()", 1, true)
-			or string.find(compiledLuau, "ServerScriptService:ClearAllChildren()", 1, true)
-		then
+		if string.find(compiledLuau, "Terrain%s*:%s*Clear%s*%(") then
 			return true
+		end
+		if string.find(compiledLuau, "workspace%s*:%s*ClearAllChildren%s*%(") then
+			return true
+		end
+		for _, svcName in ipairs(DESTRUCTIVE_CLEAR_SERVICES) do
+			if string.find(compiledLuau, svcName .. "%s*:%s*ClearAllChildren%s*%(")
+				or string.find(
+					compiledLuau,
+					":%s*GetService%s*%(?%s*[\"']" .. svcName .. "[\"']%s*%)?%s*:%s*ClearAllChildren%s*%("
+				)
+			then
+				return true
+			end
 		end
 	end
 	return false
@@ -356,7 +395,11 @@ local function executeJobAsync(job: { [string]: any })
 				)
 			else
 				okRun, runOut = xpcall(fn :: () -&gt; any, debug.traceback)
-				recStatus = if okRun then "Committed" else "Cancelled"
+				if kind == "read" then
+					recStatus = "None"
+				else
+					recStatus = if okRun then "Committed" else "Cancelled"
+				end
 			end
 		end)
 
@@ -3122,7 +3165,7 @@ local MAX_VOXELS_PER_CALL = 4194304
 local DEFAULT_CHUNK_CELLS = 64
 local OCC_EPSILON = 1 / 256
 
-export type BiomeName = "Alpine" | "Meadow" | "Desert" | "Volcanic" | "Arctic" | "Coast"
+export type BiomeName = "Alpine" | "Meadow" | "Desert" | "Volcanic" | "Arctic" | "Coast" | "Canyon"
 
 export type FlattenZone = {
 	x: number,
@@ -3213,11 +3256,17 @@ export type BuildConfig = {
 	solidSlotResolver: ((mat: Enum.Material, wx: number, height: number, slope: number) -&gt; number)?,
 }
 
+export type Vec3Coords = {
+	X: number,
+	Y: number,
+	Z: number,
+}
+
 export type BuildReport = {
 	apiUsed: string,
-	regionMin: Vector3,
-	regionMax: Vector3,
-	cellsSize: Vector3,
+	regionMin: Vec3Coords,
+	regionMax: Vec3Coords,
+	cellsSize: Vec3Coords,
 	chunksWritten: number,
 	voxelsProcessed: number,
 	solidVoxelsWritten: number,
@@ -3273,6 +3322,14 @@ TerrainBuilder.BIOME_PALETTES = {
 		mid = Enum.Material.Grass,
 		cliff = Enum.Material.Limestone,
 		high = Enum.Material.Rock,
+	},
+	Canyon = {
+		low = Enum.Material.Sandstone,
+		shore = Enum.Material.Sand,
+		underwater = Enum.Material.Slate,
+		mid = Enum.Material.Sandstone,
+		cliff = Enum.Material.Limestone,
+		high = Enum.Material.Slate,
 	},
 } :: { [BiomeName]: BiomePalette }
 
@@ -3875,9 +3932,9 @@ function TerrainBuilder.BuildRegion(config: BuildConfig): BuildReport
 
 	return {
 		apiUsed = apiUsed,
-		regionMin = regionMin,
-		regionMax = regionMax,
-		cellsSize = Vector3.new(cellsX, cellsY, cellsZ),
+		regionMin = { X = regionMin.X, Y = regionMin.Y, Z = regionMin.Z },
+		regionMax = { X = regionMax.X, Y = regionMax.Y, Z = regionMax.Z },
+		cellsSize = { X = cellsX, Y = cellsY, Z = cellsZ },
 		chunksWritten = chunksWritten,
 		voxelsProcessed = voxelsProcessed,
 		solidVoxelsWritten = solidVoxelsWritten,
@@ -9518,10 +9575,10 @@ function UIKit.CreateRadialWheel(opts: RadialWheelOptions?)
 	hubLabel.TextSize = 12
 	hubLabel.TextWrapped = true
 	hubLabel.TextTruncate = Enum.TextTruncate.AtEnd
-	hubLabel.FontFace = UIKit.Tokens.Fonts.Title
+	hubLabel.FontFace = UIKit.Tokens.Fonts.Heading
 	hubLabel.ZIndex = baseZ + 5
 	hubLabel.Parent = hub
-	UIKit.AttachTextStroke(hubLabel, UIKit.Tokens.Colors.OutlineInk, 1.4, 0.1)
+	UIKit.AttachTextStroke(hubLabel, UIKit.Tokens.Colors.OutlineInk, 0.8, 0.35)
 
 	UIKit.AttachButtonJuice(hub, hub, function()
 		if o.OnCenterClick then
@@ -9546,7 +9603,14 @@ function UIKit.CreateRadialWheel(opts: RadialWheelOptions?)
 			local itemData = items[idx]
 			local active = (selectedIdx == idx)
 			local segColor = (itemData and itemData.Color) or UIKit.Tokens.Colors.Primary
-			seg.BackgroundColor3 = if active then segColor else UIKit.Tokens.Colors.BgPanel
+			local bgColor = if active then segColor else UIKit.Tokens.Colors.BgPanel
+			seg.BackgroundColor3 = bgColor
+			local lblObj = seg:FindFirstChild("Label")
+			if lblObj and lblObj:IsA("TextLabel") then
+				local readable = UIKit.PickReadableTextColor(bgColor)
+				lblObj.TextColor3 = readable
+				UIKit.AttachTextStroke(lblObj, UIKit.Tokens.Colors.OutlineInk, 1.0, 0.25, readable)
+			end
 			local outer = seg:FindFirstChild("OuterStroke")
 			if outer and outer:IsA("UIStroke") then
 				outer.Color = if active then UIKit.Tokens.Colors.Gold else UIKit.Tokens.Colors.OutlineInk
@@ -12575,7 +12639,8 @@ function CombatHitboxAndProjectile.ValidateServerHit(spec: ServerValidationSpec)
 		end
 	end
 
-	if if spec.requireLineOfSight == nil then true else spec.requireLineOfSight then
+	local requireLOS = if spec.requireLineOfSight == nil then true else spec.requireLineOfSight
+	if requireLOS then
 		local rayParams = RaycastParams.new()
 		rayParams.FilterType = Enum.RaycastFilterType.Exclude
 		local filter: { Instance } = { spec.attackerRoot.Parent :: Instance, spec.targetRoot.Parent :: Instance }
@@ -12674,6 +12739,77 @@ function CombatHitboxAndProjectile.SimulateProjectileTrajectory(
 	end
 
 	return history
+end
+
+function CombatHitboxAndProjectile.AlignModelToDirection(
+	model: Model,
+	position: Vector3,
+	direction: Vector3,
+	localForwardAxis: Vector3?,
+	neutralizePivotOffset: boolean?
+): CFrame
+	local dirUnit = if direction.Magnitude &gt; 1e-4 then direction.Unit else Vector3.new(0, 0, -1)
+	local fwd = if localForwardAxis and localForwardAxis.Magnitude &gt; 1e-4 then localForwardAxis.Unit else Vector3.new(0, 0, -1)
+	local upRef = if math.abs(dirUnit:Dot(Vector3.new(0, 1, 0))) &gt; 0.99 then Vector3.new(0, 0, 1) else Vector3.new(0, 1, 0)
+	local baseCF = CFrame.lookAt(position, position + dirUnit, upRef)
+
+	-- Map arbitrary localForwardAxis (e.g. +Z FBX projectile nose) onto world LookVector (-Z)
+	local targetLocalLook = Vector3.new(0, 0, -1)
+	local dot = math.clamp(fwd:Dot(targetLocalLook), -1, 1)
+	local axisAlign = CFrame.identity
+	if dot &lt; -0.999 then
+		axisAlign = CFrame.Angles(0, math.pi, 0)
+	elseif dot &lt; 0.999 then
+		local rotAxis = fwd:Cross(targetLocalLook)
+		if rotAxis.Magnitude &gt; 1e-4 then
+			axisAlign = CFrame.fromAxisAngle(rotAxis.Unit, math.acos(dot))
+		end
+	end
+
+	local pp = model.PrimaryPart
+	local shouldResetPivot = if neutralizePivotOffset == nil then true else neutralizePivotOffset
+	if pp and shouldResetPivot then
+		pp.PivotOffset = CFrame.identity
+		model.WorldPivot = pp.CFrame
+	end
+
+	local finalCF = baseCF * axisAlign
+	model:PivotTo(finalCF)
+	return finalCF
+end
+
+function CombatHitboxAndProjectile.ComputeCrosshairAimRay(
+	camera: Camera?,
+	reticleGui: GuiObject?,
+	muzzleOrigin: Vector3,
+	excludeInstances: { Instance }?,
+	maxRange: number?
+): (Vector3, Vector3)
+	if not camera then
+		return muzzleOrigin, Vector3.new(0, 0, -1)
+	end
+	local vp = camera.ViewportSize
+	local sx = vp.X * 0.5
+	local sy = vp.Y * 0.5
+	local screenRay: Ray
+	if reticleGui then
+		local center = reticleGui.AbsolutePosition + reticleGui.AbsoluteSize * 0.5
+		screenRay = camera:ScreenPointToRay(center.X, center.Y)
+	else
+		screenRay = camera:ViewportPointToRay(sx, sy)
+	end
+
+	local range = maxRange or 300
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = excludeInstances or {}
+	rayParams.IgnoreWater = true
+
+	local aimHit = Workspace:Raycast(screenRay.Origin, screenRay.Direction * range, rayParams)
+	local aimTarget = if aimHit then aimHit.Position else (screenRay.Origin + screenRay.Direction * range)
+	local delta = aimTarget - muzzleOrigin
+	local dir = if delta.Magnitude &gt; 0.25 then delta.Unit else screenRay.Direction.Unit
+	return muzzleOrigin, dir
 end
 
 return CombatHitboxAndProjectile
