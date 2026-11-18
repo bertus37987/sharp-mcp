@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import json
@@ -24,6 +25,7 @@ from pathlib import Path
 from unittest import mock
 import wave
 
+import aiohttp
 import numpy as np
 from PIL import Image, ImageDraw
 from mcp.client.session import ClientSession
@@ -33,8 +35,10 @@ SERVER_ROOT = Path(__file__).resolve().parent.parent
 if str(SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_ROOT))
 
+from sharp_mcp.bridge_broker import BridgeBroker
 from sharp_mcp.credentials_store import (
     MODEL_PRESETS,
+    async_prompt_credentials_in_browser,
     clear_credentials,
     get_credentials_status,
     mask_api_key,
@@ -52,6 +56,7 @@ from sharp_mcp.domain_engines.luau_audit_engine import LuauAuditSnapshotEngine
 from sharp_mcp.domain_engines.multimodal_qa_engine import MultimodalQAEngine
 from sharp_mcp.domain_engines.rig_anim_engine import RigAnimationEngine
 from sharp_mcp.domain_engines.terrain_env_engine import TerrainEnvironmentEngine
+from sharp_mcp.domain_engines.upstream_multiplexer import UpstreamMultiplexer
 from sharp_mcp.project_library import ProjectLibraryManager
 from sharp_mcp.skill_router import resolve_default_archive_dir, resolve_default_skills_dir
 
@@ -148,7 +153,16 @@ class TestCredentialsStoreAndCliKeys(unittest.TestCase):
             clean_env = {
                 k: v
                 for k, v in os.environ.items()
-                if k not in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENROUTER_API_KEY", "SHARP_CREDENTIALS_PATH")
+                if k not in (
+                    "GEMINI_API_KEY",
+                    "GOOGLE_API_KEY",
+                    "OPENROUTER_API_KEY",
+                    "ROBLOX_OPEN_CLOUD_API_KEY",
+                    "ROBLOX_API_KEY",
+                    "ROBLOX_CREATOR_ID",
+                    "ROBLOX_USER_ID",
+                    "SHARP_CREDENTIALS_PATH",
+                )
             }
             clean_env["SHARP_CREDENTIALS_PATH"] = str(cred_file)
 
@@ -192,9 +206,10 @@ class TestCredentialsStoreAndCliKeys(unittest.TestCase):
                 self.assertFalse(cleared["providers"]["gemini"]["configured"])
                 self.assertTrue(cleared["providers"]["openrouter"]["configured"])
 
-                # Subprocess CLI `keys set/status/models/clear --json`
+                # Subprocess CLI `keys set/status/models/clear --json` (including roblox_open_cloud + creator-id)
                 for args in (
                     ["keys", "set", "--provider", "gemini", "--api-key", fake_gemini, "--json"],
+                    ["keys", "set", "--provider", "roblox_open_cloud", "--api-key", "rbx_oc_test_mock_key_9999", "--creator-id", "4990516523", "--json"],
                     ["keys", "status", "--json"],
                     ["keys", "models", "--json"],
                     ["keys", "clear", "--provider", "all", "--json"],
@@ -209,8 +224,162 @@ class TestCredentialsStoreAndCliKeys(unittest.TestCase):
                     )
                     self.assertEqual(proc.returncode, 0, f"CLI failed {args}: {proc.stderr}")
                     self.assertNotIn(fake_gemini, proc.stdout)
+                    self.assertNotIn("rbx_oc_test_mock_key_9999", proc.stdout)
                     parsed = json.loads(proc.stdout)
                     self.assertTrue(parsed.get("ok"))
+                    if args[1] == "status":
+                        self.assertTrue(parsed["providers"]["roblox_open_cloud"]["configured"])
+                        self.assertEqual(parsed["roblox_creator_id"], "4990516523")
+
+
+class TestBrowserKeyPromptAndRobloxUpload(unittest.IsolatedAsyncioTestCase):
+    async def test_browser_prompt_serves_form_and_saves_all_keys(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sharp_browser_creds_") as td:
+            cred_file = Path(td) / "creds.json"
+            clean_env = {
+                k: v
+                for k, v in os.environ.items()
+                if k not in (
+                    "GEMINI_API_KEY",
+                    "GOOGLE_API_KEY",
+                    "OPENROUTER_API_KEY",
+                    "ROBLOX_OPEN_CLOUD_API_KEY",
+                    "ROBLOX_API_KEY",
+                    "ROBLOX_CREATOR_ID",
+                    "ROBLOX_USER_ID",
+                )
+            }
+            with mock.patch.dict(os.environ, clean_env, clear=True):
+                launched = await async_prompt_credentials_in_browser(
+                    timeout_sec=15.0,
+                    open_browser=False,
+                    wait_for_save=False,
+                    credentials_path=cred_file,
+                    default_creator_id="4990516523",
+                )
+                self.assertTrue(launched["ok"])
+                self.assertTrue(launched["listening"])
+                setup_url = launched["url"]
+                base_url, query_str = setup_url.split("?", 1)
+                token = query_str.split("=", 1)[1]
+                root_url = base_url.rsplit("/", 1)[0]
+
+                async with aiohttp.ClientSession() as client:
+                    # Reject missing/wrong token
+                    async with client.get(f"{root_url}/setup?token=wrong") as bad_resp:
+                        self.assertEqual(bad_resp.status, 403)
+                    # Valid GET serves setup HTML UI
+                    async with client.get(setup_url) as ok_resp:
+                        self.assertEqual(ok_resp.status, 200)
+                        html_text = await ok_resp.text()
+                        self.assertIn("Roblox Open Cloud API Key", html_text)
+                        self.assertIn("4990516523", html_text)
+                    # POST /save persists keys without echoing secrets
+                    async with client.post(
+                        f"{root_url}/save",
+                        json={
+                            "token": token,
+                            "gemini_api_key": "AIzaBrowserTestKey11112222",
+                            "openrouter_api_key": "sk-or-v1-browsertestkey33334444",
+                            "roblox_open_cloud_api_key": "rbx_oc_browser_test_55556666",
+                            "roblox_creator_id": "4990516523",
+                        },
+                    ) as save_resp:
+                        self.assertEqual(save_resp.status, 200)
+                        save_json = await save_resp.json()
+                        self.assertTrue(save_json["ok"])
+                        self.assertTrue(save_json["saved"])
+                        dumped = json.dumps(save_json)
+                        self.assertNotIn("AIzaBrowserTestKey11112222", dumped)
+                        self.assertNotIn("rbx_oc_browser_test_55556666", dumped)
+
+                await asyncio.sleep(0.05)
+                stat = get_credentials_status(cred_file)
+                self.assertTrue(stat["providers"]["gemini"]["configured"])
+                self.assertTrue(stat["providers"]["openrouter"]["configured"])
+                self.assertTrue(stat["providers"]["roblox_open_cloud"]["configured"])
+                self.assertEqual(stat["roblox_creator_id"], "4990516523")
+
+    async def test_upload_and_insert_roblox_asset_dual_paths(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sharp_oc_upload_") as td:
+            root = Path(td)
+            fbx_file = root / "Medieval_Crossbow_Bolt.fbx"
+            fbx_file.write_bytes(b"Kaydara FBX binary mock payload")
+            cred_file = root / "creds.json"
+            mux = UpstreamMultiplexer(BridgeBroker(port=0))
+
+            # Path A: No Open Cloud key -> falls back cleanly to Studio MCP open_cloud_invoke + insert_asset
+            async def fake_studio_mcp(tool_name: str, arguments: dict, timeout_sec: float = 25.0):
+                if tool_name == "open_cloud_invoke" and arguments.get("method") == "POST":
+                    return {"ok": True, "decoded": {"path": "operations/op-123", "done": False}}
+                if tool_name == "open_cloud_invoke" and arguments.get("method") == "GET":
+                    return {"ok": True, "decoded": {"done": True, "response": {"assetId": "777888999"}}}
+                if tool_name == "insert_asset":
+                    return {"ok": True, "content": ["Inserted asset 777888999"]}
+                return {"ok": False, "error": f"Unexpected call: {tool_name}"}
+
+            with mock.patch.dict(os.environ, {}, clear=True):
+                with mock.patch.object(mux, "call_upstream_studio_mcp", side_effect=fake_studio_mcp):
+                    res_mcp = await mux.upload_and_insert_roblox_asset(
+                        file_path=fbx_file,
+                        asset_type="Model",
+                        display_name="Medieval_Crossbow_Bolt",
+                        creator_user_id="4990516523",
+                        studio_id="studio-abc",
+                        insert_into_studio=True,
+                        credentials_path=cred_file,
+                    )
+            self.assertTrue(res_mcp["ok"])
+            self.assertEqual(res_mcp["upload_mode"], "studio_mcp_open_cloud_invoke")
+            self.assertEqual(res_mcp["asset_id"], "777888999")
+            self.assertEqual(res_mcp["rbxassetid"], "rbxassetid://777888999")
+            self.assertTrue(res_mcp["inserted_into_studio"])
+
+            # Path B: With ROBLOX_OPEN_CLOUD_API_KEY configured -> direct REST API upload + Studio insert_asset
+            set_credentials(roblox_open_cloud_api_key="rbx_oc_direct_test_key_0000", credentials_path=cred_file)
+
+            class _FakeResp:
+                def __init__(self, status: int, body: dict) -> None:
+                    self.status = status
+                    self._body = body
+
+                async def text(self) -> str:
+                    return json.dumps(self._body)
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    return False
+
+            class _FakeClientSession:
+                def __init__(self, *args, **kwargs) -> None:
+                    pass
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    return False
+
+                def post(self, url, data=None, headers=None):
+                    return _FakeResp(200, {"done": True, "response": {"assetId": "999111222"}})
+
+            with mock.patch("sharp_mcp.domain_engines.upstream_multiplexer.aiohttp.ClientSession", _FakeClientSession):
+                with mock.patch.object(mux, "call_upstream_studio_mcp", side_effect=fake_studio_mcp):
+                    res_key = await mux.upload_and_insert_roblox_asset(
+                        file_path=fbx_file,
+                        asset_type="Model",
+                        display_name="Medieval_Crossbow_Bolt",
+                        creator_user_id="4990516523",
+                        studio_id="studio-abc",
+                        insert_into_studio=True,
+                        credentials_path=cred_file,
+                    )
+            self.assertTrue(res_key["ok"])
+            self.assertEqual(res_key["upload_mode"], "open_cloud_api_key")
+            self.assertEqual(res_key["asset_id"], "999111222")
+            self.assertTrue(res_key["inserted_into_studio"])
 
 
 class TestMultimodalQAEngine(unittest.IsolatedAsyncioTestCase):
@@ -784,6 +953,8 @@ class TestV04StdioE2E(unittest.IsolatedAsyncioTestCase):
                 "GEMINI_API_KEY": "",
                 "GOOGLE_API_KEY": "",
                 "OPENROUTER_API_KEY": "",
+                "ROBLOX_OPEN_CLOUD_API_KEY": "",
+                "ROBLOX_API_KEY": "",
             }
             params = StdioServerParameters(
                 command=sys.executable,
@@ -799,9 +970,13 @@ class TestV04StdioE2E(unittest.IsolatedAsyncioTestCase):
                     p_res = await session.get_prompt("sharp_concept_intake_workflow", {"game_idea": "Slime Arena", "genre": "Action"})
                     self.assertIn("intake_questions", p_res.messages[0].content.text)
 
-                    # 2. sharp_ai_studio keys_status + model_presets + offline generate_ui_concept
+                    # 2. sharp_ai_studio keys_status + keys_prompt_browser + generate_ui_concept
                     ai_stat = json.loads((await session.call_tool("sharp_ai_studio", {"action": "keys_status"})).content[0].text)
                     self.assertTrue(ai_stat["ok"])
+                    self.assertIn("roblox_open_cloud", ai_stat["providers"])
+                    ai_prompt = json.loads((await session.call_tool("sharp_ai_studio", {"action": "keys_prompt_browser", "open_browser": False, "wait_for_save": False, "timeout_sec": 1.0})).content[0].text)
+                    self.assertTrue(ai_prompt["ok"])
+                    self.assertTrue(str(ai_prompt.get("url", "")).startswith("http://127.0.0.1:"))
                     ui_con = json.loads((await session.call_tool("sharp_ai_studio", {"action": "generate_ui_concept", "screen_name": "ShopHud", "use_ai": False})).content[0].text)
                     self.assertTrue(ui_con["ok"])
                     self.assertGreaterEqual(ui_con["design_lint"]["score"], 80)

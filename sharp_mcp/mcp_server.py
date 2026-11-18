@@ -14,6 +14,7 @@ from .blender_installer import detect_blender_installation
 from .bridge_broker import BridgeBroker
 from .credentials_store import (
     MODEL_PRESETS,
+    async_prompt_credentials_in_browser,
     clear_credentials,
     get_credentials_status,
     set_credentials,
@@ -1409,7 +1410,7 @@ class SharpMcpApplication:
         self._add_tool("sharp_blender_rig_and_anim", sharp_blender_rig_and_anim)
 
         # 14. sharp_blender_asset_pipeline (omitted in core)
-        def sharp_blender_asset_pipeline(
+        async def sharp_blender_asset_pipeline(
             asset_kind: str = "modular_roman_arch",
             asset_name: str = "Modular_Roman_Arch_4m",
             output_dir: str = "",
@@ -1429,6 +1430,11 @@ class SharpMcpApplication:
             execute: bool = False,
             auto_install: bool = False,
             execution_mode: str = "auto",
+            upload_to_roblox: bool = False,
+            insert_into_studio: bool = True,
+            creator_user_id: Optional[str] = None,
+            studio_id: Optional[str] = None,
+            parent_path: Optional[str] = None,
         ) -> str:
             self.router.ensure_skill_context(
                 ["blender-game-assets", "blender-modular-architecture", "blender-bake-and-materials"]
@@ -1466,6 +1472,24 @@ class SharpMcpApplication:
                     execution_mode=execution_mode,
                     project_library=self.project_library,
                 )
+
+            if upload_to_roblox:
+                candidate_path = res.get("fbx_path") or res.get("glb_path")
+                if isinstance(candidate_path, str) and candidate_path and Path(candidate_path).is_file():
+                    res["roblox_upload"] = await self.multiplexer.upload_and_insert_roblox_asset(
+                        file_path=candidate_path,
+                        asset_type="Model",
+                        display_name=asset_name,
+                        creator_user_id=creator_user_id,
+                        studio_id=studio_id,
+                        insert_into_studio=insert_into_studio,
+                        parent_path=parent_path,
+                    )
+                else:
+                    res["roblox_upload"] = {
+                        "ok": False,
+                        "error": "upload_to_roblox requested, but no exported .fbx/.glb file was produced (set execute=True).",
+                    }
             return compact_json(res)
 
         self._add_tool("sharp_blender_asset_pipeline", sharp_blender_asset_pipeline)
@@ -2932,6 +2956,8 @@ class SharpMcpApplication:
             provider: str = "auto",
             gemini_api_key: Optional[str] = None,
             openrouter_api_key: Optional[str] = None,
+            roblox_open_cloud_api_key: Optional[str] = None,
+            roblox_creator_id: Optional[str] = None,
             model_preferences: Optional[Dict[str, str]] = None,
             model: Optional[str] = None,
             tier: str = "default",
@@ -2946,6 +2972,16 @@ class SharpMcpApplication:
             auto_slice: bool = True,
             output_dir: str = "",
             design_system: Optional[Dict[str, Any] | str] = None,
+            open_browser: bool = True,
+            wait_for_save: bool = True,
+            timeout_sec: float = 180.0,
+            file_path: str = "",
+            asset_type: str = "Model",
+            display_name: str = "",
+            description: str = "Uploaded via Sharp MCP",
+            insert_into_studio: bool = True,
+            parent_path: Optional[str] = None,
+            studio_id: Optional[str] = None,
             detail: str = "summary",
         ) -> str:
             self.router.ensure_skill_context(["roblox-gui", "roblox-luau-coding"])
@@ -2967,13 +3003,36 @@ class SharpMcpApplication:
                 res = set_credentials(
                     gemini_api_key=gemini_api_key,
                     openrouter_api_key=openrouter_api_key,
+                    roblox_open_cloud_api_key=roblox_open_cloud_api_key,
+                    roblox_creator_id=roblox_creator_id,
                     model_preferences=model_preferences,
+                )
+            elif norm_act in ("keys_prompt_browser", "keys_prompt", "keys_ui"):
+                res = await async_prompt_credentials_in_browser(
+                    timeout_sec=timeout_sec,
+                    open_browser=open_browser,
+                    wait_for_save=wait_for_save,
+                    default_creator_id=roblox_creator_id or "",
                 )
             elif norm_act == "keys_clear":
                 target_prov = "all" if provider in ("auto", "all", "") else provider
                 res = clear_credentials(provider=target_prov)
             elif norm_act == "model_presets":
                 res = {"ok": True, "presets": MODEL_PRESETS}
+            elif norm_act in ("upload_roblox_asset", "upload_asset"):
+                if not file_path.strip():
+                    return compact_json({"ok": False, "error": "file_path is required for action='upload_roblox_asset'."})
+                res = await self.multiplexer.upload_and_insert_roblox_asset(
+                    file_path=file_path,
+                    asset_type=asset_type,
+                    display_name=display_name or None,
+                    description=description,
+                    creator_user_id=roblox_creator_id,
+                    studio_id=studio_id,
+                    insert_into_studio=insert_into_studio,
+                    parent_path=parent_path,
+                    timeout_sec=min(180.0, max(15.0, float(timeout_sec))),
+                )
             elif norm_act == "generate_ui_concept":
                 res = await self.art_creation_engine.generate_ui_concept(
                     screen_name=screen_name,
@@ -3009,7 +3068,7 @@ class SharpMcpApplication:
                         "ok": False,
                         "error": (
                             f"Unknown sharp_ai_studio action '{action}'. "
-                            "Expected keys_status|keys_set|keys_clear|model_presets|generate_ui_concept|generate_image_art."
+                            "Expected keys_status|keys_set|keys_prompt_browser|keys_clear|model_presets|upload_roblox_asset|generate_ui_concept|generate_image_art."
                         ),
                     }
                 )
@@ -3021,7 +3080,9 @@ class SharpMcpApplication:
                 label=f"ai_studio_{norm_act}",
                 source_tool="sharp_ai_studio",
                 summary_keys=(
-                    "ok", "action", "credentials_file", "credentials_file_exists", "providers",
+                    "ok", "action", "credentials_file", "credentials_file_exists", "roblox_creator_id",
+                    "providers", "updated", "cleared", "url", "opened", "saved", "listening", "timed_out",
+                    "upload_mode", "asset_id", "rbxassetid", "inserted_into_studio", "insert_result", "error",
                     "model_preferences", "recommended_presets", "generation_mode", "provider", "model",
                     "raw_image_path", "sliced_result", "design_lint", "ai_generation", "theme_luau",
                 ),

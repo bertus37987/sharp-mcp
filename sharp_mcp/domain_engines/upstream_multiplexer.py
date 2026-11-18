@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 import os
 import re
 import sys
@@ -21,10 +22,12 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import aiohttp
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from ..bridge_broker import BridgeBroker
+from ..credentials_store import get_api_key, get_credentials_status
 
 
 def _resolve_roblox_user_dir() -> Path:
@@ -559,3 +562,350 @@ class UpstreamMultiplexer:
                         return out
         except Exception as exc:
             return {"ok": False, "optional": True, "tool": tool_name, "error": str(exc)}
+
+    @staticmethod
+    def _extract_operation_id(payload: Any) -> Optional[str]:
+        if not isinstance(payload, dict):
+            return None
+        op_id = payload.get("operationId")
+        if isinstance(op_id, str) and op_id.strip():
+            return op_id.strip()
+        path_val = payload.get("path")
+        if isinstance(path_val, str) and path_val.strip():
+            parts = path_val.strip().split("/")
+            if parts[-1]:
+                return parts[-1]
+        return None
+
+    @staticmethod
+    def _extract_asset_id(payload: Any) -> Optional[str]:
+        if not isinstance(payload, dict):
+            return None
+        resp = payload.get("response")
+        if isinstance(resp, dict) and resp.get("assetId"):
+            return str(resp["assetId"]).strip()
+        if payload.get("assetId"):
+            return str(payload["assetId"]).strip()
+        return None
+
+    async def _resolve_creator_user_id(
+        self,
+        *,
+        studio_id: Optional[str],
+        creator_user_id: Optional[str],
+        credentials_path: Optional[str | Path],
+    ) -> Optional[str]:
+        if creator_user_id and str(creator_user_id).strip():
+            return str(creator_user_id).strip()
+        cred_creator = get_credentials_status(credentials_path).get("roblox_creator_id")
+        if cred_creator and str(cred_creator).strip():
+            return str(cred_creator).strip()
+        if not studio_id:
+            return None
+        luau = (
+            'local ok, uid = pcall(function() return game:GetService("StudioService"):GetUserId() end)\n'
+            "if ok and tonumber(uid) and tonumber(uid) > 0 then return tostring(uid) end\n"
+            "if game.CreatorType == Enum.CreatorType.User and game.CreatorId > 0 then\n"
+            "\treturn tostring(game.CreatorId)\n"
+            "end\n"
+            'return ""'
+        )
+        res = await self.call_upstream_studio_mcp(
+            "execute_luau",
+            {"code": luau, "datamodel_type": "Edit", "studio_id": studio_id},
+            timeout_sec=15.0,
+        )
+        if not res.get("ok"):
+            return None
+        raw = res.get("decoded")
+        if raw is None and res.get("content"):
+            raw = str(res["content"][0]).strip()
+        cand = str(raw or "").strip().strip('"')
+        return cand if cand.isdigit() and int(cand) > 0 else None
+
+    async def _upload_via_open_cloud_key(
+        self,
+        *,
+        api_key: str,
+        resolved_file: Path,
+        request_payload: Dict[str, Any],
+        timeout_sec: float,
+    ) -> Dict[str, Any]:
+        url = "https://apis.roblox.com/assets/v1/assets"
+        suffix = resolved_file.suffix.lower()
+        content_type_map = {
+            ".fbx": "model/fbx",
+            ".glb": "model/gltf-binary",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".mp3": "audio/mpeg",
+            ".ogg": "audio/ogg",
+        }
+        file_ctype = content_type_map.get(suffix) or mimetypes.guess_type(resolved_file.name)[0] or "application/octet-stream"
+        form = aiohttp.FormData()
+        form.add_field("request", json.dumps(request_payload), content_type="application/json")
+        file_bytes = resolved_file.read_bytes()
+        form.add_field("fileContent", file_bytes, filename=resolved_file.name, content_type=file_ctype)
+
+        headers = {"x-api-key": api_key}
+        deadline = time.monotonic() + max(10.0, float(timeout_sec))
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=max(10.0, float(timeout_sec)))) as session:
+            async with session.post(url, data=form, headers=headers) as resp:
+                raw_text = await resp.text()
+                try:
+                    decoded = json.loads(raw_text) if raw_text.strip() else {}
+                except json.JSONDecodeError:
+                    decoded = {"raw": raw_text[:600]}
+                if resp.status >= 400:
+                    return {
+                        "ok": False,
+                        "status_code": resp.status,
+                        "error": f"Open Cloud asset upload failed (HTTP {resp.status}).",
+                        "response": decoded,
+                    }
+
+            op_payload = decoded if isinstance(decoded, dict) else {}
+            asset_id = self._extract_asset_id(op_payload)
+            op_id = self._extract_operation_id(op_payload)
+            while not asset_id and not op_payload.get("done") and op_id and time.monotonic() < deadline:
+                await asyncio.sleep(1.0)
+                op_url = f"https://apis.roblox.com/assets/v1/operations/{op_id}"
+                async with session.get(op_url, headers=headers) as poll_resp:
+                    poll_text = await poll_resp.text()
+                    try:
+                        poll_dec = json.loads(poll_text) if poll_text.strip() else {}
+                    except json.JSONDecodeError:
+                        poll_dec = {"raw": poll_text[:600]}
+                    if poll_resp.status >= 400:
+                        return {
+                            "ok": False,
+                            "status_code": poll_resp.status,
+                            "operation_id": op_id,
+                            "error": f"Open Cloud operation poll failed (HTTP {poll_resp.status}).",
+                            "response": poll_dec,
+                        }
+                    op_payload = poll_dec if isinstance(poll_dec, dict) else {}
+                    asset_id = self._extract_asset_id(op_payload)
+
+        if op_payload.get("error"):
+            return {
+                "ok": False,
+                "operation_id": op_id,
+                "error": f"Open Cloud operation returned error: {op_payload.get('error')}",
+                "response": op_payload,
+            }
+        if not asset_id:
+            return {
+                "ok": False,
+                "operation_id": op_id,
+                "error": "Upload accepted but operation did not complete with an assetId before timeout.",
+                "response": op_payload,
+            }
+        return {
+            "ok": True,
+            "upload_mode": "open_cloud_api_key",
+            "asset_id": asset_id,
+            "operation_id": op_id,
+            "operation": op_payload,
+        }
+
+    async def _upload_via_studio_mcp(
+        self,
+        *,
+        studio_id: str,
+        resolved_file: Path,
+        request_payload: Dict[str, Any],
+        timeout_sec: float,
+    ) -> Dict[str, Any]:
+        post_res = await self.call_upstream_studio_mcp(
+            "open_cloud_invoke",
+            {
+                "studio_id": studio_id,
+                "method": "POST",
+                "endpoint": "/assets/v1/assets",
+                "scopes": ["asset:read", "asset:write"],
+                "body": json.dumps(request_payload),
+                "files": [{"name": "fileContent", "path": str(resolved_file)}],
+            },
+            timeout_sec=max(15.0, float(timeout_sec)),
+        )
+        if not post_res.get("ok"):
+            err_msg = post_res.get("error") or (
+                post_res.get("content")[0] if post_res.get("content") else "open_cloud_invoke POST failed."
+            )
+            return {"ok": False, "upload_mode": "studio_mcp_open_cloud_invoke", "error": err_msg, "upstream": post_res}
+
+        op_payload = post_res.get("decoded")
+        if not isinstance(op_payload, dict) and post_res.get("content"):
+            try:
+                cand = json.loads(post_res["content"][0])
+                if isinstance(cand, dict):
+                    op_payload = cand
+            except Exception:
+                op_payload = {}
+        op_payload = op_payload if isinstance(op_payload, dict) else {}
+
+        asset_id = self._extract_asset_id(op_payload)
+        op_id = self._extract_operation_id(op_payload)
+        deadline = time.monotonic() + max(10.0, float(timeout_sec))
+        while not asset_id and not op_payload.get("done") and op_id and time.monotonic() < deadline:
+            await asyncio.sleep(1.0)
+            poll_res = await self.call_upstream_studio_mcp(
+                "open_cloud_invoke",
+                {
+                    "studio_id": studio_id,
+                    "method": "GET",
+                    "endpoint": f"/assets/v1/operations/{op_id}",
+                    "scopes": ["asset:read"],
+                },
+                timeout_sec=15.0,
+            )
+            if not poll_res.get("ok"):
+                err_msg = poll_res.get("error") or (
+                    poll_res.get("content")[0] if poll_res.get("content") else "open_cloud_invoke operation poll failed."
+                )
+                return {
+                    "ok": False,
+                    "upload_mode": "studio_mcp_open_cloud_invoke",
+                    "operation_id": op_id,
+                    "error": err_msg,
+                }
+            poll_dec = poll_res.get("decoded")
+            if isinstance(poll_dec, dict):
+                op_payload = poll_dec
+                asset_id = self._extract_asset_id(op_payload)
+
+        if op_payload.get("error"):
+            return {
+                "ok": False,
+                "upload_mode": "studio_mcp_open_cloud_invoke",
+                "operation_id": op_id,
+                "error": f"Studio MCP Open Cloud operation returned error: {op_payload.get('error')}",
+                "operation": op_payload,
+            }
+        if not asset_id:
+            return {
+                "ok": False,
+                "upload_mode": "studio_mcp_open_cloud_invoke",
+                "operation_id": op_id,
+                "error": "Studio MCP Open Cloud upload did not return an assetId.",
+                "operation": op_payload,
+            }
+        return {
+            "ok": True,
+            "upload_mode": "studio_mcp_open_cloud_invoke",
+            "asset_id": asset_id,
+            "operation_id": op_id,
+            "operation": op_payload,
+        }
+
+    async def upload_and_insert_roblox_asset(
+        self,
+        *,
+        file_path: str | Path,
+        asset_type: str = "Model",
+        display_name: Optional[str] = None,
+        description: str = "Uploaded via Sharp MCP",
+        creator_user_id: Optional[str] = None,
+        studio_id: Optional[str] = None,
+        insert_into_studio: bool = True,
+        parent_path: Optional[str] = None,
+        credentials_path: Optional[str | Path] = None,
+        timeout_sec: float = 60.0,
+    ) -> Dict[str, Any]:
+        """Upload a local 3D/2D file to Roblox Open Cloud and optionally insert it into Studio."""
+        resolved_file = Path(file_path).expanduser().resolve()
+        if not resolved_file.is_file():
+            return {"ok": False, "error": f"Asset file does not exist: {resolved_file}"}
+
+        eff_name = (display_name or "").strip() or resolved_file.stem
+        eff_type = (asset_type or "Model").strip() or "Model"
+        eff_studio_id = (studio_id or "").strip() or await self.resolve_active_studio_id(studio_id)
+        eff_creator_id = await self._resolve_creator_user_id(
+            studio_id=eff_studio_id,
+            creator_user_id=creator_user_id,
+            credentials_path=credentials_path,
+        )
+        if not eff_creator_id:
+            return {
+                "ok": False,
+                "error": (
+                    "Could not resolve Roblox creator_user_id. Pass creator_user_id, save it via "
+                    "sharp_ai_studio(action='keys_prompt_browser'), or keep Roblox Studio open while logged in."
+                ),
+            }
+
+        request_payload = {
+            "assetType": eff_type,
+            "displayName": eff_name,
+            "description": description or "Uploaded via Sharp MCP",
+            "creationContext": {"creator": {"userId": str(eff_creator_id)}},
+        }
+
+        oc_key = get_api_key("roblox_open_cloud", credentials_path=credentials_path)
+        if oc_key:
+            upload_res = await self._upload_via_open_cloud_key(
+                api_key=oc_key,
+                resolved_file=resolved_file,
+                request_payload=request_payload,
+                timeout_sec=timeout_sec,
+            )
+        else:
+            if not eff_studio_id:
+                return {
+                    "ok": False,
+                    "error": (
+                        "Neither ROBLOX_OPEN_CLOUD_API_KEY is configured nor an active Roblox Studio instance was found. "
+                        "Use sharp_ai_studio(action='keys_prompt_browser') to enter a Roblox Open Cloud API key or open Studio."
+                    ),
+                }
+            upload_res = await self._upload_via_studio_mcp(
+                studio_id=eff_studio_id,
+                resolved_file=resolved_file,
+                request_payload=request_payload,
+                timeout_sec=timeout_sec,
+            )
+
+        if not upload_res.get("ok"):
+            return {
+                **upload_res,
+                "file_path": str(resolved_file),
+                "display_name": eff_name,
+                "asset_type": eff_type,
+                "creator_user_id": eff_creator_id,
+                "studio_id": eff_studio_id,
+            }
+
+        asset_id = str(upload_res["asset_id"])
+        inserted_into_studio = False
+        insert_res: Optional[Dict[str, Any]] = None
+        if insert_into_studio and eff_studio_id:
+            insert_args: Dict[str, Any] = {
+                "assetId": asset_id,
+                "assetName": eff_name,
+                "assetType": eff_type,
+                "studio_id": eff_studio_id,
+            }
+            if parent_path and parent_path.strip():
+                insert_args["parentPath"] = parent_path.strip()
+            insert_res = await self.call_upstream_studio_mcp(
+                "insert_asset",
+                insert_args,
+                timeout_sec=max(15.0, float(timeout_sec)),
+            )
+            inserted_into_studio = bool(insert_res.get("ok"))
+
+        return {
+            "ok": True,
+            "upload_mode": upload_res.get("upload_mode"),
+            "asset_id": asset_id,
+            "rbxassetid": f"rbxassetid://{asset_id}",
+            "display_name": eff_name,
+            "asset_type": eff_type,
+            "creator_user_id": eff_creator_id,
+            "studio_id": eff_studio_id,
+            "operation_id": upload_res.get("operation_id"),
+            "inserted_into_studio": inserted_into_studio,
+            "insert_result": insert_res,
+        }

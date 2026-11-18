@@ -31,6 +31,7 @@ from .credentials_store import (
     SUPPORTED_PROVIDERS,
     clear_credentials,
     get_credentials_status,
+    prompt_credentials_in_browser,
     set_credentials,
 )
 from .plugin_installer import get_plugin_install_status, install_studio_plugin
@@ -462,12 +463,14 @@ def _cmd_keys(args: argparse.Namespace) -> int:
     if sub == "status":
         res = get_credentials_status()
         provs = res.get("providers", {})
-        lines = [f"Sharp AI Credentials Store ({res.get('credentials_file')}):"]
+        lines = [f"Sharp AI & Open Cloud Credentials Store ({res.get('credentials_file')}):"]
         for pname, pstat in provs.items():
             lines.append(
                 f"  - {pname}: configured={pstat.get('configured')} source={pstat.get('source')} "
                 f"key={pstat.get('masked_preview')}"
             )
+        if res.get("roblox_creator_id"):
+            lines.append(f"  roblox_creator_id: {res.get('roblox_creator_id')}")
         prefs = res.get("model_preferences") or {}
         if prefs:
             lines.append(f"  model_preferences: {json.dumps(prefs)}")
@@ -486,10 +489,24 @@ def _cmd_keys(args: argparse.Namespace) -> int:
         res = set_credentials(
             gemini_api_key=api_key if args.provider == "gemini" else None,
             openrouter_api_key=api_key if args.provider == "openrouter" else None,
+            roblox_open_cloud_api_key=api_key if args.provider == "roblox_open_cloud" else None,
+            roblox_creator_id=getattr(args, "creator_id", None),
             model_preferences=prefs,
         )
         lines = [
-            f"Sharp AI Credentials Set ({args.provider}): updated={res.get('updated')} file={res.get('credentials_file')}"
+            f"Sharp Credentials Set ({args.provider}): updated={res.get('updated')} file={res.get('credentials_file')}"
+        ]
+        _emit_output(res, as_json=args.json, summary_lines=lines)
+        return 0 if res.get("ok") else 1
+    if sub == "prompt":
+        res = prompt_credentials_in_browser(
+            timeout_sec=float(getattr(args, "timeout", 180.0)),
+            open_browser=not bool(getattr(args, "no_browser", False)),
+            wait_for_save=True,
+            default_creator_id=str(getattr(args, "creator_id", None) or ""),
+        )
+        lines = [
+            f"Sharp Browser Credentials Prompt: saved={res.get('saved')} cancelled={res.get('cancelled')} url={res.get('url')}"
         ]
         _emit_output(res, as_json=args.json, summary_lines=lines)
         return 0 if res.get("ok") else 1
@@ -498,7 +515,7 @@ def _cmd_keys(args: argparse.Namespace) -> int:
         _emit_output(
             res,
             as_json=args.json,
-            summary_lines=[f"Sharp AI Credentials Cleared: {res.get('cleared')}"],
+            summary_lines=[f"Sharp Credentials Cleared: {res.get('cleared')}"],
         )
         return 0 if res.get("ok") else 1
     if sub == "models":
@@ -622,23 +639,31 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_keys = subparsers.add_parser(
         "keys",
-        help="Manage external OpenRouter & Gemini API keys securely outside repositories.",
+        help="Manage Gemini, OpenRouter & Roblox Open Cloud API keys securely outside repositories.",
     )
     keys_sub = p_keys.add_subparsers(dest="keys_action")
     p_keys.set_defaults(keys_action="status", json=False, handler=_cmd_keys)
 
-    p_keys_status = keys_sub.add_parser("status", help="Show masked status of OpenRouter & Gemini API keys.")
+    p_keys_status = keys_sub.add_parser("status", help="Show masked status of Gemini, OpenRouter & Roblox Open Cloud API keys.")
     p_keys_status.add_argument("--json", action="store_true", help="Emit JSON output.")
     p_keys_status.set_defaults(keys_action="status", handler=_cmd_keys)
 
-    p_keys_set = keys_sub.add_parser("set", help="Store an OpenRouter or Gemini API key / default model.")
+    p_keys_set = keys_sub.add_parser("set", help="Store a Gemini, OpenRouter, or Roblox Open Cloud API key / default model.")
     p_keys_set.add_argument("--provider", required=True, choices=SUPPORTED_PROVIDERS)
     p_keys_set.add_argument("--api-key", default=None, help="API key (or omit and pass --stdin / SHARP_SET_API_KEY).")
     p_keys_set.add_argument("--stdin", action="store_true", help="Read API key from stdin cleanly.")
+    p_keys_set.add_argument("--creator-id", default=None, help="Optional Roblox Creator User ID for Open Cloud uploads.")
     p_keys_set.add_argument("--model", default=None, help="Override preferred model ID for a role (e.g. google/gemini-2.5-flash).")
     p_keys_set.add_argument("--role", default="vision", choices=("video", "audio", "vision", "gui_code", "image_gen"), help="Model preference role when --model is supplied.")
     p_keys_set.add_argument("--json", action="store_true", help="Emit JSON output.")
     p_keys_set.set_defaults(keys_action="set", handler=_cmd_keys)
+
+    p_keys_prompt = keys_sub.add_parser("prompt", help="Open a localhost browser form so the user can enter & save API keys easily.")
+    p_keys_prompt.add_argument("--no-browser", action="store_true", help="Print/return URL without automatically launching browser.")
+    p_keys_prompt.add_argument("--timeout", type=float, default=180.0, help="Seconds to wait for Save click (default: 180).")
+    p_keys_prompt.add_argument("--creator-id", default=None, help="Pre-fill optional Roblox Creator User ID.")
+    p_keys_prompt.add_argument("--json", action="store_true", help="Emit JSON output.")
+    p_keys_prompt.set_defaults(keys_action="prompt", handler=_cmd_keys)
 
     p_keys_clear = keys_sub.add_parser("clear", help="Remove stored credentials for a provider or all providers.")
     p_keys_clear.add_argument("--provider", default="all", choices=("all", *SUPPORTED_PROVIDERS))

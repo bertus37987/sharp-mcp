@@ -303,7 +303,7 @@ TOOL_EFFECT_AUDIT: Dict[str, Dict[str, Any]] = {
         open_world=True,
     ),
     "sharp_ai_studio": _audit_entry(
-        title="Manage OpenRouter & Gemini API Keys, Vision Models & Concept/Image Gen",
+        title="Manage API Keys (Browser UI), Roblox Open Cloud Asset Uploads, Vision Models & Art Gen",
         mutates_place=False,
         writes_fs=True,
         triggers_undo=False,
