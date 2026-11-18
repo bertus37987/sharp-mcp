@@ -678,6 +678,7 @@ class GuiDomainEngine:
             "Every persistent ScreenGui must be a direct child of StarterGui with ResetOnSpawn=false, ZIndexBehavior=Enum.ZIndexBehavior.Sibling, and explicit ScreenInsets (CoreUISafeInsets for HUD/modals).",
             "Call UIKit.BindResponsiveScale(gui, 0.86, 1.08) and ensure all interactive buttons meet >= 44x44px (>= 52px recommended).",
             "Never hardcode flat dark-navy/blue boxes; read colors/fonts/radii from UIKit.Tokens and compose UIKit primitives.",
+            "NO DEAD UI: Wire every HUD widget and button to live runtime signals (Humanoid.HealthChanged for HP, RenderStepped/RemoteEvent sync for charge/cooldown/reload/ammo, Activated/UserInputService for buttons), and grant player weapons via StarterPack Tool + Humanoid:EquipTool.",
         ]
 
         if norm == "all":

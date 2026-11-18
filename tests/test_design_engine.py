@@ -763,6 +763,12 @@ class DesignEngineTests(unittest.TestCase):
         self.assertTrue(all_guide["ok"])
         self.assertEqual(set(all_guide["blueprints"].keys()), expected_paradigms)
         self.assertEqual(all_guide["design_tokens_summary"]["texture_style"], ds["texture_style"])
+        rules_blob = "\n".join(all_guide["rules"])
+        self.assertIn("NO DEAD UI", rules_blob)
+        self.assertIn("HealthChanged", rules_blob)
+        self.assertIn("StarterPack", rules_blob)
+        skill_md = (Path(self.gui_engine.skills_dir) / "roblox-gui" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("NO-DEAD-UI", skill_md)
 
         bad_guide = self.gui_engine.get_custom_ui_authoring_guide(paradigm="nonexistent_paradigm")
         self.assertFalse(bad_guide["ok"])

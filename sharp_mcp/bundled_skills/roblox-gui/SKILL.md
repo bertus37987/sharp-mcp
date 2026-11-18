@@ -106,6 +106,7 @@ When generating custom UI frames, tintable buttons, loading backdrops, or arbitr
 5. **`CanvasGroup` Budget & `Sibling` Requirement**: `CanvasGroup` REQUIRES ancestor `ZIndexBehavior = Enum.ZIndexBehavior.Sibling`, caps hardware buffers at **2048x2048** (**1024x1024** low-end), and **renders blank** if client memory budget is exceeded — reserve it for transient fades, never per scrolling list card.
 6. **Touch Target Minimum (`>= 44x44px` physical)**: When applying `UIScale` on compact phones (`0.86..0.92`), design interactive controls `>= 52px` (`52 * 0.86 = 44.7px >= 44px`) and avoid bottom-left `DynamicThumbstick` / bottom-right `TouchJumpButton`.
 7. **Legacy `IgnoreGuiInset` & Safe Areas**: `IgnoreGuiInset = true` maps to `DeviceSafeInsets` (NOT `None`) and is not saved; always set `ScreenGui.ScreenInsets` explicitly.
+8. **NO DEAD UI — Live Runtime Reactivity & Player Equipment (`NO-DEAD-UI`)**: Never leave static mockup UI bars or unequipped weapon models only on showcase rigs. Every HUD element MUST be wired to live runtime signals (`Humanoid.HealthChanged` for HP bars, `RunService.RenderStepped` + `RemoteEvent` state sync for charge/cooldown/reload/ammo, `Activated`/`UserInputService` for buttons/hotkeys), and requested playable weapons/items MUST be placed in `StarterPack` (`Tool` + `Humanoid:EquipTool`) so players receive and hold them on spawn.
 
 ---
 
