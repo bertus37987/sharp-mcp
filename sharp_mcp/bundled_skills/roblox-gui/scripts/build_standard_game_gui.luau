@@ -493,7 +493,7 @@ local addCurrencyBtn = UIKit.CreateButton({
 local objectiveCard = UIKit.CreatePanel({
 	Name = "ObjectiveTracker",
 	Parent = mainHudGui,
-	Size = UDim2.fromOffset(250, 86),
+	Size = UDim2.fromOffset(276, 86),
 	Position = UDim2.new(1, -10, 0, 72),
 	AnchorPoint = Vector2.new(1, 0),
 })
@@ -502,7 +502,7 @@ local objHeading = makeLabel(
 	objectiveCard,
 	"QuestHeading",
 	contentObjectiveTitle,
-	UDim2.new(1, -64, 0, 20),
+	UDim2.new(1, -76, 0, 20),
 	UDim2.fromOffset(12, 8),
 	11,
 	UIKit.Tokens.Fonts.Title,
@@ -513,7 +513,7 @@ local objBody = makeLabel(
 	objectiveCard,
 	"QuestBody",
 	contentObjectiveText,
-	UDim2.new(1, -64, 0, 42),
+	UDim2.new(1, -76, 0, 44),
 	UDim2.fromOffset(12, 30),
 	13,
 	UIKit.Tokens.Fonts.Body,
@@ -900,7 +900,7 @@ shopScroll.CanvasSize = UDim2.new()
 shopScroll.Parent = shopBody
 
 local shopGrid = Instance.new("UIGridLayout")
-shopGrid.CellSize = UDim2.fromOffset(162, 168)
+shopGrid.CellSize = UDim2.fromOffset(172, 236)
 shopGrid.CellPadding = UDim2.fromOffset(10, 10)
 shopGrid.SortOrder = Enum.SortOrder.LayoutOrder
 shopGrid.Parent = shopScroll
@@ -916,7 +916,7 @@ for idx, item in ipairs(shopCatalog) do
 	local card = UIKit.CreatePanel({
 		Name = "ShopCard_" .. item.Id,
 		Parent = shopScroll,
-		Size = UDim2.fromOffset(162, 168),
+		Size = UDim2.fromOffset(172, 236),
 		BackgroundColor3 = UIKit.Tokens.Colors.BgCard,
 		StrokeColor = rarityColor,
 		StrokeThickness = 2.5,
@@ -949,8 +949,8 @@ for idx, item in ipairs(shopCatalog) do
 		})
 	end
 
-	local icon = UIKit.CreateBadgeIcon(card, item.Sprite, item.Glyph, rarityColor, 44)
-	icon.Position = UDim2.new(0.5, 0, 0, 12)
+	local icon = UIKit.CreateBadgeIcon(card, item.Sprite, item.Glyph, rarityColor, 56)
+	icon.Position = UDim2.new(0.5, 0, 0, 18)
 	icon.AnchorPoint = Vector2.new(0.5, 0)
 	icon.ZIndex = 3
 
@@ -958,8 +958,8 @@ for idx, item in ipairs(shopCatalog) do
 		card,
 		"ItemTitle",
 		item.Name,
-		UDim2.new(1, -12, 0, 22),
-		UDim2.fromOffset(6, 62),
+		UDim2.new(1, -12, 0, 24),
+		UDim2.fromOffset(6, 86),
 		14,
 		UIKit.Tokens.Fonts.Heading,
 		UIKit.Tokens.Colors.TextPrimary,
@@ -973,8 +973,8 @@ for idx, item in ipairs(shopCatalog) do
 		Parent = card,
 		Text = string.upper(item.Rarity),
 		Color = rarityColor,
-		Size = UDim2.fromOffset(86, 18),
-		Position = UDim2.new(0.5, 0, 0, 86),
+		Size = UDim2.fromOffset(96, 22),
+		Position = UDim2.new(0.5, 0, 0, 118),
 		AnchorPoint = Vector2.new(0.5, 0),
 		Rotation = UIKit.Tokens.Motifs.BadgeRotation,
 		TextSize = 10,
@@ -985,8 +985,8 @@ for idx, item in ipairs(shopCatalog) do
 		Name = "BuyBtn",
 		Parent = card,
 		Text = string.format("%d G", item.Price),
-		Size = UDim2.new(1, -16, 0, 52),
-		Position = UDim2.new(0.5, 0, 1, -8),
+		Size = UDim2.new(1, -18, 0, 52),
+		Position = UDim2.new(0.5, 0, 1, -10),
 		AnchorPoint = Vector2.new(0.5, 1),
 		Variant = "Success",
 		Use9Slice = true,

@@ -1050,6 +1050,55 @@ class SharpMcpApplication:
                 )
                 return compact_json({"ok": True, "action": act, **exp_res})
 
+            if act in ("playback_test", "compile_playback_test", "play"):
+                luau = self.rig_anim_engine.compile_playback_test_luau(
+                    rig_path=rig_path,
+                    clip_name=clip_name,
+                    play_now=True,
+                )
+                exec_res = await self._dispatch_studio_job(
+                    tool_name="sharp_rig_and_animation",
+                    compiled_luau=luau,
+                    kind="write",
+                    execute_in_studio=execute_in_studio,
+                    studio_id=studio_id,
+                    invoke_upstream_studiomcp_if_plugin_offline=invoke_upstream_studiomcp_if_plugin_offline,
+                    expected_place_id=expected_place_id,
+                    expected_session_nonce=expected_session_nonce,
+                )
+                has_live = "bridgeResponse" in exec_res or "upstreamResponse" in exec_res
+                return build_mcp_result(
+                    {"ok": True, "action": act, "clip_name": clip_name, "rig_path": rig_path, **exec_res},
+                    untrusted_source="live_rig_playback" if has_live else None,
+                )
+
+            if act in ("generate_preset", "generate_preset_clip"):
+                target_preset = "idle_breathing" if clip_name == "SharpAnimation" else clip_name
+                try:
+                    preset_res = self.rig_anim_engine.generate_procedural_preset(preset_name=target_preset)
+                    return compact_json({"ok": True, "action": act, **preset_res})
+                except ValueError as exc:
+                    return compact_json({"ok": False, "action": act, "error": str(exc)})
+
+            if act == "analyze_clip":
+                try:
+                    analysis = self.rig_anim_engine.analyze_clip(clips_data if isinstance(clips_data, dict) else default_clips)
+                    return compact_json({"ok": True, "action": act, **analysis})
+                except ValueError as exc:
+                    return compact_json({"ok": False, "action": act, "error": str(exc)})
+
+            if act not in ("compile_animation", "compile", "build"):
+                return compact_json(
+                    {
+                        "ok": False,
+                        "action": act,
+                        "error": (
+                            f"Unknown action '{action}'. Valid: compile_animation, probe_rig, "
+                            "playback_test, generate_preset, analyze_clip, export_rbxmx"
+                        ),
+                    }
+                )
+
             luau = self.rig_anim_engine.compile_animation_from_clips_luau(
                 clips_data=default_clips,
                 rig_path=rig_path,

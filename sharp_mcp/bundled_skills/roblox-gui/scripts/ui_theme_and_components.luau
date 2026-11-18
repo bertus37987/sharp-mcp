@@ -1144,20 +1144,56 @@ function UIKit.CreateColorSequenceFromRecipe(recipeOrKey: any, fallbackBase: Col
 	return ColorSequence.new(keypoints), rot
 end
 
-function UIKit.AttachTextStroke(label: GuiObject, color: Color3?, thickness: number?, transparency: number?): UIStroke
+local function srgbToLinear(c: number): number
+	if c <= 0.04045 then
+		return c / 12.92
+	end
+	return ((c + 0.055) / 1.055) ^ 2.4
+end
+
+function UIKit.RelativeLuminance(col: Color3): number
+	return 0.2126 * srgbToLinear(col.R)
+		+ 0.7152 * srgbToLinear(col.G)
+		+ 0.0722 * srgbToLinear(col.B)
+end
+
+function UIKit.AttachTextStroke(
+	label: GuiObject,
+	color: Color3?,
+	thickness: number?,
+	transparency: number?,
+	textColorOverride: Color3?
+): UIStroke
+	local resolvedColor = color or UIKit.Tokens.Colors.OutlineInk
+	local resolvedThickness = thickness or UIKit.Tokens.Strokes.Text
+	local resolvedTransparency = transparency or 0.1
+
+	local effTextColor: Color3? = textColorOverride
+	if not effTextColor and (label:IsA("TextLabel") or label:IsA("TextButton") or label:IsA("TextBox")) then
+		effTextColor = (label :: any).TextColor3
+	end
+	if effTextColor and typeof(effTextColor) == "Color3" then
+		if UIKit.RelativeLuminance(effTextColor) < 0.35 and UIKit.RelativeLuminance(resolvedColor) < 0.35 then
+			-- Dark text on bright pills/buttons blurs into dark blobs with thick dark strokes; switch to a crisp subtle light rim.
+			resolvedColor = Color3.fromRGB(255, 255, 255)
+			resolvedThickness = math.min(1.0, resolvedThickness * 0.45)
+			resolvedTransparency = math.max(0.55, resolvedTransparency)
+		end
+	end
+
 	local existing = label:FindFirstChild("TextStroke")
 	if existing and existing:IsA("UIStroke") then
-		existing.Color = color or UIKit.Tokens.Colors.OutlineInk
-		existing.Thickness = thickness or UIKit.Tokens.Strokes.Text
-		existing.Transparency = transparency or 0.1
+		existing.Color = resolvedColor
+		existing.Thickness = resolvedThickness
+		existing.Transparency = resolvedTransparency
 		return existing
 	end
 	local stroke = Instance.new("UIStroke")
 	stroke.Name = "TextStroke"
 	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
-	stroke.Color = color or UIKit.Tokens.Colors.OutlineInk
-	stroke.Thickness = thickness or UIKit.Tokens.Strokes.Text
-	stroke.Transparency = transparency or 0.1
+	stroke.Color = resolvedColor
+	stroke.Thickness = resolvedThickness
+	stroke.Transparency = resolvedTransparency
 	stroke.LineJoinMode = UIKit.Tokens.Strokes.LineJoin
 	stroke.Parent = label
 	return stroke
@@ -1241,17 +1277,8 @@ function UIKit.AttachStackedStrokes(target: GuiObject, opts: StackedStrokeOption
 	return outer, inset
 end
 
-local function srgbToLinear(c: number): number
-	if c <= 0.04045 then
-		return c / 12.92
-	end
-	return ((c + 0.055) / 1.055) ^ 2.4
-end
-
 function UIKit.PickReadableTextColor(bgColor: Color3): Color3
-	local lum = 0.2126 * srgbToLinear(bgColor.R)
-		+ 0.7152 * srgbToLinear(bgColor.G)
-		+ 0.0722 * srgbToLinear(bgColor.B)
+	local lum = UIKit.RelativeLuminance(bgColor)
 	local lightTxt = Color3.fromRGB(255, 253, 250)
 	local darkTxt = Color3.fromRGB(22, 16, 30)
 	local cLight = 1.05 / (lum + 0.05)
@@ -2091,7 +2118,7 @@ function UIKit.CreateButton(opts: ButtonOptions): GuiButton
 		InnerTransparency = 0.45,
 		CornerRadius = UIKit.Tokens.Radii.Button,
 	})
-	UIKit.AttachTextStroke(btn, UIKit.Tokens.Colors.OutlineInk, UIKit.Tokens.Strokes.Text * 0.85, 0.15)
+	UIKit.AttachTextStroke(btn, UIKit.Tokens.Colors.OutlineInk, UIKit.Tokens.Strokes.Text * 0.85, 0.15, textColor)
 
 	local grad = Instance.new("UIGradient")
 	grad.Name = "Highlight"

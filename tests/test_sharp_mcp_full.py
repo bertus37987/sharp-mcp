@@ -984,6 +984,73 @@ class TestUpstreamMultiplexerCriticalUnwrapAndCliServe(unittest.IsolatedAsyncioT
             self.assertEqual(_snapshot_tree_hashes(expected_dest), before_hashes)
         self.assertEqual(_snapshot_tree_hashes(default_game_dir), before_hashes)
 
+    def test_sharp_rig_and_animation_playback_preset_analyze_and_unknown_action(self) -> None:
+        from sharp_mcp.mcp_server import SharpMcpApplication
+
+        with tempfile.TemporaryDirectory(prefix="sharp_anim_dispatch_") as td:
+            app = SharpMcpApplication(
+                project_dir=td,
+                bridge_port=0,
+                start_bridge=False,
+                profile="full",
+            )
+            rig_tool = app.mcp._tool_manager._tools["sharp_rig_and_animation"].fn
+
+            play_res = json.loads(
+                asyncio.run(
+                    rig_tool(
+                        action="playback_test",
+                        rig_path="Workspace.TestWarrior",
+                        clip_name="Sword_Slash_Single",
+                        execute_in_studio=False,
+                    )
+                )
+            )
+            self.assertTrue(play_res["ok"])
+            self.assertEqual(play_res["action"], "playback_test")
+            self.assertEqual(play_res["clip_name"], "Sword_Slash_Single")
+            self.assertEqual(play_res["rig_path"], "Workspace.TestWarrior")
+            self.assertIn("anim:LoadAnimation(animationObj)", play_res["compiledLuau"])
+            self.assertIn("getOrLoadCachedTrack", play_res["compiledLuau"])
+            self.assertNotIn("SharpAnimClipBuilder", play_res["compiledLuau"])
+
+            preset_res = json.loads(
+                asyncio.run(
+                    rig_tool(
+                        action="generate_preset",
+                        clip_name="sword_slash_single",
+                        execute_in_studio=False,
+                    )
+                )
+            )
+            self.assertTrue(preset_res["ok"])
+            self.assertEqual(preset_res["name"], "Sword_Slash_Single")
+            self.assertEqual(len(preset_res["frames"]), 17)
+
+            analyze_res = json.loads(
+                asyncio.run(
+                    rig_tool(
+                        action="analyze_clip",
+                        clips_data=preset_res,
+                        execute_in_studio=False,
+                    )
+                )
+            )
+            self.assertTrue(analyze_res["ok"])
+            self.assertEqual(analyze_res["quality_score"], 100)
+
+            bad_res = json.loads(
+                asyncio.run(
+                    rig_tool(
+                        action="nonexistent_action_xyz",
+                        execute_in_studio=False,
+                    )
+                )
+            )
+            self.assertFalse(bad_res["ok"])
+            self.assertEqual(bad_res["action"], "nonexistent_action_xyz")
+            self.assertIn("Unknown action", bad_res["error"])
+
 
 class TestPackagingCliAndRegistration(unittest.TestCase):
     def test_node_wrapper_and_cli_commands(self) -> None:
