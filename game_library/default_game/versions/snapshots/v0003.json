@@ -1,0 +1,568 @@
+{
+  "version": 3,
+  "version_tag": "v0003",
+  "snapshot_id": "v0003_0db62b",
+  "timestamp": "2026-11-18T17:41:25Z",
+  "tool_name": "sharp_rig_and_animation",
+  "target_domain": "animation",
+  "action_summary": "Compiled KeyframeSequence 'SharpAnimation' for Workspace.TestWarrior",
+  "parameters": {},
+  "result_summary": {},
+  "luau_sha256_prefix": "4953eb0e3842c44d",
+  "luau_source": "--!strict\nlocal ChangeHistoryService = game:GetService(\"ChangeHistoryService\")\nlocal HttpService = game:GetService(\"HttpService\")\nlocal ReplicatedStorage = game:GetService(\"ReplicatedStorage\")\nlocal ServerStorage = game:GetService(\"ServerStorage\")\n\nlocal TARGET_RIG_PATH = \"Workspace.TestWarrior\"\nlocal STAGE_ANIMSAVES = true\n\nlocal activePluginRec = ChangeHistoryService:GetAttribute(\"__SharpActiveRecordingId\")\nlocal recId = if activePluginRec then nil else ChangeHistoryService:TryBeginRecording(\"SharpRigAnimationCompile\", \"Sharp MCP: Compile Animation Clip\")\nlocal ok, resOrErr = xpcall(function()\n\tlocal animSaves = ServerStorage:FindFirstChild(\"RBX_ANIMSAVES\")\n\tif STAGE_ANIMSAVES and not animSaves then\n\t\tanimSaves = Instance.new(\"Model\")\n\t\tanimSaves.Name = \"RBX_ANIMSAVES\"\n\t\tanimSaves.Parent = ServerStorage\n\tend\n\n\tlocal createdClips = {}\n\tdo\n\t\tlocal builderOut = (function()\n--!strict\n-- Generated KeyframeSequence builder for Crossbow_Hold\nlocal ReplicatedStorage = game:GetService(\"ReplicatedStorage\")\nlocal folder = ReplicatedStorage:FindFirstChild(\"Animations\") or Instance.new(\"Folder\")\nfolder.Name = \"Animations\"\nfolder.Parent = ReplicatedStorage\nlocal prev = folder:FindFirstChild(\"Crossbow_Hold\")\nif prev then prev:Destroy() end\n\nlocal ROOT_NAME = \"HumanoidRootPart\"\nlocal PARENTS = {[\"LowerTorso\"] = \"HumanoidRootPart\", [\"UpperTorso\"] = \"LowerTorso\", [\"Head\"] = \"UpperTorso\", [\"LeftUpperArm\"] = \"UpperTorso\", [\"LeftLowerArm\"] = \"LeftUpperArm\", [\"LeftHand\"] = \"LeftLowerArm\", [\"RightUpperArm\"] = \"UpperTorso\", [\"RightLowerArm\"] = \"RightUpperArm\", [\"RightHand\"] = \"RightLowerArm\", [\"LeftUpperLeg\"] = \"LowerTorso\", [\"LeftLowerLeg\"] = \"LeftUpperLeg\", [\"LeftFoot\"] = \"LeftLowerLeg\", [\"RightUpperLeg\"] = \"LowerTorso\", [\"RightLowerLeg\"] = \"RightUpperLeg\", [\"RightFoot\"] = \"RightLowerLeg\"}\nlocal FRAMES = {\n\t{t=0, poses={[\"Head\"] = CFrame.new(0,0,0,0.978148,0,0.207912,0,1,0,-0.207912,0,0.978148), [\"LeftHand\"] = CFrame.new(0,0,0,1,0,0,0,1,0,0,0,1), [\"LeftLowerArm\"] = CFrame.new(0,0,0,0.984808,0.173648,0,-0.129046,0.731855,-0.669131,-0.116193,0.658965,0.743145), [\"LeftUpperArm\"] = CFrame.new(0,0,0,0.796922,-0.228514,0.559193,0.601917,0.378678,-0.703064,-0.051094,0.896875,0.439323), [\"RightHand\"] = CFrame.new(0,0,0,0.995134,-0.069587,-0.069756,0.069756,0.997564,0,0.069587,-0.004866,0.997564), [\"RightLowerArm\"] = CFrame.new(0,0,0,1,0,0,0,0.927184,-0.374607,0,0.374607,0.927184), [\"RightUpperArm\"] = CFrame.new(0,0,0,0.992099,0.104274,0.069756,0.025166,0.379315,-0.924925,-0.122905,0.919373,0.373694), [\"UpperTorso\"] = CFrame.new(0,0,0,0.978148,0,-0.207912,0,1,0,0.207912,0,0.978148)}, markers={}},\n\t{t=0.5, poses={[\"Head\"] = CFrame.new(0,0,0,0.978148,0,0.207912,0,1,0,-0.207912,0,0.978148), [\"LeftHand\"] = CFrame.new(0,0,0,1,0,0,0,1,0,0,0,1), [\"LeftLowerArm\"] = CFrame.new(0,0,0,0.984808,0.173648,0,-0.126998,0.720243,-0.681998,-0.118428,0.671637,0.731354), [\"LeftUpperArm\"] = CFrame.new(0,0,0,0.796922,-0.228514,0.559193,0.602717,0.362967,-0.710624,-0.040581,0.903347,0.426986), [\"RightHand\"] = CFrame.new(0,0,0,0.995134,-0.069587,-0.069756,0.069756,0.997564,0,0.069587,-0.004866,0.997564), [\"RightLowerArm\"] = CFrame.new(0,0,0,1,0,0,0,0.927184,-0.374607,0,0.374607,0.927184), [\"RightUpperArm\"] = CFrame.new(0,0,0,0.992099,0.104274,0.069756,0.027307,0.363212,-0.931306,-0.122447,0.925853,0.357495), [\"UpperTorso\"] = CFrame.new(0,0,0,0.978148,0,-0.207912,0,1,0,0.207912,0,0.978148)}, markers={}},\n\t{t=1, poses={[\"Head\"] = CFrame.new(0,0,0,0.978148,0,0.207912,0,1,0,-0.207912,0,0.978148), [\"LeftHand\"] = CFrame.new(0,0,0,1,0,0,0,1,0,0,0,1), [\"LeftLowerArm\"] = CFrame.new(0,0,0,0.984808,0.173648,0,-0.129046,0.731855,-0.669131,-0.116193,0.658965,0.743145), [\"LeftUpperArm\"] = CFrame.new(0,0,0,0.796922,-0.228514,0.559193,0.601917,0.378678,-0.703064,-0.051094,0.896875,0.439323), [\"RightHand\"] = CFrame.new(0,0,0,0.995134,-0.069587,-0.069756,0.069756,0.997564,0,0.069587,-0.004866,0.997564), [\"RightLowerArm\"] = CFrame.new(0,0,0,1,0,0,0,0.927184,-0.374607,0,0.374607,0.927184), [\"RightUpperArm\"] = CFrame.new(0,0,0,0.992099,0.104274,0.069756,0.025166,0.379315,-0.924925,-0.122905,0.919373,0.373694), [\"UpperTorso\"] = CFrame.new(0,0,0,0.978148,0,-0.207912,0,1,0,0.207912,0,0.978148)}, markers={}}\n}\n\nlocal seq = Instance.new(\"KeyframeSequence\")\nseq.Name = \"Crossbow_Hold\"\nseq.Loop = true\nseq.Priority = Enum.AnimationPriority.Action\n\nfor idx, fr in ipairs(FRAMES) do\n\tlocal kf = Instance.new(\"Keyframe\")\n\tkf.Name = \"KF_\" .. tostring(idx)\n\tkf.Time = fr.t\n\tfor _, m in ipairs(fr.markers) do\n\t\tlocal km = Instance.new(\"KeyframeMarker\")\n\t\tkm.Name = m.name\n\t\tkm.Value = m.value\n\t\tkm.Parent = kf\n\tend\n\tlocal poses: { [string]: Pose } = {}\n\tlocal rootPose = Instance.new(\"Pose\")\n\trootPose.Name = ROOT_NAME\n\trootPose.Weight = 1\n\trootPose.CFrame = fr.poses[ROOT_NAME] or CFrame.identity\n\tposes[ROOT_NAME] = rootPose\n\tfor childName in pairs(PARENTS) do\n\t\tlocal p = Instance.new(\"Pose\")\n\t\tp.Name = childName\n\t\tlocal cf = fr.poses[childName]\n\t\tif cf then\n\t\t\tp.CFrame = cf\n\t\t\tp.Weight = 1\n\t\telse\n\t\t\tp.Weight = 0\n\t\tend\n\t\tp.EasingStyle = Enum.PoseEasingStyle.CubicV2\n\t\tp.EasingDirection = Enum.PoseEasingDirection.InOut\n\t\tposes[childName] = p\n\tend\n\tfor childName, parentName in pairs(PARENTS) do\n\t\tif poses[parentName] then poses[childName].Parent = poses[parentName] end\n\tend\n\trootPose.Parent = kf\n\tkf.Parent = seq\nend\nseq.Parent = folder\nlocal ACP = game:GetService(\"AnimationClipProvider\")\nlocal regId = ACP:RegisterAnimationClip(seq)\nreturn seq:GetFullName() .. \" | RegisteredId=\" .. regId\n\n\t\tend)()\n\t\tlocal folder = ReplicatedStorage:FindFirstChild(\"Animations\")\n\t\tlocal createdInst = if folder then folder:FindFirstChild(\"Crossbow_Hold\") else nil\n\t\tif STAGE_ANIMSAVES and animSaves and createdInst then\n\t\t\tlocal old = animSaves:FindFirstChild(createdInst.Name)\n\t\t\tif old then old:Destroy() end\n\t\t\tcreatedInst:Clone().Parent = animSaves\n\t\tend\n\t\ttable.insert(createdClips, {\n\t\t\tname = \"Crossbow_Hold\",\n\t\t\tformat = \"KeyframeSequence\",\n\t\t\tkeyframeCount = 3,\n\t\t\tbuilderResult = builderOut,\n\t\t\tstagedPath = if (STAGE_ANIMSAVES and animSaves) then (animSaves:GetFullName() .. \".\" .. \"Crossbow_Hold\") else nil,\n\t\t})\n\tend\n\tdo\n\t\tlocal builderOut = (function()\n--!strict\n-- Generated KeyframeSequence builder for Crossbow_Reload\nlocal ReplicatedStorage = game:GetService(\"ReplicatedStorage\")\nlocal folder = ReplicatedStorage:FindFirstChild(\"Animations\") or Instance.new(\"Folder\")\nfolder.Name = \"Animations\"\nfolder.Parent = ReplicatedStorage\nlocal prev = folder:FindFirstChild(\"Crossbow_Reload\")\nif prev then prev:Destroy() end\n\nlocal ROOT_NAME = \"HumanoidRootPart\"\nlocal PARENTS = {[\"LowerTorso\"] = \"HumanoidRootPart\", [\"UpperTorso\"] = \"LowerTorso\", [\"Head\"] = \"UpperTorso\", [\"LeftUpperArm\"] = \"UpperTorso\", [\"LeftLowerArm\"] = \"LeftUpperArm\", [\"LeftHand\"] = \"LeftLowerArm\", [\"RightUpperArm\"] = \"UpperTorso\", [\"RightLowerArm\"] = \"RightUpperArm\", [\"RightHand\"] = \"RightLowerArm\", [\"LeftUpperLeg\"] = \"LowerTorso\", [\"LeftLowerLeg\"] = \"LeftUpperLeg\", [\"LeftFoot\"] = \"LeftLowerLeg\", [\"RightUpperLeg\"] = \"LowerTorso\", [\"RightLowerLeg\"] = \"RightUpperLeg\", [\"RightFoot\"] = \"RightLowerLeg\"}\nlocal FRAMES = {\n\t{t=0, poses={[\"Head\"] = CFrame.new(0,0,0,0.978148,0,0.207912,0,1,0,-0.207912,0,0.978148), [\"LeftLowerArm\"] = CFrame.new(0,0,0,0.984808,0.173648,0,-0.129046,0.731855,-0.669131,-0.116193,0.658965,0.743145), [\"LeftUpperArm\"] = CFrame.new(0,0,0,0.796922,-0.228514,0.559193,0.601917,0.378678,-0.703064,-0.051094,0.896875,0.439323), [\"RightLowerArm\"] = CFrame.new(0,0,0,1,0,0,0,0.927184,-0.374607,0,0.374607,0.927184), [\"RightUpperArm\"] = CFrame.new(0,0,0,0.992099,0.104274,0.069756,0.025166,0.379315,-0.924925,-0.122905,0.919373,0.373694), [\"UpperTorso\"] = CFrame.new(0,0,0,0.978148,0,-0.207912,0,1,0,0.207912,0,0.978148)}, markers={}},\n\t{t=0.35, poses={[\"Head\"] = CFrame.new(0,0,0,0.961262,0,0.275637,-0.047864,0.984808,0.166921,-0.27145,-0.173648,0.946658), [\"LeftLowerArm\"] = CFrame.new(0,0,0,1,0,0,0,0.694658,-0.71934,0,0.71934,0.694658), [\"LeftUpperArm\"] = CFrame.new(0,0,0,0.863653,0.459212,-0.207912,-0.366518,0.85522,0.366421,0.346075,-0.240257,0.906923), [\"RightLowerArm\"] = CFrame.new(0,0,0,1,0,0,0,0.951057,-0.309017,0,0.309017,0.951057), [\"RightUpperArm\"] = CFrame.new(0,0,0,0.994522,0.104528,0,-0.086658,0.824496,-0.559193,-0.058452,0.55613,0.829038), [\"UpperTorso\"] = CFrame.new(0,0,0,0.961262,0,-0.275637,-0.028812,0.994522,-0.100479,0.274127,0.104528,0.955996)}, markers={}},\n\t{t=0.75, poses={[\"Head\"] = CFrame.new(0,0,0,0.978148,0,0.207912,0,1,0,-0.207912,0,0.978148), [\"LeftLowerArm\"] = CFrame.new(0,0,0,0.978148,0.207912,0,-0.13912,0.654508,-0.743145,-0.154508,0.726905,0.669131), [\"LeftUpperArm\"] = CFrame.new(0,0,0,0.804412,-0.200562,0.559193,0.594072,0.271069,-0.757364,0.000318,0.941433,0.3372), [\"RightLowerArm\"] = CFrame.new(0,0,0,1,0,0,0,0.913545,-0.406737,0,0.406737,0.913545), [\"RightUpperArm\"] = CFrame.new(0,0,0,0.992099,0.104274,0.069756,0.003441,0.5332,-0.845982,-0.125408,0.839538,0.528628), [\"UpperTorso\"] = CFrame.new(0,0,0,0.978148,0,-0.207912,-0.007256,0.999391,-0.034137,0.207785,0.034899,0.977552)}, markers={}},\n\t{t=1.15, poses={[\"Head\"] = CFrame.new(0,0,0,0.978148,0,0.207912,0,1,0,-0.207912,0,0.978148), [\"LeftLowerArm\"] = CFrame.new(0,0,0,0.984808,0.173648,0,-0.129046,0.731855,-0.669131,-0.116193,0.658965,0.743145), [\"LeftUpperArm\"] = CFrame.new(0,0,0,0.796922,-0.228514,0.559193,0.601917,0.378678,-0.703064,-0.051094,0.896875,0.439323), [\"RightLowerArm\"] = CFrame.new(0,0,0,1,0,0,0,0.927184,-0.374607,0,0.374607,0.927184), [\"RightUpperArm\"] = CFrame.new(0,0,0,0.992099,0.104274,0.069756,0.025166,0.379315,-0.924925,-0.122905,0.919373,0.373694), [\"UpperTorso\"] = CFrame.new(0,0,0,0.978148,0,-0.207912,0,1,0,0.207912,0,0.978148)}, markers={}}\n}\n\nlocal seq = Instance.new(\"KeyframeSequence\")\nseq.Name = \"Crossbow_Reload\"\nseq.Loop = false\nseq.Priority = Enum.AnimationPriority.Action2\n\nfor idx, fr in ipairs(FRAMES) do\n\tlocal kf = Instance.new(\"Keyframe\")\n\tkf.Name = \"KF_\" .. tostring(idx)\n\tkf.Time = fr.t\n\tfor _, m in ipairs(fr.markers) do\n\t\tlocal km = Instance.new(\"KeyframeMarker\")\n\t\tkm.Name = m.name\n\t\tkm.Value = m.value\n\t\tkm.Parent = kf\n\tend\n\tlocal poses: { [string]: Pose } = {}\n\tlocal rootPose = Instance.new(\"Pose\")\n\trootPose.Name = ROOT_NAME\n\trootPose.Weight = 1\n\trootPose.CFrame = fr.poses[ROOT_NAME] or CFrame.identity\n\tposes[ROOT_NAME] = rootPose\n\tfor childName in pairs(PARENTS) do\n\t\tlocal p = Instance.new(\"Pose\")\n\t\tp.Name = childName\n\t\tlocal cf = fr.poses[childName]\n\t\tif cf then\n\t\t\tp.CFrame = cf\n\t\t\tp.Weight = 1\n\t\telse\n\t\t\tp.Weight = 0\n\t\tend\n\t\tp.EasingStyle = Enum.PoseEasingStyle.CubicV2\n\t\tp.EasingDirection = Enum.PoseEasingDirection.InOut\n\t\tposes[childName] = p\n\tend\n\tfor childName, parentName in pairs(PARENTS) do\n\t\tif poses[parentName] then poses[childName].Parent = poses[parentName] end\n\tend\n\trootPose.Parent = kf\n\tkf.Parent = seq\nend\nseq.Parent = folder\nlocal ACP = game:GetService(\"AnimationClipProvider\")\nlocal regId = ACP:RegisterAnimationClip(seq)\nreturn seq:GetFullName() .. \" | RegisteredId=\" .. regId\n\n\t\tend)()\n\t\tlocal folder = ReplicatedStorage:FindFirstChild(\"Animations\")\n\t\tlocal createdInst = if folder then folder:FindFirstChild(\"Crossbow_Reload\") else nil\n\t\tif STAGE_ANIMSAVES and animSaves and createdInst then\n\t\t\tlocal old = animSaves:FindFirstChild(createdInst.Name)\n\t\t\tif old then old:Destroy() end\n\t\t\tcreatedInst:Clone().Parent = animSaves\n\t\tend\n\t\ttable.insert(createdClips, {\n\t\t\tname = \"Crossbow_Reload\",\n\t\t\tformat = \"KeyframeSequence\",\n\t\t\tkeyframeCount = 4,\n\t\t\tbuilderResult = builderOut,\n\t\t\tstagedPath = if (STAGE_ANIMSAVES and animSaves) then (animSaves:GetFullName() .. \".\" .. \"Crossbow_Reload\") else nil,\n\t\t})\n\tend\n\n\tlocal animFolder = ReplicatedStorage:FindFirstChild(\"Animations\")\n\tif animFolder then\n\t\tlocal prevCache = animFolder:FindFirstChild(\"SharpAnimTrackCache\")\n\t\tif prevCache then prevCache:Destroy() end\n\t\tlocal mod = Instance.new(\"ModuleScript\")\n\t\tmod.Name = \"SharpAnimTrackCache\"\n\t\tmod.Source = \"--!strict\\n-- SharpAnimTrackCache: Animator:LoadAnimation track-caching runtime helper\\nlocal SharpAnimTrackCache = {}\\nlocal _cache: { [Animator]: { [string]: AnimationTrack } } = setmetatable({}, { __mode = \\\"k\\\" }) :: any\\n\\nfunction SharpAnimTrackCache.GetOrLoad(animator: Animator, key: string, anim: Animation): AnimationTrack\\n\\tlocal bucket = _cache[animator]\\n\\tif not bucket then\\n\\t\\tbucket = {}\\n\\t\\t_cache[animator] = bucket\\n\\tend\\n\\tlocal existing = bucket[key]\\n\\tif existing and existing.Animation and existing.Animation.AnimationId == anim.AnimationId then\\n\\t\\treturn existing\\n\\tend\\n\\tlocal track = animator:LoadAnimation(anim)\\n\\tbucket[key] = track\\n\\treturn track\\nend\\n\\nfunction SharpAnimTrackCache.Clear(animator: Animator)\\n\\tlocal bucket = _cache[animator]\\n\\tif bucket then\\n\\t\\tfor _, track in pairs(bucket) do\\n\\t\\t\\tpcall(function() track:Stop(0.1) end)\\n\\t\\tend\\n\\t\\t_cache[animator] = nil\\n\\tend\\nend\\n\\nreturn SharpAnimTrackCache\\n\"\n\t\tmod.Parent = animFolder\n\tend\n\n\treturn {\n\t\tcreatedClips = createdClips,\n\t\ttargetRigPath = TARGET_RIG_PATH,\n\t\tstudioTestHelperAvailable = true,\n\t\ttrackCacheInstalled = true,\n\t}\nend, debug.traceback)\n\nif recId then\n\tpcall(function()\n\t\tChangeHistoryService:FinishRecording(\n\t\t\trecId,\n\t\t\tif ok then Enum.FinishRecordingOperation.Commit else Enum.FinishRecordingOperation.Cancel\n\t\t)\n\tend)\nend\n\nif not ok then\n\terror(resOrErr)\nend\n\nreturn HttpService:JSONEncode({\n\tok = true,\n\trecordingStatus = if (recId or activePluginRec) then \"Committed\" else \"NoRecording\",\n\tresult = resOrErr,\n})\n",
+  "asset_keys_touched": [],
+  "state_snapshot": {
+    "game_title": "Sharp Reference Experience",
+    "systems": {
+      "luau_coding": {
+        "status": "active",
+        "executions": 1,
+        "last_updated": "2026-11-14T13:36:59Z",
+        "last_summary": "Scaffolded clean 14-container Explorer architecture with SafeRemoteGateway",
+        "last_version": "v0001"
+      },
+      "terrain_atmosphere": {
+        "status": "active",
+        "executions": 1,
+        "last_updated": "2026-11-14T13:36:59Z",
+        "last_summary": "Registered 513x513 Alpine heightmap/colormap baseline",
+        "last_version": "v0001"
+      },
+      "gui": {
+        "status": "active",
+        "executions": 1,
+        "last_updated": "2026-11-14T13:36:59Z",
+        "last_summary": "Registered 9-slice panels, tint button, and 2x2 HUD icon atlas",
+        "last_version": "v0001"
+      },
+      "animation": {
+        "status": "active",
+        "executions": 2,
+        "last_updated": "2026-11-18T17:41:25Z",
+        "last_summary": "Compiled KeyframeSequence 'SharpAnimation' for Workspace.TestWarrior",
+        "last_version": "v0003"
+      },
+      "audio_vfx_cutscenes": {
+        "status": "active",
+        "executions": 1,
+        "last_updated": "2026-11-14T14:44:07Z",
+        "last_summary": "Seeded built-in Roblox SFX and flipbook VFX library baseline",
+        "last_version": "v0002"
+      }
+    },
+    "completed_milestones": [
+      "Core Explorer architecture, GUI 9-slice atlas, R15 animation & Alpine terrain baseline",
+      "Verified Audio & Flipbook VFX asset registry baseline (20 assets)"
+    ]
+  },
+  "manifest_snapshot": {
+    "project_id": "default_game",
+    "schema_version": 2,
+    "updated_at": "2026-11-14T14:44:07Z",
+    "assets": {
+      "Raw_DarkFantasy_ModalPanel": {
+        "key": "Raw_DarkFantasy_ModalPanel",
+        "name": "Raw_DarkFantasy_ModalPanel",
+        "category": "gui_9slice",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "roblox_panel_9slice_1794652695001.jpg",
+        "sha256": "b7c5de9e3cb4b73e6b18137926894c48e2b77a065844aed7cb78a0a65b7d559f",
+        "description": "",
+        "prompt_used": "Flat 2D orthographic dark fantasy RPG modal frame on solid #0B0E17 background",
+        "tags": [
+          "gui_9slice",
+          "gui_raw_image"
+        ],
+        "metadata": {
+          "resolution": [
+            1024,
+            1024
+          ]
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Raw_Grayscale_TintButton": {
+        "key": "Raw_Grayscale_TintButton",
+        "name": "Raw_Grayscale_TintButton",
+        "category": "gui_9slice",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "button_tint_9slice_1794652696255.jpg",
+        "sha256": "a4ef3454841e09cc5ada1c32e9083cd86749886c064c2307b05096daef16b363",
+        "description": "",
+        "prompt_used": "Flat 2D orthographic neutral white/silver grayscale pill button for ImageColor3 tinting",
+        "tags": [
+          "gui_9slice",
+          "gui_raw_image"
+        ],
+        "metadata": {
+          "resolution": [
+            1024,
+            1024
+          ]
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Raw_Icons_2x2_Sheet": {
+        "key": "Raw_Icons_2x2_Sheet",
+        "name": "Raw_Icons_2x2_Sheet",
+        "category": "gui_9slice",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "icons_2x2_sheet_1794652702333.jpg",
+        "sha256": "b02361ecaf3ec361d9d45f13d22b0f39f30012dfbae73322c960f80394cec9b8",
+        "description": "",
+        "prompt_used": "Flat 2D orthographic 2x2 game UI icon grid (coin, gem, sword, chest) on solid #0B0E17 background",
+        "tags": [
+          "gui_9slice",
+          "gui_raw_image"
+        ],
+        "metadata": {
+          "grid": [
+            2,
+            2
+          ],
+          "icons": [
+            "coin",
+            "gem",
+            "combat",
+            "chest"
+          ]
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "ModalPanel_9Slice": {
+        "key": "ModalPanel_9Slice",
+        "name": "ModalPanel_9Slice",
+        "category": "gui_9slice",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "panel_9slice.png",
+        "sha256": "94e74938e1bc9e2f2ec924b6b6816e9fb168e9f2d4f4032d458a83b12bca87cd",
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "gui_9slice"
+        ],
+        "metadata": {
+          "width": 512,
+          "height": 512,
+          "slice_center": [
+            79,
+            79,
+            433,
+            433
+          ],
+          "slice_scale": 1.0
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "TintButton_9Slice": {
+        "key": "TintButton_9Slice",
+        "name": "TintButton_9Slice",
+        "category": "gui_9slice",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "button_tint_9slice.png",
+        "sha256": "2f1efafcc15502692ea3dab7624f131e87c2e3166487472e9dba0e42d50557a9",
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "gui_9slice"
+        ],
+        "metadata": {
+          "width": 512,
+          "height": 254,
+          "slice_center": [
+            64,
+            43,
+            448,
+            211
+          ],
+          "slice_scale": 1.0,
+          "tintable_grayscale": true
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "CoreHudIcons_Atlas": {
+        "key": "CoreHudIcons_Atlas",
+        "name": "CoreHudIcons_Atlas",
+        "category": "gui_atlas",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "icons_atlas.png",
+        "sha256": "2b886006b99d74390c7548812409e98fae89cf8199b68b400960697ec0228793",
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "gui_atlas"
+        ],
+        "metadata": {
+          "atlas_size": [
+            524,
+            524
+          ],
+          "cell_size": 256,
+          "gutter": 4,
+          "sprites": {
+            "coin": {
+              "offset": [
+                4,
+                4
+              ],
+              "size": [
+                256,
+                256
+              ]
+            },
+            "gem": {
+              "offset": [
+                264,
+                4
+              ],
+              "size": [
+                256,
+                256
+              ]
+            },
+            "combat": {
+              "offset": [
+                4,
+                264
+              ],
+              "size": [
+                256,
+                256
+              ]
+            },
+            "chest": {
+              "offset": [
+                264,
+                264
+              ],
+              "size": [
+                256,
+                256
+              ]
+            }
+          }
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "R15_SwordSlash_Action": {
+        "key": "R15_SwordSlash_Action",
+        "name": "R15_SwordSlash_Action",
+        "category": "animation",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "animation"
+        ],
+        "metadata": {
+          "rig_type": "R15",
+          "priority": "Action",
+          "looped": false,
+          "duration_sec": 0.85
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "R15_WalkCycle_Curve": {
+        "key": "R15_WalkCycle_Curve",
+        "name": "R15_WalkCycle_Curve",
+        "category": "animation",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "animation"
+        ],
+        "metadata": {
+          "rig_type": "R15",
+          "priority": "Movement",
+          "looped": true,
+          "duration_sec": 1.0
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "WeaponShield_Combo_Action": {
+        "key": "WeaponShield_Combo_Action",
+        "name": "WeaponShield_Combo_Action",
+        "category": "animation",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "animation"
+        ],
+        "metadata": {
+          "rig_type": "R15+Motor6D",
+          "priority": "Action2",
+          "looped": false,
+          "duration_sec": 1.2
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "AlpineBiome_Heightmap_513": {
+        "key": "AlpineBiome_Heightmap_513",
+        "name": "AlpineBiome_Heightmap_513",
+        "category": "terrain_preset",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "terrain_map",
+          "terrain_preset"
+        ],
+        "metadata": {
+          "resolution": [
+            513,
+            513
+          ],
+          "biome": "Alpine"
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "AlpineBiome_Colormap_513": {
+        "key": "AlpineBiome_Colormap_513",
+        "name": "AlpineBiome_Colormap_513",
+        "category": "terrain_preset",
+        "roblox_asset_id": "rbxassetid://0",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "terrain_map",
+          "terrain_preset"
+        ],
+        "metadata": {
+          "resolution": [
+            513,
+            513
+          ],
+          "biome": "Alpine"
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Sound_UI_ButtonClick": {
+        "key": "Sound_UI_ButtonClick",
+        "name": "Sound_UI_ButtonClick",
+        "category": "audio",
+        "roblox_asset_id": "rbxasset://sounds/button.wav",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "audio"
+        ],
+        "metadata": {
+          "bus": "UI",
+          "volume": 0.65,
+          "looped": false
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Sound_Sword_Slash": {
+        "key": "Sound_Sword_Slash",
+        "name": "Sound_Sword_Slash",
+        "category": "audio",
+        "roblox_asset_id": "rbxasset://sounds/swordslash.wav",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "audio"
+        ],
+        "metadata": {
+          "bus": "SFX",
+          "volume": 0.85,
+          "looped": false
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Sound_Sword_Lunge": {
+        "key": "Sound_Sword_Lunge",
+        "name": "Sound_Sword_Lunge",
+        "category": "audio",
+        "roblox_asset_id": "rbxasset://sounds/lunge.wav",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "audio"
+        ],
+        "metadata": {
+          "bus": "SFX",
+          "volume": 0.9,
+          "looped": false
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Sound_Quest_Complete": {
+        "key": "Sound_Quest_Complete",
+        "name": "Sound_Quest_Complete",
+        "category": "audio",
+        "roblox_asset_id": "rbxasset://sounds/electronicpingshort.wav",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "audio"
+        ],
+        "metadata": {
+          "bus": "UI",
+          "volume": 0.75,
+          "looped": false
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "Sound_Footstep_Plastic": {
+        "key": "Sound_Footstep_Plastic",
+        "name": "Sound_Footstep_Plastic",
+        "category": "audio",
+        "roblox_asset_id": "rbxasset://sounds/action_footsteps_plastic.mp3",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "audio"
+        ],
+        "metadata": {
+          "bus": "SFX",
+          "volume": 0.5,
+          "looped": true
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "VFX_Sparkles_Main": {
+        "key": "VFX_Sparkles_Main",
+        "name": "VFX_Sparkles_Main",
+        "category": "misc",
+        "roblox_asset_id": "rbxasset://textures/particles/sparkles_main.dds",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "misc",
+          "vfx_flipbook"
+        ],
+        "metadata": {
+          "flipbook_layout": "None",
+          "rate": 0,
+          "emit_burst": 18
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "VFX_Smoke_Main": {
+        "key": "VFX_Smoke_Main",
+        "name": "VFX_Smoke_Main",
+        "category": "misc",
+        "roblox_asset_id": "rbxasset://textures/particles/smoke_main.dds",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "misc",
+          "vfx_flipbook"
+        ],
+        "metadata": {
+          "flipbook_layout": "None",
+          "rate": 0,
+          "emit_burst": 12
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "VFX_Explosion_Flipbook": {
+        "key": "VFX_Explosion_Flipbook",
+        "name": "VFX_Explosion_Flipbook",
+        "category": "misc",
+        "roblox_asset_id": "rbxasset://textures/particles/explosion01_implosion_main.dds",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "misc",
+          "vfx_flipbook"
+        ],
+        "metadata": {
+          "flipbook_layout": "FourByFour",
+          "rate": 0,
+          "emit_burst": 8
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      },
+      "VFX_Fire_Main": {
+        "key": "VFX_Fire_Main",
+        "name": "VFX_Fire_Main",
+        "category": "misc",
+        "roblox_asset_id": "rbxasset://textures/particles/fire_main.dds",
+        "local_path": "",
+        "sha256": null,
+        "description": "",
+        "prompt_used": "",
+        "tags": [
+          "misc",
+          "vfx_flipbook"
+        ],
+        "metadata": {
+          "flipbook_layout": "None",
+          "rate": 24,
+          "emit_burst": 15
+        },
+        "version": 1,
+        "created_at": "2026-11-14T14:44:07Z",
+        "updated_at": "2026-11-14T14:44:07Z"
+      }
+    }
+  }
+}

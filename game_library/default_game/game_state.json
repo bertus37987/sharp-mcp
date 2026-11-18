@@ -3,9 +3,9 @@
   "game_title": "Sharp Reference Experience",
   "genre": "Cross-Platform Action RPG / Adventure",
   "description": "Clean production Sharp reference baseline with 20 verified assets and portable relative paths.",
-  "current_version": 2,
+  "current_version": 3,
   "active_studio_place_id": 0,
-  "updated_at": "2026-11-14T14:44:07Z",
+  "updated_at": "2026-11-18T17:41:25Z",
   "systems": {
     "luau_coding": {
       "status": "active",
@@ -30,10 +30,10 @@
     },
     "animation": {
       "status": "active",
-      "executions": 1,
-      "last_updated": "2026-11-14T13:36:59Z",
-      "last_summary": "Registered R15 sword/walk/combo animation metadata baseline",
-      "last_version": "v0001"
+      "executions": 2,
+      "last_updated": "2026-11-18T17:41:25Z",
+      "last_summary": "Compiled KeyframeSequence 'SharpAnimation' for Workspace.TestWarrior",
+      "last_version": "v0003"
     },
     "audio_vfx_cutscenes": {
       "status": "active",
@@ -68,6 +68,15 @@
       "domain": "audio_vfx_cutscenes",
       "summary": "Seeded verified Roblox SFX & VFX flipbook presets cleanly (20 assets)",
       "snapshot_file": "versions/snapshots/v0002.json"
+    },
+    {
+      "version": 3,
+      "version_tag": "v0003",
+      "timestamp": "2026-11-18T17:41:25Z",
+      "tool": "sharp_rig_and_animation",
+      "domain": "animation",
+      "summary": "Compiled KeyframeSequence 'SharpAnimation' for Workspace.TestWarrior",
+      "snapshot_file": "versions/snapshots/v0003.json"
     }
   ]
 }

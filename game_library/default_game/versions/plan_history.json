@@ -18,5 +18,15 @@
     "summary": "Seeded verified Roblox SFX & VFX flipbook presets cleanly (20 assets)",
     "snapshot_path": "versions/snapshots/v0002.json",
     "asset_count": 20
+  },
+  {
+    "version": 3,
+    "version_tag": "v0003",
+    "timestamp": "2026-11-18T17:41:25Z",
+    "tool_name": "sharp_rig_and_animation",
+    "target_domain": "animation",
+    "summary": "Compiled KeyframeSequence 'SharpAnimation' for Workspace.TestWarrior",
+    "snapshot_path": "versions/snapshots/v0003.json",
+    "asset_count": 20
   }
 ]

@@ -13,8 +13,8 @@ export type RegisteredAsset = {
 local SharpAssetRegistry = {}
 
 SharpAssetRegistry.ProjectId = "default_game"
-SharpAssetRegistry.Version = "v0002"
-SharpAssetRegistry.Systems = ["animation", "audio_vfx_cutscenes", "gui", "luau_coding", "terrain_atmosphere"]
+SharpAssetRegistry.Version = "v0003"
+SharpAssetRegistry.Systems = { "animation", "audio_vfx_cutscenes", "gui", "luau_coding", "terrain_atmosphere" }
 
 SharpAssetRegistry.Assets = {
 	["AlpineBiome_Colormap_513"] = { Name = "AlpineBiome_Colormap_513", Category = "terrain_preset", AssetId = "rbxassetid://0", LocalPath = "", Version = 1 },

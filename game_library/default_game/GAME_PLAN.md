@@ -2,9 +2,9 @@
 
 - **Project ID:** `default_game`
 - **Genre:** Cross-Platform Action RPG / Adventure
-- **Current Version:** `v0002`
+- **Current Version:** `v0003`
 - **Active Studio PlaceId:** `0`
-- **Last Updated:** `2026-11-14T16:34:10Z`
+- **Last Updated:** `2026-11-18T17:41:25Z`
 
 > Clean production Sharp reference baseline with 20 verified assets and portable relative paths.
 
@@ -14,7 +14,7 @@
 
 | Domain | Status | Executions | Last Version | Last Action |
 |---|---|---:|---|---|
-| `animation` | active | 1 | `v0001` | Registered R15 sword/walk/combo animation metadata baseline |
+| `animation` | active | 2 | `v0003` | Compiled KeyframeSequence 'SharpAnimation' for Workspace.TestWarrior |
 | `audio_vfx_cutscenes` | active | 1 | `v0002` | Seeded built-in Roblox SFX and flipbook VFX library baseline |
 | `gui` | active | 1 | `v0001` | Registered 9-slice panels, tint button, and 2x2 HUD icon atlas |
 | `luau_coding` | active | 1 | `v0001` | Scaffolded clean 14-container Explorer architecture with SafeRemoteGateway |
@@ -82,5 +82,6 @@
 
 | Version | Timestamp | Tool | Domain | Summary |
 |---|---|---|---|---|
+| `v0003` | `2026-11-18T17:41:25Z` | `sharp_rig_and_animation` | `animation` | Compiled KeyframeSequence 'SharpAnimation' for Workspace.TestWarrior |
 | `v0002` | `2026-11-14T14:44:07Z` | `sharp_game_library` | `audio_vfx_cutscenes` | Seeded verified Roblox SFX & VFX flipbook presets cleanly (20 assets) |
 | `v0001` | `2026-11-14T13:36:59Z` | `sharp_game_library` | `library_init` | Initial Sharp Game Plan & Verified Core Asset Baseline (11 assets) |
