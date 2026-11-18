@@ -85,6 +85,14 @@ FOCUS_RUBRICS: Dict[str, str] = {
 }
 
 
+def _detached_subprocess_kwargs() -> Dict[str, Any]:
+    """Return subprocess kwargs preventing Windows MCP stdio pipe inheritance and console popups."""
+    kwargs: Dict[str, Any] = {"stdin": subprocess.DEVNULL}
+    if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    return kwargs
+
+
 def find_ffmpeg_executable() -> Optional[str]:
     """Locate `ffmpeg` binary on PATH or standard WinGet link directory."""
     hit = shutil.which("ffmpeg")
@@ -265,6 +273,7 @@ def _extract_video_telemetry_via_ffmpeg(
         out_pat = Path(tmp_d) / "frame_%03d.png"
         cmd = [
             ffmpeg,
+            "-nostdin",
             "-y",
             "-i",
             str(video_path),
@@ -274,7 +283,7 @@ def _extract_video_telemetry_via_ffmpeg(
             str(max(1, max_frames)),
             str(out_pat),
         ]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, **_detached_subprocess_kwargs())
         frame_files = sorted(Path(tmp_d).glob("frame_*.png"))
         if not frame_files:
             return {
@@ -771,6 +780,7 @@ class MultimodalQAEngine:
         proc = subprocess.run(
             [
                 self.ffmpeg_path,
+                "-nostdin",
                 "-y",
                 "-i",
                 str(media_path),
@@ -784,6 +794,7 @@ class MultimodalQAEngine:
             capture_output=True,
             text=True,
             timeout=60,
+            **_detached_subprocess_kwargs(),
         )
         return proc.returncode == 0 and out_wav.is_file() and out_wav.stat().st_size > 44
 

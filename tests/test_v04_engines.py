@@ -884,5 +884,51 @@ class TestV04StdioE2E(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("CONTRACT-EXPORT-001", {f["id"] for f in con_res["findings"]})
 
 
+class TestMultimodalSubprocessDetachment(unittest.TestCase):
+    def test_ffmpeg_helpers_detach_stdio_and_pass_nostdin(self) -> None:
+        from sharp_mcp.domain_engines.multimodal_qa_engine import _extract_video_telemetry_via_ffmpeg
+
+        with tempfile.TemporaryDirectory(prefix="sharp_ff_") as td:
+            root = Path(td)
+            vid = root / "sample.mp4"
+            vid.write_bytes(b"fake")
+            wav = root / "out.wav"
+
+            def _fake_video_run(cmd, **kwargs):
+                out_pat = Path(cmd[-1])
+                img_path = out_pat.parent / "frame_001.png"
+                Image.new("RGB", (64, 64), (100, 120, 140)).save(img_path, format="PNG")
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+            with mock.patch("sharp_mcp.domain_engines.multimodal_qa_engine.find_ffmpeg_executable", return_value="ffmpeg.exe"), mock.patch(
+                "sharp_mcp.domain_engines.multimodal_qa_engine.subprocess.run", side_effect=_fake_video_run
+            ) as mock_run:
+                res = _extract_video_telemetry_via_ffmpeg(vid, max_frames=2)
+                self.assertTrue(res["ok"])
+                cmd_used = mock_run.call_args.args[0]
+                kwargs_used = mock_run.call_args.kwargs
+                self.assertIn("-nostdin", cmd_used)
+                self.assertEqual(kwargs_used.get("stdin"), subprocess.DEVNULL)
+                if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+                    self.assertEqual(kwargs_used.get("creationflags"), subprocess.CREATE_NO_WINDOW)
+
+            def _fake_audio_run(cmd, **kwargs):
+                Path(cmd[-1]).write_bytes(b"RIFF" + b"\x00" * 64)
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+            with mock.patch("sharp_mcp.domain_engines.multimodal_qa_engine.find_ffmpeg_executable", return_value="ffmpeg.exe"), mock.patch(
+                "sharp_mcp.domain_engines.multimodal_qa_engine.subprocess.run", side_effect=_fake_audio_run
+            ) as mock_run:
+                qa = MultimodalQAEngine()
+                ok_conv = qa._convert_media_to_wav_sync(vid, wav)
+                self.assertTrue(ok_conv)
+                cmd_used = mock_run.call_args.args[0]
+                kwargs_used = mock_run.call_args.kwargs
+                self.assertIn("-nostdin", cmd_used)
+                self.assertEqual(kwargs_used.get("stdin"), subprocess.DEVNULL)
+                if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+                    self.assertEqual(kwargs_used.get("creationflags"), subprocess.CREATE_NO_WINDOW)
+
+
 if __name__ == "__main__":
     unittest.main()

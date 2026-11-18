@@ -1,4 +1,4 @@
-# `Sharp` MCP Server (`sharp-mcp` v0.4.0) & `SharpBridgePlugin.rbxmx`
+# `Sharp` MCP Server (`sharp-mcp` v0.5.0) & `SharpBridgePlugin.rbxmx`
 
 > **License Notice (Private Non-Commercial Pre-Release):**
 > All Rights Reserved — Non-Commercial Internal Evaluation Only (`LICENSE`, `"private": true`).

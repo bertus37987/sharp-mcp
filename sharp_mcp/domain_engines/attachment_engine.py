@@ -1338,8 +1338,8 @@ end
 
 local itemInst: Instance? = nil
 if TARGET_ITEM_PATH ~= "" then
-	itemInst = resolveInstance(TARGET_ITEM_PATH)
-	if not itemInst then
+	itemInst = resolveInstance(TARGET_ITEM_PATH) or rig:FindFirstChild(TARGET_ITEM_PATH, true)
+	if not itemInst and TARGET_ITEM_PATH ~= "Workspace.EquipmentItem" then
 		return HttpService:JSONEncode({{
 			ok = false,
 			rigPath = rig:GetFullName(),
@@ -1398,6 +1398,35 @@ local function addEquipPart(p: BasePart)
 	end
 end
 
+local function isInRig(inst: Instance?): boolean
+	return inst ~= nil and (inst == rig or inst:IsDescendantOf(rig))
+end
+
+local function addPartnerModelOrParts(partner: BasePart)
+	if partner:IsA("Terrain") or isInRig(partner) then
+		return
+	end
+	local container: Instance = partner
+	local cur: Instance? = partner.Parent
+	while cur and cur ~= workspace and cur ~= game and cur ~= rig do
+		if cur:IsA("Model") or cur:IsA("Accessory") or cur:IsA("Tool") then
+			if not rig:IsDescendantOf(cur) then
+				container = cur
+			end
+			break
+		end
+		cur = cur.Parent
+	end
+	if container:IsA("BasePart") and not container:IsA("Terrain") and not isInRig(container) then
+		addEquipPart(container)
+	end
+	for _, sub in ipairs(container:GetDescendants()) do
+		if sub:IsA("BasePart") and not sub:IsA("Terrain") and not isInRig(sub) then
+			addEquipPart(sub)
+		end
+	end
+end
+
 if itemInst then
 	if itemInst:IsA("BasePart") then
 		addEquipPart(itemInst)
@@ -1419,60 +1448,139 @@ else
 			end
 		end
 	end
+	if #equipParts == 0 then
+		for _, d in ipairs(workspace:GetDescendants()) do
+			local p0: Instance? = nil
+			local p1: Instance? = nil
+			if d:IsA("Motor6D") and d.Enabled then
+				p0 = d.Part0
+				p1 = d.Part1
+			elseif d:IsA("Weld") and d.Enabled then
+				p0 = d.Part0
+				p1 = d.Part1
+			elseif d:IsA("WeldConstraint") and d.Enabled then
+				p0 = d.Part0
+				p1 = d.Part1
+			elseif d:IsA("RigidConstraint") and d.Enabled and d.Attachment0 and d.Attachment1 then
+				p0 = d.Attachment0.Parent
+				p1 = d.Attachment1.Parent
+			end
+			if p0 and p1 and p0:IsA("BasePart") and p1:IsA("BasePart") then
+				local in0 = isInRig(p0)
+				local in1 = isInRig(p1)
+				if in0 and not in1 then
+					addPartnerModelOrParts(p1)
+				elseif in1 and not in0 then
+					addPartnerModelOrParts(p0)
+				end
+			end
+		end
+	end
 end
 
 -- Build attachment/joint graph so equipment parts inherit host limb kinematics across poses
 local equipParentMap: {{ [BasePart]: BasePart }} = {{}}
+local equipPeerLinks: {{ [BasePart]: {{ BasePart }} }} = {{}}
+local function addPeerLink(a: BasePart, b: BasePart)
+	local list = equipPeerLinks[a]
+	if not list then
+		list = {{}}
+		equipPeerLinks[a] = list
+	end
+	table.insert(list, b)
+end
+local function recordJointPair(child: BasePart, parent: BasePart, allowOverwrite: boolean)
+	if R15_CORE_SET[parent.Name] and parent.Name ~= "HumanoidRootPart" and isInRig(parent) then
+		equipParentMap[child] = parent
+	elseif allowOverwrite or not equipParentMap[child] then
+		equipParentMap[child] = parent
+	end
+end
 local function scanJointLinks(container: Instance)
 	for _, d in ipairs(container:GetDescendants()) do
 		if d:IsA("Motor6D") and d.Part0 and d.Part1 and d.Enabled then
 			if equipSeen[d.Part1] or not R15_CORE_SET[d.Part1.Name] then
-				equipParentMap[d.Part1] = d.Part0
+				recordJointPair(d.Part1, d.Part0, true)
+			end
+			if equipSeen[d.Part0] and equipSeen[d.Part1] then
+				addPeerLink(d.Part0, d.Part1)
+				addPeerLink(d.Part1, d.Part0)
 			end
 		elseif d:IsA("Weld") and d.Part0 and d.Part1 and d.Enabled then
-			if equipSeen[d.Part1] then
-				equipParentMap[d.Part1] = d.Part0
+			if equipSeen[d.Part0] and equipSeen[d.Part1] then
+				addPeerLink(d.Part0, d.Part1)
+				addPeerLink(d.Part1, d.Part0)
+			elseif equipSeen[d.Part1] then
+				recordJointPair(d.Part1, d.Part0, false)
 			elseif equipSeen[d.Part0] then
-				equipParentMap[d.Part0] = d.Part1
+				recordJointPair(d.Part0, d.Part1, false)
 			end
 		elseif d:IsA("WeldConstraint") and d.Part0 and d.Part1 and d.Enabled then
-			if equipSeen[d.Part1] and not equipParentMap[d.Part1] then
-				equipParentMap[d.Part1] = d.Part0
-			elseif equipSeen[d.Part0] and not equipParentMap[d.Part0] then
-				equipParentMap[d.Part0] = d.Part1
+			if equipSeen[d.Part0] and equipSeen[d.Part1] then
+				addPeerLink(d.Part0, d.Part1)
+				addPeerLink(d.Part1, d.Part0)
+			elseif equipSeen[d.Part1] then
+				recordJointPair(d.Part1, d.Part0, false)
+			elseif equipSeen[d.Part0] then
+				recordJointPair(d.Part0, d.Part1, false)
 			end
 		elseif d:IsA("RigidConstraint") and d.Enabled and d.Attachment0 and d.Attachment1 then
 			local p0 = d.Attachment0.Parent
 			local p1 = d.Attachment1.Parent
 			if p0 and p1 and p0:IsA("BasePart") and p1:IsA("BasePart") then
-				if equipSeen[p0] then
-					equipParentMap[p0] = p1
+				if equipSeen[p0] and equipSeen[p1] then
+					addPeerLink(p0, p1)
+					addPeerLink(p1, p0)
+				elseif equipSeen[p0] then
+					recordJointPair(p0, p1, false)
 				elseif equipSeen[p1] then
-					equipParentMap[p1] = p0
+					recordJointPair(p1, p0, false)
 				end
 			end
 		end
 	end
 end
 scanJointLinks(rig)
-if itemInst and not itemInst:IsDescendantOf(rig) then
+local hasExternalEquip = false
+for _, ep in ipairs(equipParts) do
+	if not isInRig(ep) then
+		hasExternalEquip = true
+		break
+	end
+end
+if hasExternalEquip then
+	scanJointLinks(workspace)
+elseif itemInst and not itemInst:IsDescendantOf(rig) then
 	scanJointLinks(itemInst)
 end
 
 local function findHostLimb(ep: BasePart): BasePart?
-	local cur: BasePart? = ep
-	for _ = 1, 8 do
-		if not cur then
-			break
-		end
+	local visited: {{ [BasePart]: boolean }} = {{}}
+	local queue: {{ BasePart }} = {{ ep }}
+	visited[ep] = true
+	local head = 1
+	while head <= #queue and head <= 64 do
+		local cur = queue[head]
+		head += 1
 		local nxt = equipParentMap[cur]
-		if not nxt then
-			break
+		if nxt then
+			if R15_CORE_SET[nxt.Name] and nxt.Name ~= "HumanoidRootPart" and isInRig(nxt) then
+				return nxt
+			end
+			if not visited[nxt] then
+				visited[nxt] = true
+				table.insert(queue, nxt)
+			end
 		end
-		if R15_CORE_SET[nxt.Name] and nxt.Name ~= "HumanoidRootPart" then
-			return nxt
+		local peers = equipPeerLinks[cur]
+		if peers then
+			for _, peer in ipairs(peers) do
+				if not visited[peer] then
+					visited[peer] = true
+					table.insert(queue, peer)
+				end
+			end
 		end
-		cur = nxt
 	end
 	return nil
 end

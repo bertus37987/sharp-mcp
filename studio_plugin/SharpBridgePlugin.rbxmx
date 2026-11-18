@@ -414,7 +414,7 @@ task.spawn(function()
 						placeId = game.PlaceId,
 						universeId = game.GameId,
 						placeName = game.Name,
-						pluginVersion = "0.4.0",
+						pluginVersion = "0.5.0",
 						safetyMode = ui.safetyMode,
 						httpEnabled = httpEnabled,
 						capabilities = {
@@ -6863,10 +6863,10 @@ function UIKit.AttachTextStroke(
 	end
 	if effTextColor and typeof(effTextColor) == "Color3" then
 		if UIKit.RelativeLuminance(effTextColor) &lt; 0.35 and UIKit.RelativeLuminance(resolvedColor) &lt; 0.35 then
-			-- Dark text on bright pills/buttons blurs into dark blobs with thick dark strokes; switch to a crisp subtle light rim.
+			-- Dark text on bright pills/buttons blurs into dark halos with thick strokes; use a whisper-thin subtle light rim.
 			resolvedColor = Color3.fromRGB(255, 255, 255)
-			resolvedThickness = math.min(1.0, resolvedThickness * 0.45)
-			resolvedTransparency = math.max(0.55, resolvedTransparency)
+			resolvedThickness = math.min(0.6, resolvedThickness * 0.3)
+			resolvedTransparency = math.max(0.82, resolvedTransparency)
 		end
 	end
 
@@ -6932,9 +6932,9 @@ function UIKit.AttachStackedStrokes(target: GuiObject, opts: StackedStrokeOption
 		s.Thickness = innerThickness
 		s.Transparency = innerTrans
 		s.LineJoinMode = lineJoin
-		-- Will fail cleanly on channels where BorderStrokePosition is disabled so we avoid overlapping Center strokes
+		-- Use Center on circular/pill frames to avoid Inner-stroke artifacts; fails cleanly when BorderStrokePosition is disabled
 		local sAny = s :: any
-		sAny.BorderStrokePosition = Enum.BorderStrokePosition.Inner
+		sAny.BorderStrokePosition = if isCircular then Enum.BorderStrokePosition.Center else Enum.BorderStrokePosition.Inner
 		s.Parent = target
 		return s
 	end)
@@ -7627,6 +7627,21 @@ function UIKit.AttachPresetOrnament(target: GuiObject, ornamentKind: string?): I
 	return container
 end
 
+local function resolveDefaultAnchorPoint(position: UDim2?, anchorPoint: Vector2?): Vector2
+	if anchorPoint ~= nil then
+		return anchorPoint
+	end
+	if
+		position ~= nil
+		and position.X.Scale == 0
+		and position.Y.Scale == 0
+		and (position.X.Offset ~= 0 or position.Y.Offset ~= 0)
+	then
+		return Vector2.zero
+	end
+	return Vector2.new(0.5, 0.5)
+end
+
 export type PanelOptions = {
 	Name: string?,
 	Parent: Instance?,
@@ -7646,12 +7661,13 @@ export type PanelOptions = {
 
 function UIKit.CreatePanel(opts: PanelOptions): GuiObject
 	local assets = UIKit.Assets
+	local resolvedAnchor = resolveDefaultAnchorPoint(opts.Position, opts.AnchorPoint)
 	if opts.Use9Slice and assets.Panel9SliceId and assets.Panel9SliceCenter then
 		local img = Instance.new("ImageLabel")
 		img.Name = opts.Name or "Panel"
 		img.Size = opts.Size or UDim2.fromOffset(320, 240)
 		img.Position = opts.Position or UDim2.fromScale(0.5, 0.5)
-		img.AnchorPoint = opts.AnchorPoint or Vector2.new(0.5, 0.5)
+		img.AnchorPoint = resolvedAnchor
 		img.BackgroundTransparency = 1
 		img.Image = assets.Panel9SliceId
 		img.ScaleType = Enum.ScaleType.Slice
@@ -7668,7 +7684,7 @@ function UIKit.CreatePanel(opts: PanelOptions): GuiObject
 	frame.Name = opts.Name or "Panel"
 	frame.Size = opts.Size or UDim2.fromOffset(320, 240)
 	frame.Position = opts.Position or UDim2.fromScale(0.5, 0.5)
-	frame.AnchorPoint = opts.AnchorPoint or Vector2.new(0.5, 0.5)
+	frame.AnchorPoint = resolvedAnchor
 	frame.BackgroundColor3 = opts.BackgroundColor3 or UIKit.Tokens.Colors.BgPanel
 	frame.BackgroundTransparency = if opts.BackgroundTransparency ~= nil then opts.BackgroundTransparency else 0.04
 	frame.BorderSizePixel = 0
@@ -7734,17 +7750,8 @@ function UIKit.CreateButton(opts: ButtonOptions): GuiButton
 		Warning = UIKit.Tokens.Colors.Warning,
 		Danger = UIKit.Tokens.Colors.Danger,
 	}
-	local variantTextColors = {
-		Primary = UIKit.Tokens.Colors.TextOnPrimary,
-		Secondary = UIKit.Tokens.Colors.TextOnSecondary,
-		Accent = UIKit.Tokens.Colors.TextOnAccent,
-		Success = UIKit.Tokens.Colors.TextOnSuccess,
-		Warning = UIKit.Tokens.Colors.TextOnWarning,
-		Danger = UIKit.Tokens.Colors.TextOnDanger,
-	}
 	local fillColor = opts.Color or variantColors[variant] or UIKit.Tokens.Colors.Primary
-	local defaultText = variantTextColors[variant] or UIKit.Tokens.Colors.TextPrimary
-	local textColor = opts.TextColor or (if opts.Color ~= nil then UIKit.PickReadableTextColor(fillColor) else defaultText)
+	local textColor = opts.TextColor or UIKit.PickReadableTextColor(fillColor)
 	local assets = UIKit.Assets
 
 	if opts.Use9Slice and assets.Button9SliceId and assets.Button9SliceCenter then
@@ -7798,6 +7805,8 @@ function UIKit.CreateButton(opts: ButtonOptions): GuiButton
 	end
 	if opts.Color ~= nil or ReplicatedStorage:FindFirstChild("UIStyles") == nil or not hasStyleLink then
 		btn.BackgroundColor3 = fillColor
+		btn.TextColor3 = textColor
+	elseif opts.TextColor ~= nil then
 		btn.TextColor3 = textColor
 	end
 	btn.Text = opts.Text or "Action"
@@ -9110,7 +9119,7 @@ function UIKit.CreateArcGauge(opts: ArcGaugeOptions?)
 	root.Name = o.Name or "ArcGauge"
 	root.Size = o.Size or UDim2.fromOffset(148, 148)
 	root.Position = o.Position or UDim2.fromScale(0.5, 0.5)
-	root.AnchorPoint = o.AnchorPoint or Vector2.new(0.5, 0.5)
+	root.AnchorPoint = resolveDefaultAnchorPoint(o.Position, o.AnchorPoint)
 	root.BackgroundTransparency = 1
 	root.BorderSizePixel = 0
 	root.ZIndex = baseZ
@@ -10047,7 +10056,9 @@ function UIKit.CreateBookSpread(opts: BookSpreadOptions?)
 	local leftPage = buildPage("LeftPage", 0, 0)
 	local rightPage = buildPage("RightPage", 0.5, 3)
 
+	local hasBookTitle = false
 	if o.BookTitle and o.BookTitle ~= "" then
+		hasBookTitle = true
 		local titleHdr = Instance.new("TextLabel")
 		titleHdr.Name = "BookTitle"
 		titleHdr.Size = UDim2.new(1, 0, 0, 26)
@@ -10061,6 +10072,15 @@ function UIKit.CreateBookSpread(opts: BookSpreadOptions?)
 		titleHdr.ZIndex = baseZ + 4
 		titleHdr.Parent = leftPage
 	end
+
+	local leftContent = Instance.new("Frame")
+	leftContent.Name = "PageContent"
+	leftContent.BackgroundTransparency = 1
+	leftContent.BorderSizePixel = 0
+	leftContent.Position = if hasBookTitle then UDim2.fromOffset(0, 30) else UDim2.fromOffset(0, 0)
+	leftContent.Size = if hasBookTitle then UDim2.new(1, 0, 1, -30) else UDim2.fromScale(1, 1)
+	leftContent.ZIndex = baseZ + 4
+	leftContent.Parent = leftPage
 
 	local spineShadow = Instance.new("Frame")
 	spineShadow.Name = "SpineShadow"
@@ -10186,7 +10206,7 @@ function UIKit.CreateBookSpread(opts: BookSpreadOptions?)
 			activeIndex = idx
 			refreshTabs()
 			if o.OnTabChanged then
-				o.OnTabChanged(idx, tab.Id or tab.Label, leftPage, rightPage)
+				o.OnTabChanged(idx, tab.Id or tab.Label, leftContent, rightPage)
 			end
 		end)
 
@@ -10198,7 +10218,8 @@ function UIKit.CreateBookSpread(opts: BookSpreadOptions?)
 	local api = {
 		Root = root,
 		Cover = cover,
-		LeftPage = leftPage,
+		LeftPage = leftContent,
+		LeftPageRaw = leftPage,
 		RightPage = rightPage,
 		SpineShadow = spineShadow,
 		TabButtons = tabButtons,
@@ -10219,7 +10240,7 @@ function UIKit.CreateBookSpread(opts: BookSpreadOptions?)
 		refreshTabs()
 		local chosen = tabs[activeIndex]
 		if chosen and o.OnTabChanged then
-			o.OnTabChanged(activeIndex, chosen.Id or chosen.Label, leftPage, rightPage)
+			o.OnTabChanged(activeIndex, chosen.Id or chosen.Label, leftContent, rightPage)
 		end
 	end
 

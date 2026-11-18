@@ -10,6 +10,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
+def _detached_subprocess_kwargs() -> Dict[str, Any]:
+    """Return subprocess kwargs preventing Windows MCP stdio pipe inheritance and console popups."""
+    kwargs: Dict[str, Any] = {"stdin": subprocess.DEVNULL}
+    if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    return kwargs
+
+
 TOOLCHAIN_SPECS: Dict[str, Dict[str, str]] = {
     "rojo": {
         "purpose": "Sync filesystem Luau sources & SharpAssetRegistry.luau to Roblox Studio (.rbxl/.rbxm/serve)",
@@ -83,6 +91,7 @@ class ToolchainEngine:
                 text=True,
                 timeout=4.0,
                 check=False,
+                **_detached_subprocess_kwargs(),
             )
             out = (proc.stdout or proc.stderr or "").strip()
             return out.splitlines()[0].strip() if out else None
@@ -227,6 +236,7 @@ class ToolchainEngine:
                 text=True,
                 timeout=timeout_sec,
                 check=False,
+                **_detached_subprocess_kwargs(),
             )
             stdout = (proc.stdout or "").strip()
             stderr = (proc.stderr or "").strip()

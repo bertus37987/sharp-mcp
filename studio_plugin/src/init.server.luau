@@ -409,7 +409,7 @@ task.spawn(function()
 						placeId = game.PlaceId,
 						universeId = game.GameId,
 						placeName = game.Name,
-						pluginVersion = "0.4.0",
+						pluginVersion = "0.5.0",
 						safetyMode = ui.safetyMode,
 						httpEnabled = httpEnabled,
 						capabilities = {

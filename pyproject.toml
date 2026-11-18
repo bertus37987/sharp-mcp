@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sharp-mcp"
-version = "0.4.0"
+version = "0.5.0"
 description = "Sharp — Unified Roblox Studio & Blender Companion MCP Server with Automatic Skill Distributor, Surgical GUI Tools, Toolchain Orchestration, and Studio Bridge."
 readme = "README.md"
 license = "LicenseRef-Sharp-PreRelease-NonCommercial"

@@ -1093,7 +1093,7 @@ class TestPackagingCliAndRegistration(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, f"{subcmd} failed: {proc.stderr}")
             parsed = json.loads(proc.stdout)
             self.assertTrue(parsed.get("ok"), f"{subcmd} returned ok=False: {parsed}")
-            self.assertEqual(parsed.get("version"), "0.4.0")
+            self.assertEqual(parsed.get("version"), "0.5.0")
 
     def test_plugin_installer_in_isolated_temp_dir(self) -> None:
         src = get_plugin_source_path()
@@ -1423,6 +1423,27 @@ class TestDomainEnginesVisualDiffAndToolchain(unittest.TestCase):
                 missing = tc.run_action(action="lune_run", project_root=proj, target_path=str(fake_script))
                 self.assertFalse(missing["ok"])
                 self.assertTrue("install" in json.dumps(missing).lower() or "not found" in json.dumps(missing).lower())
+
+    def test_toolchain_subprocess_detaches_stdio_and_no_window(self) -> None:
+        tc = ToolchainEngine()
+        fake_proc = SimpleNamespace(returncode=0, stdout="rojo 7.4.4\n", stderr="")
+        with patch("sharp_mcp.domain_engines.toolchain_engine.subprocess.run", return_value=fake_proc) as mock_run:
+            ver = tc._probe_version("rojo.exe")
+            self.assertEqual(ver, "rojo 7.4.4")
+            probe_kwargs = mock_run.call_args.kwargs
+            self.assertEqual(probe_kwargs.get("stdin"), subprocess.DEVNULL)
+            if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+                self.assertEqual(probe_kwargs.get("creationflags"), subprocess.CREATE_NO_WINDOW)
+
+        with patch.object(tc, "resolve_binary", return_value="rojo.exe"), patch(
+            "sharp_mcp.domain_engines.toolchain_engine.subprocess.run", return_value=fake_proc
+        ) as mock_run:
+            res = tc._run_tool_cmd("rojo", ["--version"])
+            self.assertTrue(res["ok"])
+            run_kwargs = mock_run.call_args.kwargs
+            self.assertEqual(run_kwargs.get("stdin"), subprocess.DEVNULL)
+            if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+                self.assertEqual(run_kwargs.get("creationflags"), subprocess.CREATE_NO_WINDOW)
 
 
 class TestProjectLibraryIsolated(unittest.TestCase):
@@ -1866,6 +1887,215 @@ class TestMcpStdioServerEndToEnd(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(res.meta["untrustedContentWarning"]["level"], "untrusted")
                         self.assertIn("[UNTRUSTED_PLACE_CONTENT source=live_startergui_inspect]", res.content[0].text)
 
+
+def _parse_mcp_tool_output(raw: Any) -> Dict[str, Any]:
+    """Parse JSON from either plain compact_json string or untrusted-framed CallToolResult."""
+    text = raw.content[0].text if hasattr(raw, "content") else str(raw)
+    if text.startswith("[UNTRUSTED_PLACE_CONTENT"):
+        lines = text.splitlines()
+        text = "\n".join(lines[1:-1])
+    return json.loads(text)
+
+
+class TestMcpUnwrappingAndVersionV05(unittest.IsolatedAsyncioTestCase):
+    def test_extract_studio_decoded_variants(self) -> None:
+        from sharp_mcp.mcp_server import _extract_studio_decoded
+
+        self.assertIsNone(_extract_studio_decoded({"executionMode": "Compile_Only", "compiledLuau": "return 1"}))
+        self.assertEqual(
+            _extract_studio_decoded({"decoded": {"ok": True, "buildResult": {"chunks": 4}}}),
+            {"ok": True, "buildResult": {"chunks": 4}},
+        )
+        self.assertEqual(
+            _extract_studio_decoded({
+                "upstreamResponse": {
+                    "ok": True,
+                    "decoded": {"result": json.dumps({"ok": False, "error": "Rig missing"})},
+                }
+            }),
+            {"ok": False, "error": "Rig missing"},
+        )
+        self.assertEqual(
+            _extract_studio_decoded({
+                "bridgeResponse": {
+                    "ok": True,
+                    "result": json.dumps({"ok": True, "allPassed": True, "totalModules": 2}),
+                }
+            }),
+            {"ok": True, "allPassed": True, "totalModules": 2},
+        )
+        self.assertEqual(
+            _extract_studio_decoded({
+                "bridgeResponse": {
+                    "ok": True,
+                    "result": {"decoded": {"result": json.dumps({"fit_passed": False, "minClearanceStuds": -0.25})}},
+                }
+            }),
+            {"fit_passed": False, "minClearanceStuds": -0.25},
+        )
+
+    async def test_mcp_response_promotion_ok_propagation_and_custom_bmesh_summary(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sharp_unwrap_v05_") as td:
+            app = SharpMcpApplication(project_dir=td, start_bridge=False, profile="full")
+            tools = app.mcp._tool_manager._tools
+
+            # 1. sharp_terrain_build promotes buildResult and decoded
+            terrain_decoded = {"ok": True, "recordingStatus": "Committed", "buildResult": {"chunks": 8, "voxels": 4096}}
+            with patch.object(
+                app,
+                "_dispatch_studio_job",
+                new=AsyncMock(return_value={
+                    "executionMode": "SharpBridgePlugin_Loopback_58421",
+                    "bridgeResponse": {"ok": True, "result": json.dumps(terrain_decoded)},
+                }),
+            ):
+                ter_out = _parse_mcp_tool_output(await tools["sharp_terrain_build"].fn(biome="Alpine"))
+            self.assertTrue(ter_out["ok"])
+            self.assertEqual(ter_out["decoded"], terrain_decoded)
+            self.assertEqual(ter_out["buildResult"], {"chunks": 8, "voxels": 4096})
+
+            # 2. sharp_luau_scaffold(action="smoke_test") promotes summary keys & smokeReport / report
+            smoke_decoded = {
+                "ok": False,
+                "allPassed": False,
+                "passedCount": 3,
+                "failedCount": 1,
+                "totalModules": 4,
+                "missingContainers": ["StarterPlayerScripts"],
+                "smokeReport": {"failed": [{"path": "ReplicatedStorage.Bad", "error": "boom"}]},
+            }
+            with patch.object(
+                app,
+                "_dispatch_studio_job",
+                new=AsyncMock(return_value={
+                    "executionMode": "SharpBridgePlugin_Loopback_58421",
+                    "bridgeResponse": {"ok": True, "result": json.dumps(smoke_decoded)},
+                }),
+            ):
+                smoke_out = _parse_mcp_tool_output(await tools["sharp_luau_scaffold"].fn(action="smoke_test"))
+            self.assertFalse(smoke_out["allPassed"])
+            self.assertEqual(smoke_out["passedCount"], 3)
+            self.assertEqual(smoke_out["failedCount"], 1)
+            self.assertEqual(smoke_out["totalModules"], 4)
+            self.assertEqual(smoke_out["missingContainers"], ["StarterPlayerScripts"])
+            self.assertEqual(smoke_out["smokeReport"], smoke_decoded["smokeReport"])
+
+            smoke_report_alt = {
+                "ok": True,
+                "allPassed": True,
+                "passedCount": 2,
+                "failedCount": 0,
+                "totalModules": 2,
+                "missingContainers": [],
+                "report": {"modules": ["A", "B"]},
+            }
+            with patch.object(
+                app,
+                "_dispatch_studio_job",
+                new=AsyncMock(return_value={
+                    "executionMode": "Upstream_StudioMCP_Subprocess",
+                    "upstreamResponse": {"ok": True, "decoded": smoke_report_alt},
+                }),
+            ):
+                smoke_alt_out = _parse_mcp_tool_output(await tools["sharp_luau_scaffold"].fn(action="smoke_test"))
+            self.assertTrue(smoke_alt_out["allPassed"])
+            self.assertEqual(smoke_alt_out["report"], {"modules": ["A", "B"]})
+
+            # 3. sharp_equipment_attach(action="inspect_attachment_fit") ok=False propagation & metrics promotion
+            with patch.object(
+                app,
+                "_dispatch_studio_job",
+                new=AsyncMock(return_value={
+                    "executionMode": "SharpBridgePlugin_Loopback_58421",
+                    "bridgeResponse": {
+                        "ok": True,
+                        "result": json.dumps({"ok": False, "error": "Rig not found at path: Workspace.Missing"}),
+                    },
+                }),
+            ):
+                fit_err = _parse_mcp_tool_output(
+                    await tools["sharp_equipment_attach"].fn(action="inspect_attachment_fit", rig_path="Workspace.Missing")
+                )
+            self.assertFalse(fit_err["ok"])
+            self.assertEqual(fit_err["error"], "Rig not found at path: Workspace.Missing")
+
+            fit_metrics = {
+                "ok": True,
+                "fit_passed": False,
+                "minClearanceStuds": -0.18,
+                "penetrations": [{"pose": "raised_arm", "limb": "UpperTorso", "penetrationStuds": 0.18}],
+                "posesTested": ["rest", "raised_arm"],
+                "checkedPairs": 14,
+            }
+            with patch.object(
+                app,
+                "_dispatch_studio_job",
+                new=AsyncMock(return_value={
+                    "executionMode": "Upstream_StudioMCP_Subprocess",
+                    "upstreamResponse": {"ok": True, "decoded": {"result": json.dumps(fit_metrics)}},
+                }),
+            ):
+                fit_out = _parse_mcp_tool_output(
+                    await tools["sharp_equipment_attach"].fn(action="inspect_attachment_fit", rig_path="Workspace.Warrior")
+                )
+            self.assertTrue(fit_out["ok"])
+            self.assertFalse(fit_out["fit_passed"])
+            self.assertEqual(fit_out["minClearanceStuds"], -0.18)
+            self.assertEqual(fit_out["penetrations"], fit_metrics["penetrations"])
+            self.assertEqual(fit_out["posesTested"], ["rest", "raised_arm"])
+            self.assertEqual(fit_out["checkedPairs"], 14)
+
+            # 4. sharp_equipment_attach(action="custom_bmesh", detail="summary") keeps new summary_keys
+            bmesh_out = _parse_mcp_tool_output(
+                await tools["sharp_equipment_attach"].fn(
+                    action="custom_bmesh",
+                    prop_name="StormAxe",
+                    asset_style="handpainted_fantasy_rpg",
+                    texture_style="stylized_gradient_atlas",
+                    execute_blender=False,
+                    detail="summary",
+                )
+            )
+            self.assertEqual(bmesh_out["detail"], "summary")
+            summary = bmesh_out["summary"]
+            for req_key in ("executed", "asset_name", "asset_style", "texture_style", "fbx_path", "glb_path", "preview_path"):
+                self.assertIn(req_key, summary, f"Missing '{req_key}' in custom_bmesh summary: {summary}")
+            self.assertFalse(summary["executed"])
+            self.assertEqual(summary["asset_name"], "StormAxe")
+
+            mocked_exec_bmesh = {
+                "ok": True,
+                "executed": True,
+                "asset_name": "StormAxe",
+                "asset_style": "handpainted_fantasy_rpg",
+                "texture_style": "stylized_gradient_atlas",
+                "mesh_stats": {"triangle_count": 320, "is_manifold": True},
+                "audit": {"passed": True, "triangle_count": 320},
+                "fbx_path": str(Path(td) / "StormAxe.fbx"),
+                "glb_path": str(Path(td) / "StormAxe.glb"),
+                "preview_path": str(Path(td) / "StormAxe_preview.png"),
+                "compiled_bpy_code": "# filler\n" * 2500,
+            }
+            with patch.object(app.blender_engine, "compile_custom_bmesh_asset_bpy", return_value=mocked_exec_bmesh):
+                bmesh_exec_out = _parse_mcp_tool_output(
+                    await tools["sharp_equipment_attach"].fn(action="custom_bmesh", prop_name="StormAxe", detail="summary")
+                )
+            self.assertEqual(bmesh_exec_out["detail"], "summary")
+            self.assertTrue(bmesh_exec_out["summary"]["executed"])
+            self.assertEqual(bmesh_exec_out["summary"]["mesh_stats"], mocked_exec_bmesh["mesh_stats"])
+            self.assertEqual(bmesh_exec_out["summary"]["audit"], mocked_exec_bmesh["audit"])
+
+    def test_version_050_across_package_and_plugin_sources(self) -> None:
+        import sharp_mcp
+
+        self.assertEqual(sharp_mcp.__version__, "0.5.0")
+        self.assertIn('version = "0.5.0"', (SERVER_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        pkg = json.loads((SERVER_ROOT / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(pkg["version"], "0.5.0")
+        luau_src = (SERVER_ROOT / "studio_plugin" / "src" / "init.server.luau").read_text(encoding="utf-8")
+        self.assertIn('pluginVersion = "0.5.0"', luau_src)
+        readme = (SERVER_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("`sharp-mcp` v0.5.0", readme)
 
 
 if __name__ == "__main__":

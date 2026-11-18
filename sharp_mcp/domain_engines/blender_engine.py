@@ -1906,6 +1906,159 @@ def _sharp_build_default_custom_bm(bm):
     _sharp_add_tapered_blade(bm, width=0.28, thickness=0.11, length=2.45, tip_len=0.48, loc=(0.0, 0.0, 0.42), mat_idx=0)
 
 
+def _sharp_join_meshes(*objs):
+    """Deterministically merge MESH objects/meshes via bmesh without bpy.ops UI context."""
+    flat_items = []
+    for item in objs:
+        if item is None:
+            continue
+        if isinstance(item, (list, tuple, set)):
+            flat_items.extend(item)
+        else:
+            flat_items.append(item)
+
+    candidates = []
+    seen_ptrs = set()
+    for item in flat_items:
+        if item is None:
+            continue
+        if isinstance(item, bpy.types.Object):
+            if item.type != "MESH" or item.data is None:
+                continue
+            ptr = item.as_pointer()
+            if ptr not in seen_ptrs:
+                seen_ptrs.add(ptr)
+                candidates.append((item, True))
+        elif isinstance(item, bpy.types.Mesh):
+            ptr = item.as_pointer()
+            if ptr not in seen_ptrs:
+                seen_ptrs.add(ptr)
+                candidates.append((item, False))
+
+    if not candidates:
+        return None
+
+    first_item, first_is_obj = candidates[0]
+    if first_is_obj:
+        target_obj = first_item
+    else:
+        target_obj = bpy.data.objects.new(first_item.name + "_Obj", first_item)
+        bpy.context.collection.objects.link(target_obj)
+
+    if len(candidates) == 1:
+        return target_obj
+
+    bpy.context.view_layer.update()
+    if target_obj.data.users > 1:
+        target_obj.data = target_obj.data.copy()
+    target_mesh = target_obj.data
+    try:
+        target_inv = target_obj.matrix_world.inverted()
+    except ValueError:
+        target_inv = Matrix.Identity(4)
+
+    mat_to_idx = {{}}
+    for idx, mat in enumerate(target_mesh.materials):
+        if mat is not None and mat.name not in mat_to_idx:
+            mat_to_idx[mat.name] = idx
+
+    target_bm = bmesh.new()
+    target_bm.from_mesh(target_mesh)
+    target_bm.verts.ensure_lookup_table()
+    target_bm.edges.ensure_lookup_table()
+    target_bm.faces.ensure_lookup_table()
+
+    objs_to_remove = []
+    for src_item, is_obj in candidates[1:]:
+        if is_obj:
+            src_obj = src_item
+            src_mesh = src_obj.data
+            rel_mat = target_inv @ src_obj.matrix_world
+            objs_to_remove.append(src_obj)
+        else:
+            src_obj = None
+            src_mesh = src_item
+            rel_mat = Matrix.Identity(4)
+
+        local_mat_map = {{}}
+        for src_idx, src_mat in enumerate(src_mesh.materials):
+            if src_mat is None:
+                continue
+            if src_mat.name not in mat_to_idx:
+                target_mesh.materials.append(src_mat)
+                mat_to_idx[src_mat.name] = len(target_mesh.materials) - 1
+            local_mat_map[src_idx] = mat_to_idx[src_mat.name]
+
+        src_bm = bmesh.new()
+        src_bm.from_mesh(src_mesh)
+        bmesh.ops.transform(src_bm, matrix=rel_mat, verts=src_bm.verts)
+        if rel_mat.determinant() < 0.0:
+            bmesh.ops.reverse_faces(src_bm, faces=src_bm.faces)
+        src_bm.normal_update()
+        src_bm.verts.index_update()
+
+        uv_pairs = []
+        for src_uv in src_bm.loops.layers.uv:
+            dst_uv = target_bm.loops.layers.uv.get(src_uv.name)
+            if dst_uv is None:
+                if len(src_bm.loops.layers.uv) == 1 and len(target_bm.loops.layers.uv) == 1:
+                    dst_uv = target_bm.loops.layers.uv.active
+                else:
+                    dst_uv = target_bm.loops.layers.uv.new(src_uv.name)
+            uv_pairs.append((src_uv, dst_uv))
+
+        vmap = []
+        for v in src_bm.verts:
+            nv = target_bm.verts.new(v.co)
+            nv.normal = v.normal
+            vmap.append(nv)
+
+        for f in src_bm.faces:
+            try:
+                nf = target_bm.faces.new([vmap[v.index] for v in f.verts])
+            except ValueError:
+                continue
+            nf.material_index = local_mat_map.get(f.material_index, 0)
+            nf.smooth = f.smooth
+            nf.normal = f.normal
+            for src_uv, dst_uv in uv_pairs:
+                for src_loop, dst_loop in zip(f.loops, nf.loops):
+                    dst_loop[dst_uv].uv = src_loop[src_uv].uv.copy()
+
+        for e in src_bm.edges:
+            ev0 = vmap[e.verts[0].index]
+            ev1 = vmap[e.verts[1].index]
+            ne = target_bm.edges.get((ev0, ev1)) or target_bm.edges.new((ev0, ev1))
+            ne.smooth = e.smooth
+            ne.seam = e.seam
+
+        src_bm.free()
+
+    target_bm.normal_update()
+    target_bm.to_mesh(target_mesh)
+    target_bm.free()
+    target_mesh.update()
+
+    for m_obj in objs_to_remove:
+        for child in list(m_obj.children):
+            cw = child.matrix_world.copy()
+            child.parent = target_obj
+            child.matrix_parent_inverse = Matrix.Identity(4)
+            child.matrix_world = cw
+        old_mesh = m_obj.data
+        bpy.data.objects.remove(m_obj, do_unlink=True)
+        if old_mesh is not None and old_mesh.users == 0 and old_mesh != target_mesh:
+            bpy.data.meshes.remove(old_mesh)
+
+    bpy.context.view_layer.update()
+    try:
+        bpy.context.view_layer.objects.active = target_obj
+        target_obj.select_set(True)
+    except Exception:
+        pass
+    return target_obj
+
+
 def _run_sharp_custom_bmesh_pipeline():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
@@ -1957,6 +2110,7 @@ def _run_sharp_custom_bmesh_pipeline():
         "add_tapered_blade": _sharp_add_tapered_blade,
         "add_faceted_gem": _sharp_add_faceted_gem,
         "add_curved_shell": _sharp_add_curved_shell,
+        "join_meshes": _sharp_join_meshes,
     }}
 
     if user_code.strip():
@@ -1985,14 +2139,9 @@ def _run_sharp_custom_bmesh_pipeline():
             for m in mat_list:
                 m_obj.data.materials.append(m)
 
-    bpy.ops.object.select_all(action="DESELECT")
-    for m_obj in mesh_objs:
-        m_obj.select_set(True)
     asset_obj = mesh_objs[0]
-    bpy.context.view_layer.objects.active = asset_obj
     if len(mesh_objs) > 1:
-        bpy.ops.object.join()
-        asset_obj = bpy.context.view_layer.objects.active
+        asset_obj = _sharp_join_meshes(*mesh_objs)
 
     asset_obj.name = asset_name
     asset_obj.data.name = asset_name + "_Mesh"

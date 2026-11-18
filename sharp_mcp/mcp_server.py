@@ -92,6 +92,106 @@ def resolve_enabled_tools_for_profile(profile: str) -> List[str]:
     return [name for name in all_tools if name in BLENDER_PROFILE_TOOLS]
 
 
+def _extract_studio_decoded(exec_res: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Extract and recursively unwrap a Studio JSON/dict payload from bridge or upstream results."""
+    if not isinstance(exec_res, dict):
+        return None
+
+    def _try_parse_dict(val: Any) -> Optional[Dict[str, Any]]:
+        cur: Any = val
+        for _ in range(4):
+            if isinstance(cur, dict):
+                return cur
+            if isinstance(cur, str):
+                text = cur.strip()
+                if not text:
+                    return None
+                try:
+                    cur = json.loads(text)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    return None
+            else:
+                return None
+        return cur if isinstance(cur, dict) else None
+
+    def _unwrap(val: Any, depth: int = 0) -> Optional[Dict[str, Any]]:
+        if depth >= 6:
+            return val if isinstance(val, dict) else None
+        cur = _try_parse_dict(val)
+        if cur is None:
+            return None
+        for key in ("decoded", "result"):
+            if key in cur and cur[key] is not None:
+                inner = _try_parse_dict(cur[key])
+                if inner is not None:
+                    return _unwrap(inner, depth + 1)
+        return cur
+
+    candidates: List[Any] = [exec_res.get("decoded")]
+    upstream = exec_res.get("upstreamResponse")
+    if isinstance(upstream, dict):
+        candidates.append(upstream.get("decoded"))
+        candidates.append(upstream.get("result"))
+        content = upstream.get("content")
+        if isinstance(content, list) and content:
+            first = content[0]
+            if isinstance(first, dict) and "text" in first:
+                candidates.append(first.get("text"))
+            else:
+                candidates.append(first)
+    bridge = exec_res.get("bridgeResponse")
+    if isinstance(bridge, dict):
+        candidates.append(bridge.get("decoded"))
+        candidates.append(bridge.get("result"))
+
+    for cand in candidates:
+        if cand is None:
+            continue
+        unwrapped = _unwrap(cand)
+        if unwrapped is not None:
+            return unwrapped
+    return None
+
+
+def _studio_exec_ok(exec_res: Dict[str, Any], decoded: Optional[Dict[str, Any]]) -> bool:
+    """Compute combined ok flag across execution envelope, bridge/upstream response, and decoded output."""
+    bridge_resp = exec_res.get("bridgeResponse")
+    upstream_resp = exec_res.get("upstreamResponse")
+    return (
+        bool(exec_res.get("ok", True))
+        and (bool(bridge_resp.get("ok", True)) if isinstance(bridge_resp, dict) else True)
+        and (bool(upstream_resp.get("ok", True)) if isinstance(upstream_resp, dict) else True)
+        and (bool(decoded.get("ok", True)) if isinstance(decoded, dict) else True)
+    )
+
+
+def _apply_studio_decoded(
+    payload: Dict[str, Any],
+    exec_res: Dict[str, Any],
+    promote_keys: tuple[str, ...],
+) -> Optional[Dict[str, Any]]:
+    """Unwrap Studio decoded output into ``payload``, propagate ``ok``, and promote keys."""
+    decoded = _extract_studio_decoded(exec_res)
+    top_ok = _studio_exec_ok(exec_res, decoded)
+    payload["ok"] = top_ok
+    if isinstance(decoded, dict):
+        payload["decoded"] = decoded
+        for key in promote_keys:
+            if key in decoded:
+                payload[key] = decoded[key]
+    if not top_ok and "error" not in payload:
+        err_msg = None
+        if isinstance(exec_res.get("error"), str):
+            err_msg = exec_res.get("error")
+        elif isinstance(exec_res.get("bridgeResponse"), dict):
+            err_msg = exec_res["bridgeResponse"].get("error") or exec_res["bridgeResponse"].get("message")
+        elif isinstance(exec_res.get("upstreamResponse"), dict):
+            err_msg = exec_res["upstreamResponse"].get("error")
+        if err_msg:
+            payload["error"] = err_msg
+    return decoded
+
+
 def build_server_instructions(
     *,
     profile: str,
@@ -688,16 +788,15 @@ class SharpMcpApplication:
                 luau_source=luau,
                 parameters={"biome": biome, "seed": seed, "min_corner": mn, "max_corner": mx, "custom_terrain": bool(custom_terrain_spec)},
             )
-            return compact_json(
-                {
-                    "ok": True,
-                    "tool": "sharp_terrain_build",
-                    "biome": biome,
-                    "has_custom_terrain_spec": bool(custom_terrain_spec),
-                    "offline_heightmap": offline_res,
-                    **exec_res,
-                }
-            )
+            payload: Dict[str, Any] = {
+                "tool": "sharp_terrain_build",
+                "biome": biome,
+                "has_custom_terrain_spec": bool(custom_terrain_spec),
+                "offline_heightmap": offline_res,
+                **exec_res,
+            }
+            _apply_studio_decoded(payload, exec_res, ("buildResult",))
+            return compact_json(payload)
 
         self._add_tool("sharp_terrain_build", sharp_terrain_build)
 
@@ -1466,8 +1565,26 @@ class SharpMcpApplication:
                     expected_session_nonce=expected_session_nonce,
                 )
                 has_live = "bridgeResponse" in exec_res or "upstreamResponse" in exec_res
+                payload: Dict[str, Any] = {
+                    "tool": "sharp_luau_scaffold",
+                    "action": act,
+                    **exec_res,
+                }
+                _apply_studio_decoded(
+                    payload,
+                    exec_res,
+                    (
+                        "allPassed",
+                        "passedCount",
+                        "failedCount",
+                        "totalModules",
+                        "missingContainers",
+                        "smokeReport",
+                        "report",
+                    ),
+                )
                 return build_mcp_result(
-                    {"ok": True, "tool": "sharp_luau_scaffold", "action": act, **exec_res},
+                    payload,
                     untrusted_source="live_system_smoke_test" if has_live else None,
                 )
 
@@ -2441,8 +2558,28 @@ class SharpMcpApplication:
                         expected_session_nonce=expected_session_nonce,
                     )
                     has_live = "bridgeResponse" in exec_res or "upstreamResponse" in exec_res
+                    payload = {
+                        "tool": "sharp_equipment_attach",
+                        "action": act,
+                        "rig_path": rig_path,
+                        "item_path": item_path,
+                        "test_pose": test_pose,
+                        **exec_res,
+                    }
+                    _apply_studio_decoded(
+                        payload,
+                        exec_res,
+                        (
+                            "fit_passed",
+                            "minClearanceStuds",
+                            "penetrations",
+                            "posesTested",
+                            "checkedPairs",
+                            "error",
+                        ),
+                    )
                     return build_mcp_result(
-                        {"ok": True, "tool": "sharp_equipment_attach", "action": act, "rig_path": rig_path, "item_path": item_path, "test_pose": test_pose, **exec_res},
+                        payload,
                         untrusted_source="live_equipment_fit" if has_live else None,
                     )
                 elif act == "compile_playback_test":
@@ -2524,6 +2661,8 @@ class SharpMcpApplication:
                     "official_attachment_count", "unique_attachment_names",
                     "valid_modes", "prop_kind", "prop_name", "attachment_mode", "attach_mode", "sidecar_path",
                     "preset_name", "presets_generated", "passed", "quality_score",
+                    "executed", "asset_name", "asset_style", "texture_style",
+                    "mesh_stats", "audit", "fbx_path", "glb_path", "preview_path",
                 ),
                 extra_summary=extra_summary,
             )

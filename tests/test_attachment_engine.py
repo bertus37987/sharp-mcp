@@ -388,6 +388,31 @@ class TestAttachmentEngine(unittest.TestCase):
             ):
                 self.assertIn(required_token, luau_fit)
 
+    def test_inspect_attachment_fit_default_fallback_and_workspace_discovery(self) -> None:
+        # Problem 2A: default "Workspace.EquipmentItem" must fall back to rig auto-discovery instead of erroring,
+        # try rig:FindFirstChild(TARGET_ITEM_PATH, true), and scan workspace:GetDescendants() when #equipParts == 0.
+        luau_default = self.engine.compile_inspect_attachment_fit_luau(
+            rig_path="Workspace.TestWarrior",
+            item_path="Workspace.EquipmentItem",
+            test_pose="raised_arm",
+        )
+        assert_valid_luau_sanity(luau_default, "inspect_fit_default_fallback")
+        self.assertIn('rig:FindFirstChild(TARGET_ITEM_PATH, true)', luau_default)
+        self.assertIn('TARGET_ITEM_PATH ~= "Workspace.EquipmentItem"', luau_default)
+        self.assertIn("workspace:GetDescendants()", luau_default)
+        for joint_cls in ("Motor6D", "RigidConstraint", "Weld", "WeldConstraint"):
+            self.assertIn(joint_cls, luau_default)
+
+        # Explicit custom missing item path must still preserve error guard
+        luau_custom = self.engine.compile_inspect_attachment_fit_luau(
+            rig_path="Workspace.TestWarrior",
+            item_path="Workspace.CustomMissingBlade",
+            test_pose="slash_windup",
+        )
+        assert_valid_luau_sanity(luau_custom, "inspect_fit_custom_item")
+        self.assertIn('local TARGET_ITEM_PATH = "Workspace.CustomMissingBlade"', luau_custom)
+        self.assertIn('"Item not found at path: " .. TARGET_ITEM_PATH', luau_custom)
+
 
 class TestRigAnimationQualityAndPresets(unittest.TestCase):
     def setUp(self) -> None:
@@ -939,6 +964,122 @@ add_faceted_gem(bm, 0.08, 0.09, 0.10, loc=(0.0, 0.0, 0.38), mat_idx=3)
                 self.assertEqual(sidecar["warnings"], [])
                 self.assertEqual(sidecar["target_limb"], "RightHand")
                 self.assertEqual(sidecar["target_limb_attachment"], "RightGripAttachment")
+
+    def test_custom_bmesh_multi_object_headless_merge_and_join_helper(self) -> None:
+        attach_eng = AttachmentEngine(BUNDLED_SKILLS_DIR)
+        two_obj_code = """
+bm1 = bmesh.new()
+add_tapered_blade(bm1, width=0.26, thickness=0.10, length=2.0, tip_len=0.45, loc=(0.0, 0.0, 0.45), mat_idx=0)
+add_box(bm1, (0.60, 0.16, 0.12), (0.0, 0.0, 0.38), bevel_ratio=0.14, mat_idx=1)
+bmesh.ops.recalc_face_normals(bm1, faces=bm1.faces)
+m1 = bpy.data.meshes.new("BladePart_Mesh")
+bm1.to_mesh(m1)
+bm1.free()
+m1.materials.append(PRIMARY_MAT)
+m1.materials.append(TRIM_MAT)
+obj1 = bpy.data.objects.new("BladePart", m1)
+bpy.context.collection.objects.link(obj1)
+
+bm2 = bmesh.new()
+add_cylinder(bm2, 0.065, 0.058, 0.72, segs=10, loc=(0.0, 0.0, 0.0), mat_idx=0)
+add_faceted_gem(bm2, 0.09, 0.09, 0.11, loc=(0.0, 0.0, -0.42), mat_idx=1)
+bmesh.ops.recalc_face_normals(bm2, faces=bm2.faces)
+m2 = bpy.data.meshes.new("HiltPart_Mesh")
+bm2.to_mesh(m2)
+bm2.free()
+m2.materials.append(LEATHER_MAT)
+m2.materials.append(CORE_MAT)
+obj2 = bpy.data.objects.new("HiltPart", m2)
+obj2.location = (0.0, 0.0, -0.05)
+obj2.rotation_euler = (0.0, 0.0, math.radians(15.0))
+bpy.context.collection.objects.link(obj2)
+"""
+        explicit_join_code = two_obj_code + """
+for mesh_item, uv_offset in ((m1, (0.25, 0.25)), (m2, (0.75, 0.75))):
+    uv_layer = mesh_item.uv_layers.new(name="UVMap")
+    for loop_idx in range(len(mesh_item.loops)):
+        uv_layer.data[loop_idx].uv = uv_offset
+merged = join_meshes(obj1, obj2)
+assert merged is obj1
+assert len([o for o in bpy.context.scene.objects if o.type == "MESH"]) == 1
+assert {p.material_index for p in merged.data.polygons} == {0, 1, 2, 3}
+uv_vals = {(round(d.uv[0], 2), round(d.uv[1], 2)) for d in merged.data.uv_layers["UVMap"].data}
+assert (0.25, 0.25) in uv_vals and (0.75, 0.75) in uv_vals, f"Lost UVs: {uv_vals}"
+"""
+        with tempfile.TemporaryDirectory(prefix="sharp_multi_bmesh_") as td:
+            compiled = self.blender.compile_custom_bmesh_asset_bpy(
+                asset_name="TwinMeshRelicBlade",
+                custom_bpy_code=two_obj_code,
+                asset_style="handpainted_fantasy_rpg",
+                texture_style="stylized_gradient_atlas",
+                attach_mode="motor6d_weapon",
+                slot="right_hand",
+                output_dir=td,
+                execute=False,
+            )
+            self.assertTrue(compiled["ok"])
+            src = compiled["compiled_bpy_code"]
+            compile(src, "custom_bmesh_multi_obj.py", "exec")
+            self.assertIn('"join_meshes":', src)
+            self.assertNotIn("bpy.ops.object.join()", src)
+
+            if detect_blender_installation().get("installed"):
+                auto_dir = Path(td) / "auto_merge"
+                auto_res = self.blender.compile_custom_bmesh_asset_bpy(
+                    asset_name="TwinMeshRelicBlade",
+                    custom_bpy_code=two_obj_code,
+                    asset_style="handpainted_fantasy_rpg",
+                    texture_style="stylized_gradient_atlas",
+                    attach_mode="motor6d_weapon",
+                    slot="right_hand",
+                    output_dir=str(auto_dir),
+                    export_fbx=True,
+                    export_glb=True,
+                    render_preview=True,
+                    execute=True,
+                    execution_mode="headless",
+                    timeout_sec=90.0,
+                )
+                self.assertTrue(auto_res["ok"] and auto_res["executed"], f"Headless multi-object custom_bmesh failed: {auto_res}")
+                self.assertTrue(Path(auto_res["fbx_path"]).is_file())
+                self.assertTrue(Path(auto_res["glb_path"]).is_file())
+                self.assertTrue(Path(auto_res["preview_path"]).is_file())
+                self.assertTrue((auto_dir / "preview.png").is_file())
+                self.assertGreater((auto_dir / "preview.png").stat().st_size, 500)
+
+                ms = auto_res["mesh_stats"]
+                self.assertEqual(ms["material_slots"], ["PrimaryMetal", "TrimAccent", "LeatherGrip", "CoreEmblem"])
+                self.assertEqual(ms["material_count"], 4)
+                self.assertEqual(ms["non_manifold_edges"], 0)
+                self.assertTrue(ms["is_manifold"])
+                self.assertTrue(ms["uv_present"])
+                self.assertGreater(ms["triangle_count"], 80)
+                self.assertLess(ms["triangle_count"], 10000)
+
+                sidecar = attach_eng.load_blender_sidecar(auto_res["sidecar_path"])
+                self.assertTrue(sidecar["ok"])
+                self.assertEqual(sidecar["warnings"], [])
+                # Verify HiltPart (down to z=-0.58) and BladePart (up to z=2.45) both survived transform+merge
+                self.assertGreater(sidecar["prop_dimensions_studs"][1], 2.7)
+
+                # Also verify explicit join_meshes(obj1, obj2) inside custom_bpy_code
+                helper_dir = Path(td) / "explicit_join"
+                helper_res = self.blender.compile_custom_bmesh_asset_bpy(
+                    asset_name="TwinMeshJoinedExplicit",
+                    custom_bpy_code=explicit_join_code,
+                    output_dir=str(helper_dir),
+                    export_fbx=True,
+                    export_glb=True,
+                    render_preview=True,
+                    execute=True,
+                    execution_mode="headless",
+                    timeout_sec=90.0,
+                )
+                self.assertTrue(helper_res["ok"] and helper_res["executed"], f"Explicit join_meshes failed: {helper_res}")
+                self.assertEqual(helper_res["mesh_stats"]["material_count"], 4)
+                self.assertEqual(helper_res["mesh_stats"]["uv_method"], "existing")
+                self.assertEqual(helper_res["mesh_stats"]["non_manifold_edges"], 0)
+                self.assertTrue((helper_dir / "preview.png").is_file())
 
     def test_runtime_files_and_skills_hygiene_and_mirror_parity(self) -> None:
         runtime_files = [

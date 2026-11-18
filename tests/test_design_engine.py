@@ -807,6 +807,100 @@ class DesignEngineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.gui_engine.compile_custom_gui_build_luau("   ")
 
+    def _extract_uikit_fn(self, src: str, fn_name: str) -> str:
+        header = f"function UIKit.{fn_name}("
+        start = src.index(header)
+        end = src.find("\nend\n", start)
+        if end == -1:
+            end = src.find("\nend", start)
+        self.assertNotEqual(end, -1, f"Could not locate closing end for UIKit.{fn_name}")
+        return src[start : end + len("\nend")]
+
+    def _assert_uikit_four_fixes(self, src: str, label: str) -> None:
+        # 1A: CreatePanel & CreateArcGauge offset AnchorPoint trap
+        self.assertIn("local function resolveDefaultAnchorPoint(", src, f"{label}: missing resolveDefaultAnchorPoint")
+        helper_start = src.index("local function resolveDefaultAnchorPoint(")
+        helper_end = src.index("\nend\n", helper_start)
+        helper_block = src[helper_start:helper_end]
+        for expected in (
+            "if anchorPoint ~= nil then",
+            "position.X.Scale == 0",
+            "position.Y.Scale == 0",
+            "(position.X.Offset ~= 0 or position.Y.Offset ~= 0)",
+            "return Vector2.zero",
+            "return Vector2.new(0.5, 0.5)",
+        ):
+            self.assertIn(expected, helper_block, f"{label}: resolveDefaultAnchorPoint missing {expected!r}")
+
+        panel_block = self._extract_uikit_fn(src, "CreatePanel")
+        self.assertIn("resolveDefaultAnchorPoint(opts.Position, opts.AnchorPoint)", panel_block, f"{label}: CreatePanel")
+        self.assertNotIn("opts.AnchorPoint or Vector2.new(0.5, 0.5)", panel_block, f"{label}: CreatePanel 9-slice/frame still uses old default")
+
+        gauge_block = self._extract_uikit_fn(src, "CreateArcGauge")
+        self.assertIn("resolveDefaultAnchorPoint(o.Position, o.AnchorPoint)", gauge_block, f"{label}: CreateArcGauge")
+        self.assertNotIn("o.AnchorPoint or Vector2.new(0.5, 0.5)", gauge_block, f"{label}: CreateArcGauge still uses old default")
+
+        # 1B: CreateBookSpread BookTitle collision on LeftPage
+        book_block = self._extract_uikit_fn(src, "CreateBookSpread")
+        for expected in (
+            'local leftContent = Instance.new("Frame")',
+            'leftContent.Name = "PageContent"',
+            "leftContent.BackgroundTransparency = 1",
+            "leftContent.BorderSizePixel = 0",
+            "UDim2.fromOffset(0, 30)",
+            "UDim2.new(1, 0, 1, -30)",
+            "leftContent.ZIndex = baseZ + 4",
+            "leftContent.Parent = leftPage",
+            "LeftPage = leftContent",
+            "LeftPageRaw = leftPage",
+            "RightPage = rightPage",
+        ):
+            self.assertIn(expected, book_block, f"{label}: CreateBookSpread missing {expected!r}")
+        self.assertNotIn("o.OnTabChanged(idx, tab.Id or tab.Label, leftPage, rightPage)", book_block)
+        self.assertNotIn("o.OnTabChanged(activeIndex, chosen.Id or chosen.Label, leftPage, rightPage)", book_block)
+
+        # 1C: AttachTextStroke whisper-thin rim on dark text + CreateButton PickReadableTextColor
+        stroke_block = self._extract_uikit_fn(src, "AttachTextStroke")
+        self.assertIn("UIKit.RelativeLuminance(effTextColor) < 0.35 and UIKit.RelativeLuminance(resolvedColor) < 0.35", stroke_block)
+        self.assertIn("resolvedThickness = math.min(0.6, resolvedThickness * 0.3)", stroke_block, f"{label}: AttachTextStroke thickness")
+        self.assertIn("resolvedTransparency = math.max(0.82, resolvedTransparency)", stroke_block, f"{label}: AttachTextStroke transparency")
+        self.assertNotIn("math.min(1.0, resolvedThickness * 0.45)", stroke_block)
+        self.assertNotIn("math.max(0.55, resolvedTransparency)", stroke_block)
+
+        btn_block = self._extract_uikit_fn(src, "CreateButton")
+        self.assertIn("local textColor = opts.TextColor or UIKit.PickReadableTextColor(fillColor)", btn_block, f"{label}: CreateButton textColor")
+        self.assertNotIn("variantTextColors", btn_block)
+
+        # 1D: AttachStackedStrokes InnerStroke BorderStrokePosition on circular frames
+        stacked_block = self._extract_uikit_fn(src, "AttachStackedStrokes")
+        self.assertIn(
+            "sAny.BorderStrokePosition = if isCircular then Enum.BorderStrokePosition.Center else Enum.BorderStrokePosition.Inner",
+            stacked_block,
+            f"{label}: AttachStackedStrokes InnerStroke",
+        )
+        self.assertNotIn("sAny.BorderStrokePosition = Enum.BorderStrokePosition.Inner\n", stacked_block)
+
+    def test_uikit_v05_layout_contrast_bookspread_and_stroke_fixes(self) -> None:
+        bundled_uikit = SKILLS_DIR / "roblox-gui" / "scripts" / "ui_theme_and_components.luau"
+        raw_src = bundled_uikit.read_text(encoding="utf-8")
+        self._assert_uikit_four_fixes(raw_src, "raw ui_theme_and_components.luau")
+
+        # Verify fixes propagate cleanly into compiled standard & custom GUI Luau output
+        ds = self.engine.generate_design_system("Valkyrie Almanac", genre="cozy_pastel", seed=88)
+        compiled_std = self.gui_engine.compile_gui_build_luau(design_system=ds)
+        self._assert_uikit_four_fixes(compiled_std, "compile_gui_build_luau")
+        _assert_luau_balanced(self, compiled_std, "compile_gui_build_luau(v05)")
+
+        compiled_custom = self.gui_engine.compile_custom_gui_build_luau(
+            LAYOUT_PARADIGM_BLUEPRINTS["cozy_book_journal"]["starter_luau_example"],
+            design_system=ds,
+        )
+        self._assert_uikit_four_fixes(compiled_custom, "compile_custom_gui_build_luau(cozy_book_journal)")
+        _assert_luau_balanced(self, compiled_custom, "compile_custom_gui_build_luau(v05)")
+        assert_valid_luau_sanity(compiled_custom, "compile_custom_gui_build_luau(v05)")
+        toks, _ = tokenize_luau(compiled_custom)
+        self.assertEqual([t for t in toks if t.value == ";"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
