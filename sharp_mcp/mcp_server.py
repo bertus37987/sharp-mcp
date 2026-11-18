@@ -1486,6 +1486,7 @@ class SharpMcpApplication:
                         studio_id=studio_id,
                         insert_into_studio=insert_into_studio,
                         parent_path=parent_path,
+                        sidecar_path=res.get("sidecar_path"),
                     )
                 else:
                     res["roblox_upload"] = {
@@ -2388,7 +2389,7 @@ class SharpMcpApplication:
             foregrip_offset_rot_deg: Optional[List[float]] = None,
             ik_weight: float = 1.0,
             ik_smooth_time: float = 0.08,
-            ik_type: str = "Transform",
+            ik_type: str = "Position",
             create_pole: bool = True,
             attach_primary_in_ik: bool = True,
             replace_existing_welds: bool = True,
@@ -2425,6 +2426,11 @@ class SharpMcpApplication:
             secondary_hex: Optional[str] = None,
             accent_hex: Optional[str] = None,
             render_preview: bool = True,
+            split_by_material: bool = False,
+            upload_to_roblox: bool = False,
+            insert_into_studio: bool = True,
+            creator_user_id: Optional[str] = None,
+            parent_path: Optional[str] = None,
             source_mesh_path: Optional[str] = None,
             output_dir: str = "",
             rig_spec_path: Optional[str] = None,
@@ -2659,11 +2665,25 @@ class SharpMcpApplication:
                         export_fbx=export_fbx,
                         export_glb=export_glb,
                         render_preview=render_preview,
+                        split_by_material=split_by_material,
                         execute=execute_blender,
                         auto_install=auto_install,
                         execution_mode=execution_mode,
                         project_library=self.project_library,
                     )
+                    if upload_to_roblox:
+                        cand_p = res.get("fbx_path") or res.get("glb_path")
+                        if isinstance(cand_p, str) and cand_p and Path(cand_p).is_file():
+                            res["roblox_upload"] = await self.multiplexer.upload_and_insert_roblox_asset(
+                                file_path=cand_p,
+                                asset_type="Model",
+                                display_name=prop_name,
+                                creator_user_id=creator_user_id,
+                                studio_id=studio_id,
+                                insert_into_studio=insert_into_studio,
+                                parent_path=parent_path,
+                                sidecar_path=res.get("sidecar_path"),
+                            )
                 elif act == "blender_attach":
                     blender_attach_mode = (mode or "auto").strip().lower()
                     res = self.blender_engine.compile_asset_attach_bpy(

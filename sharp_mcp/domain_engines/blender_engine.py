@@ -102,6 +102,22 @@ _CUSTOM_SLOT_TARGETS: Dict[str, tuple[str, str, str]] = {
     "right_shoulder": ("RightUpperArm", "RightShoulderAttachment", "RightShoulderAttachment"),
     "left_pauldron": ("LeftUpperArm", "LeftShoulderAttachment", "LeftShoulderAttachment"),
     "right_pauldron": ("RightUpperArm", "RightShoulderAttachment", "RightShoulderAttachment"),
+    "left_gauntlet": ("LeftLowerArm", "LeftWristRigAttachment", "LeftWristRigAttachment"),
+    "right_gauntlet": ("RightLowerArm", "RightWristRigAttachment", "RightWristRigAttachment"),
+    "left_bracer": ("LeftLowerArm", "LeftWristRigAttachment", "LeftWristRigAttachment"),
+    "right_bracer": ("RightLowerArm", "RightWristRigAttachment", "RightWristRigAttachment"),
+    "left_thigh": ("LeftUpperLeg", "LeftHipRigAttachment", "LeftHipRigAttachment"),
+    "right_thigh": ("RightUpperLeg", "RightHipRigAttachment", "RightHipRigAttachment"),
+    "left_greave": ("LeftLowerLeg", "LeftKneeRigAttachment", "LeftKneeRigAttachment"),
+    "right_greave": ("RightLowerLeg", "RightKneeRigAttachment", "RightKneeRigAttachment"),
+    "left_shin": ("LeftLowerLeg", "LeftKneeRigAttachment", "LeftKneeRigAttachment"),
+    "right_shin": ("RightLowerLeg", "RightKneeRigAttachment", "RightKneeRigAttachment"),
+    "belt": ("LowerTorso", "WaistCenterAttachment", "WaistCenterAttachment"),
+    "tassets": ("LowerTorso", "WaistCenterAttachment", "WaistCenterAttachment"),
+    "cloak": ("UpperTorso", "BodyBackAttachment", "BodyBackAttachment"),
+    "cape": ("UpperTorso", "BodyBackAttachment", "BodyBackAttachment"),
+    "left_boot": ("LeftFoot", "LeftFootAttachment", "LeftFootAttachment"),
+    "right_boot": ("RightFoot", "RightFootAttachment", "RightFootAttachment"),
     "left_foot": ("LeftFoot", "LeftFootAttachment", "LeftFootAttachment"),
     "right_foot": ("RightFoot", "RightFootAttachment", "RightFootAttachment"),
 }
@@ -289,29 +305,41 @@ from __future__ import annotations
 
 import json
 import math
+import sys as _sharp_sys
+import types as _sharp_types
 from pathlib import Path
 import bpy
 
 # ---- [1/4] blender_anim_helpers.py ----
 {anim_helpers_src}
 
-import sys as _sharp_sys
-_sharp_sys.modules.setdefault("blender_anim_helpers", _sharp_sys.modules[__name__])
+def _sharp_reg_mod(mname: str) -> None:
+    m = _sharp_types.ModuleType(mname)
+    m.__dict__.update(globals())
+    _sharp_sys.modules[mname] = m
+
+_sharp_reg_mod("blender_anim_helpers")
 
 # ---- [2/4] blender_build_roblox_rig.py ----
 {build_rig_src}
 
-_sharp_sys.modules.setdefault("blender_build_roblox_rig", _sharp_sys.modules[__name__])
+_sharp_reg_mod("blender_build_roblox_rig")
 
 # ---- [3/4] blender_bake_to_roblox.py ----
 {bake_src}
 
-_sharp_sys.modules.setdefault("blender_bake_to_roblox", _sharp_sys.modules[__name__])
+_sharp_reg_mod("blender_bake_to_roblox")
 
 # ---- [4/4] blender_export_roblox_fbx.py ----
 {fbx_src}
 
 def _run_sharp_rig_pipeline():
+    for _o in list(bpy.data.objects):
+        bpy.data.objects.remove(_o, do_unlink=True)
+    for _coll in (bpy.data.meshes, bpy.data.armatures, bpy.data.actions, bpy.data.materials, bpy.data.cameras, bpy.data.lights):
+        for _item in list(_coll):
+            if _item.users == 0:
+                _coll.remove(_item)
     out_dir = Path({json.dumps(out_dir.as_posix())})
     out_dir.mkdir(parents=True, exist_ok=True)
     fps_val = {int(fps)}
@@ -872,6 +900,8 @@ from __future__ import annotations
 
 import json
 import math
+import sys as _sharp_sys
+import types as _sharp_types
 from pathlib import Path
 import bmesh
 import bpy
@@ -880,8 +910,9 @@ from mathutils import Euler, Matrix, Vector
 # ---- [1/2] blender_anim_helpers.py ----
 {anim_helpers_src}
 
-import sys as _sharp_sys
-_sharp_sys.modules.setdefault("blender_anim_helpers", _sharp_sys.modules[__name__])
+_sharp_ah_mod = _sharp_types.ModuleType("blender_anim_helpers")
+_sharp_ah_mod.__dict__.update(globals())
+_sharp_sys.modules["blender_anim_helpers"] = _sharp_ah_mod
 
 # ---- [2/2] blender_build_roblox_rig.py ----
 {build_rig_src}
@@ -2073,7 +2104,12 @@ def _sharp_join_meshes(*objs):
 
 
 def _run_sharp_custom_bmesh_pipeline():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    for _o in list(bpy.data.objects):
+        bpy.data.objects.remove(_o, do_unlink=True)
+    for _coll in (bpy.data.meshes, bpy.data.armatures, bpy.data.materials, bpy.data.cameras, bpy.data.lights, bpy.data.images):
+        for _item in list(_coll):
+            if _item.users == 0:
+                _coll.remove(_item)
     scene = bpy.context.scene
     scene.unit_settings.system = "NONE"
     scene.unit_settings.scale_length = 1.0

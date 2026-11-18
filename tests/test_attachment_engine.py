@@ -1195,6 +1195,26 @@ assert (0.25, 0.25) in uv_vals and (0.75, 0.75) in uv_vals, f"Lost UVs: {uv_vals
         self.assertIn("ComputeCrosshairAimRay", combat_script)
         self.assertIn("PivotOffset = CFrame.identity", combat_script)
 
+    def test_armor_slots_and_blender_socket_bundle_safety(self) -> None:
+        from sharp_mcp.domain_engines.attachment_engine import ARMOR_SLOTS
+
+        for required_slot in ("helmet", "chest", "cloak", "belt", "left_pauldron", "right_pauldron", "left_gauntlet", "right_gauntlet", "left_greave", "right_greave", "left_boot", "right_boot"):
+            self.assertIn(required_slot, ARMOR_SLOTS)
+
+        eng = AttachmentEngine(BUNDLED_SKILLS_DIR)
+        luau_armor = eng.compile_attach_luau(mode="armor_set", preset="chest")
+        assert_valid_luau_sanity(luau_armor, "armor_set_calibrated")
+        self.assertIn("itemInst:FindFirstChild(itemAttName, true)", luau_armor)
+        self.assertIn("BodyBackAttachment", luau_armor)
+
+        bl = BlenderDomainEngine(skills_dir=BUNDLED_SKILLS_DIR)
+        rig_res = bl.compile_rig_and_animation_bpy(execute=False)
+        self.assertIn("_sharp_reg_mod", rig_res["compiled_bpy_code"])
+        self.assertNotIn("read_factory_settings", rig_res["compiled_bpy_code"])
+        bm_res = bl.compile_custom_bmesh_asset_bpy(asset_name="TestGreave", custom_bpy_code="", slot="left_greave", execute=False)
+        self.assertIn('"LeftLowerLeg"', bm_res["compiled_bpy_code"])
+        self.assertIn('"LeftKneeRigAttachment"', bm_res["compiled_bpy_code"])
+
 
 if __name__ == "__main__":
     unittest.main()

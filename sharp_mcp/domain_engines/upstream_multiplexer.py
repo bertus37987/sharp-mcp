@@ -811,6 +811,7 @@ class UpstreamMultiplexer:
         studio_id: Optional[str] = None,
         insert_into_studio: bool = True,
         parent_path: Optional[str] = None,
+        sidecar_path: Optional[str | Path] = None,
         credentials_path: Optional[str | Path] = None,
         timeout_sec: float = 60.0,
     ) -> Dict[str, Any]:
@@ -896,6 +897,128 @@ class UpstreamMultiplexer:
             )
             inserted_into_studio = bool(insert_res.get("ok"))
 
+        sidecar_applied: Optional[Dict[str, Any]] = None
+        if inserted_into_studio and eff_studio_id and sidecar_path:
+            sc_file = Path(sidecar_path).expanduser()
+            if sc_file.is_file():
+                try:
+                    sc_data = json.loads(sc_file.read_text(encoding="utf-8"))
+                    slots_json = json.dumps(sc_data.get("material_slots_split") or [], ensure_ascii=False)
+                    atts_json = json.dumps(sc_data.get("attachments") or [], ensure_ascii=False)
+                    parent_expr = json.dumps((parent_path or "Workspace").strip())
+                    name_expr = json.dumps(eff_name)
+                    luau_cfg = f"""
+local HttpService = game:GetService("HttpService")
+local Workspace = game:GetService("Workspace")
+local function resolveParent(pathStr)
+\tif pathStr == "" or pathStr == "Workspace" then return Workspace end
+\tlocal cur = game
+\tlocal first = true
+\tfor seg in string.gmatch(pathStr, "[^%.]+") do
+\t\tif first then
+\t\t\tlocal okS, s = pcall(function() return game:GetService(seg) end)
+\t\t\tcur = if okS and s then s else cur:FindFirstChild(seg)
+\t\telse
+\t\t\tcur = cur and cur:FindFirstChild(seg)
+\t\tend
+\t\tfirst = false
+\tend
+\treturn cur or Workspace
+end
+local parentInst = resolveParent({parent_expr})
+local candidates = parentInst:GetChildren()
+local targetInst = nil
+for i = #candidates, 1, -1 do
+\tlocal ch = candidates[i]
+\tif ch.Name == {name_expr} or string.find(ch.Name, {name_expr}, 1, true) then
+\t\ttargetInst = ch
+\t\tbreak
+\tend
+end
+if not targetInst then return "NO_TARGET:" .. {name_expr} end
+local slots = HttpService:JSONDecode({json.dumps(slots_json)})
+local atts = HttpService:JSONDecode({json.dumps(atts_json)})
+local parts = {{}}
+for _, d in ipairs(targetInst:GetDescendants()) do
+\tif d:IsA("BasePart") then table.insert(parts, d) end
+end
+if targetInst:IsA("BasePart") then table.insert(parts, targetInst) end
+local slotColored = 0
+for _, p in ipairs(parts) do
+\tp.Anchored = false
+\tp.CanCollide = false
+\tp.Massless = true
+\tlocal pname = p.Name
+\tfor _, sl in ipairs(slots) do
+\t\tlocal sname = tostring(sl.slot_name or "")
+\t\tif sname ~= "" and (string.find(pname, sname, 1, true) or #slots == 1) then
+\t\t\tlocal rgb = sl.srgb_color
+\t\t\tif type(rgb) == "table" and #rgb >= 3 then
+\t\t\t\tp.Color = Color3.fromRGB(math.clamp(math.floor(rgb[1]),0,255), math.clamp(math.floor(rgb[2]),0,255), math.clamp(math.floor(rgb[3]),0,255))
+\t\t\tend
+\t\t\tlocal rmat = tostring(sl.roblox_material or "Metal")
+\t\t\tpcall(function() p.Material = (Enum.Material :: any)[rmat] end)
+\t\t\tlocal sa = p:FindFirstChildOfClass("SurfaceAppearance")
+\t\t\tif sa then sa:Destroy() end
+\t\t\tslotColored += 1
+\t\t\tbreak
+\t\tend
+\tend
+end
+if targetInst:IsA("Model") then
+\tlocal _, bsz = targetInst:GetBoundingBox()
+\tlocal pivCF = targetInst:GetPivot()
+\tlocal handle = targetInst:FindFirstChild("Handle")
+\tif not handle or not handle:IsA("BasePart") then
+\t\thandle = Instance.new("Part")
+\t\thandle.Name = "Handle"
+\t\thandle.Size = Vector3.new(0.25, 0.25, 0.25)
+\t\thandle.Transparency = 1
+\t\thandle.CanCollide = false
+\t\thandle.Massless = true
+\t\thandle.Anchored = false
+\t\thandle.CFrame = pivCF
+\t\thandle.Parent = targetInst
+\tend
+\ttargetInst.PrimaryPart = handle
+\tfor _, p in ipairs(parts) do
+\t\tif p ~= handle then
+\t\t\tlocal hasW = false
+\t\t\tfor _, c in ipairs(handle:GetChildren()) do
+\t\t\t\tif c:IsA("WeldConstraint") and (c.Part1 == p or c.Part0 == p) then hasW = true break end
+\t\t\tend
+\t\t\tif not hasW then
+\t\t\t\tlocal w = Instance.new("WeldConstraint")
+\t\t\t\tw.Part0 = handle
+\t\t\t\tw.Part1 = p
+\t\t\t\tw.Parent = handle
+\t\t\tend
+\t\tend
+\tend
+\tfor _, a in ipairs(atts) do
+\t\tlocal aname = tostring(a.name or "")
+\t\tif aname ~= "" and type(a.cframe) == "table" and #a.cframe >= 12 then
+\t\t\tlocal existing = handle:FindFirstChild(aname)
+\t\t\tif not existing then
+\t\t\t\tlocal att = Instance.new("Attachment")
+\t\t\t\tatt.Name = aname
+\t\t\t\tlocal c = a.cframe
+\t\t\t\tatt.CFrame = CFrame.new(c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[12])
+\t\t\t\tatt.Parent = handle
+\t\t\tend
+\t\tend
+\tend
+end
+return string.format("CONFIGURED:%s parts=%d colored=%d", targetInst:GetFullName(), #parts, slotColored)
+"""
+                    sidecar_applied = await self.call_upstream_studio_mcp(
+                        "execute_luau",
+                        {"code": luau_cfg, "datamodel_type": "Edit", "studio_id": eff_studio_id},
+                        timeout_sec=15.0,
+                    )
+                except Exception as exc:
+                    sidecar_applied = {"ok": False, "error": str(exc)}
+
         return {
             "ok": True,
             "upload_mode": upload_res.get("upload_mode"),
@@ -908,4 +1031,5 @@ class UpstreamMultiplexer:
             "operation_id": upload_res.get("operation_id"),
             "inserted_into_studio": inserted_into_studio,
             "insert_result": insert_res,
+            "sidecar_configured": sidecar_applied,
         }

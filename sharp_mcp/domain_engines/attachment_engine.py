@@ -337,21 +337,28 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "limb_part": "Head",
         "limb_attachment": "HatAttachment",
         "item_attachment": "HatAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, -0.45, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
     "face_visor": {
         "limb_part": "Head",
         "limb_attachment": "FaceFrontAttachment",
         "item_attachment": "FaceFrontAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, 0.0, 0.5],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
     "chest": {
         "limb_part": "UpperTorso",
         "limb_attachment": "BodyFrontAttachment",
         "item_attachment": "BodyFrontAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, 0.0, 0.5],
+        "offset_rot_deg": [0.0, 0.0, 0.0],
+    },
+    "cloak": {
+        "limb_part": "UpperTorso",
+        "limb_attachment": "BodyBackAttachment",
+        "item_attachment": "BodyBackAttachment",
+        "offset_pos": [0.0, -0.55, 0.2],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
     "belt": {
@@ -365,70 +372,70 @@ ARMOR_SLOTS: Dict[str, Dict[str, Any]] = {
         "limb_part": "LeftUpperArm",
         "limb_attachment": "LeftShoulderAttachment",
         "item_attachment": "LeftShoulderAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, -0.25, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
     "right_pauldron": {
         "limb_part": "RightUpperArm",
         "limb_attachment": "RightShoulderAttachment",
         "item_attachment": "RightShoulderAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, -0.25, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
     "left_gauntlet": {
         "limb_part": "LeftLowerArm",
         "limb_attachment": "LeftWristRigAttachment",
         "item_attachment": "LeftWristRigAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, 0.35, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
     "right_gauntlet": {
         "limb_part": "RightLowerArm",
         "limb_attachment": "RightWristRigAttachment",
         "item_attachment": "RightWristRigAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, 0.35, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
     "left_thigh": {
         "limb_part": "LeftUpperLeg",
         "limb_attachment": "LeftHipRigAttachment",
         "item_attachment": "LeftHipRigAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, -0.55, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
     "right_thigh": {
         "limb_part": "RightUpperLeg",
         "limb_attachment": "RightHipRigAttachment",
         "item_attachment": "RightHipRigAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, -0.55, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
     "left_greave": {
         "limb_part": "LeftLowerLeg",
         "limb_attachment": "LeftKneeRigAttachment",
         "item_attachment": "LeftKneeRigAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, -0.35, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
     "right_greave": {
         "limb_part": "RightLowerLeg",
         "limb_attachment": "RightKneeRigAttachment",
         "item_attachment": "RightKneeRigAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, -0.35, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
     "left_boot": {
         "limb_part": "LeftFoot",
         "limb_attachment": "LeftFootAttachment",
         "item_attachment": "LeftFootAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, 0.12, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
     "right_boot": {
         "limb_part": "RightFoot",
         "limb_attachment": "RightFootAttachment",
         "item_attachment": "RightFootAttachment",
-        "offset_pos": [0.0, 0.0, 0.0],
+        "offset_pos": [0.0, 0.12, 0.0],
         "offset_rot_deg": [0.0, 0.0, 0.0],
     },
 }
@@ -441,6 +448,11 @@ ARMOR_SLOT_ALIASES: Dict[str, str] = {
     "cuirass": "chest",
     "torso": "chest",
     "chestplate": "chest",
+    "cuirass": "chest",
+    "lorica": "chest",
+    "cape": "cloak",
+    "sagum": "cloak",
+    "back_cloak": "cloak",
     "waist": "belt",
     "tassets": "belt",
     "pauldron_left": "left_pauldron",
@@ -2152,39 +2164,49 @@ local function cleanupCompetingJoints(rigModel: Instance, handle: BasePart, keep
 	return removed
 end
 
-local function attachViaRigidConstraint(rigModel: Instance, limbPart: BasePart, limbAttName: string, limbDefaultCf: CFrame, itemInst: Instance, itemAttName: string, itemAttCf: CFrame): {{ [string]: any }}
+local function attachViaRigidConstraint(rigModel: Instance, limbPart: BasePart, limbAttName: string, limbDefaultCf: CFrame, itemInst: Instance, itemAttName: string, itemAttCf: CFrame, preserveExistingItemAtt: boolean?): {{ [string]: any }}
 	local handle = getPrimaryHandle(itemInst)
 	assert(handle ~= nil, "Item '" .. itemInst:GetFullName() .. "' contains no BasePart.")
 	configureEquipmentPhysics(itemInst)
 	weldModelPartsToHandle(itemInst, handle)
 
 	local limbAtt, createdLimbAtt = ensureAttachment(limbPart, limbAttName, limbDefaultCf)
-	local itemAtt, createdItemAtt = ensureAttachment(handle, itemAttName, itemAttCf)
-	if not createdItemAtt and itemAttCf ~= CFrame.identity then
-		itemAtt.CFrame = itemAttCf
+	local existingAtt = itemInst:FindFirstChild(itemAttName, true)
+	local itemAtt: Attachment
+	local createdItemAtt = false
+	if existingAtt and existingAtt:IsA("Attachment") then
+		itemAtt = existingAtt
+		if not preserveExistingItemAtt and itemAttCf ~= CFrame.identity then
+			itemAtt.CFrame = itemAttCf
+		end
+	else
+		itemAtt, createdItemAtt = ensureAttachment(handle, itemAttName, itemAttCf)
 	end
+	local attParent = if itemAtt.Parent and itemAtt.Parent:IsA("BasePart") then itemAtt.Parent :: BasePart else handle
 
 	local removed = cleanupCompetingJoints(rigModel, handle, "SharpRigidAttach_" .. itemAttName)
 
-	local targetCf = limbPart.CFrame * limbAtt.CFrame * itemAtt.CFrame:Inverse()
+	local handleRel = attParent.CFrame:ToObjectSpace(handle.CFrame)
+	local targetHandleCf = limbPart.CFrame * limbAtt.CFrame * itemAtt.CFrame:Inverse() * handleRel
 	if itemInst:IsA("Model") then
-		itemInst:PivotTo(targetCf)
+		local pivToHandle = itemInst:GetPivot():ToObjectSpace(handle.CFrame)
+		itemInst:PivotTo(targetHandleCf * pivToHandle:Inverse())
 	else
-		handle.CFrame = targetCf
+		handle.CFrame = targetHandleCf
 	end
 
 	if not itemInst:IsDescendantOf(rigModel) then
 		itemInst.Parent = rigModel
 	end
 
-	local rc = handle:FindFirstChild("SharpRigidAttach_" .. itemAttName)
+	local rc = attParent:FindFirstChild("SharpRigidAttach_" .. itemAttName) or handle:FindFirstChild("SharpRigidAttach_" .. itemAttName)
 	local rigid: RigidConstraint
 	if rc and rc:IsA("RigidConstraint") then
 		rigid = rc
 	else
 		local newRc = Instance.new("RigidConstraint")
 		newRc.Name = "SharpRigidAttach_" .. itemAttName
-		newRc.Parent = handle
+		newRc.Parent = attParent
 		rigid = newRc
 	end
 	rigid.Attachment0 = itemAtt
@@ -2305,7 +2327,7 @@ local ok, resOrErr = xpcall(function()
 						* CFrame.Angles(math.rad(entry.limbRot[1]), math.rad(entry.limbRot[2]), math.rad(entry.limbRot[3]))
 					local oDef = CFrame.new(entry.offsetPos[1], entry.offsetPos[2], entry.offsetPos[3])
 						* CFrame.Angles(math.rad(entry.offsetRot[1]), math.rad(entry.offsetRot[2]), math.rad(entry.offsetRot[3]))
-					local info = attachViaRigidConstraint(rig, lp, entry.limbAttachment, lDef, pieceInst, entry.itemAttachment, oDef:Inverse())
+					local info = attachViaRigidConstraint(rig, lp, entry.limbAttachment, lDef, pieceInst, entry.itemAttachment, oDef:Inverse(), true)
 					info.slot = entry.slot
 					table.insert(attachedPieces, info)
 				end
