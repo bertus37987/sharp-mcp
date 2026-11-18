@@ -3820,6 +3820,19 @@ class CriticalAuditEngine:
                         auto_fixable=True,
                     )
                 )
+            for path_str in wt.get("brokenQuiverArrows") or []:
+                findings.append(
+                    _make_finding(
+                        rule_id="WEAPON-QUIVER-001",
+                        severity="CRITICAL",
+                        domain="luau",
+                        file=str(path_str),
+                        evidence=f"Quiver ammo mesh '{path_str}' is oriented perpendicular to quiver cylinder axis (+Y).",
+                        why_it_matters="Bolts/arrows inside the quiver stick horizontally sideways through the leather tube instead of standing upright with fletching up and tips down.",
+                        fix="Rotate QuiverArrow parts along quiver +Y axis with tips tucked inside bottom (-Y) and fletching/nocks protruding out top (+Y).",
+                        auto_fixable=True,
+                    )
+                )
             for path_str in wt.get("verticalRangedTools") or []:
                 findings.append(
                     _make_finding(

@@ -1138,6 +1138,7 @@ class TestSystemContractsAndCustomTerrainV05(unittest.TestCase):
                 "weapons": {
                     "rotatedPivotModels": [{"path": "ReplicatedStorage.Assets.MedievalBolt", "primaryPart": "LeatherGrip", "lookDot": 0.0, "upDot": 0.0}],
                     "brokenLoadedAmmo": ["StarterPack.Crossbow.LoadedBolt.Tip"],
+                    "brokenQuiverArrows": ["ReplicatedStorage.Assets.MedievalQuiver.QuiverArrow_1.PrimaryMetal"],
                     "verticalRangedTools": ["StarterPack.Crossbow"],
                     "transformArmIKs": ["Workspace.Hero.Humanoid.RightAimIK"],
                 },
@@ -1145,11 +1146,11 @@ class TestSystemContractsAndCustomTerrainV05(unittest.TestCase):
         }
         live_res = self.audit.audit_live(live_report=live_rep)
         live_ids = {f["id"] for f in live_res["findings"]}
-        for expected in ("WEAPON-PIVOT-001", "WEAPON-AMMO-001", "WEAPON-GRIP-001", "ANIM-IK-001"):
+        for expected in ("WEAPON-PIVOT-001", "WEAPON-AMMO-001", "WEAPON-QUIVER-001", "WEAPON-GRIP-001", "ANIM-IK-001"):
             self.assertIn(expected, live_ids, f"Missing live weapon/IK finding {expected}: {live_ids}")
 
         compiled = self.luau_engine.compile_critical_audit_luau()
-        for tok in ("weaponTelemetry", "rotatedPivotModels", "brokenLoadedAmmo", "verticalRangedTools", "transformArmIKs"):
+        for tok in ("weaponTelemetry", "rotatedPivotModels", "brokenLoadedAmmo", "brokenQuiverArrows", "verticalRangedTools", "transformArmIKs"):
             self.assertIn(tok, compiled)
 
 

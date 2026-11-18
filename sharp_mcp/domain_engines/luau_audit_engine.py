@@ -385,6 +385,7 @@ local payload = if okBase and type(baseDecoded) == "table" then baseDecoded else
 local weaponTelemetry = {{
 	rotatedPivotModels = {{}},
 	brokenLoadedAmmo = {{}},
+	brokenQuiverArrows = {{}},
 	verticalRangedTools = {{}},
 	transformArmIKs = {{}},
 }}
@@ -395,6 +396,25 @@ local assetContainers = {{
 }}
 for _, container in ipairs(assetContainers) do
 	for _, desc in ipairs(container:GetDescendants()) do
+		if desc:IsA("Model") and string.find(string.lower(desc.Name), "quiver", 1, true) then
+			local qRoot = desc.PrimaryPart or desc:FindFirstChild("QuiverPivot")
+			if qRoot and qRoot:IsA("BasePart") then
+				for _, child in ipairs(desc:GetChildren()) do
+					local ln = string.lower(child.Name)
+					if child:IsA("Model") and (string.find(ln, "arrow", 1, true) or string.find(ln, "bolt", 1, true)) then
+						for _, bp in ipairs(child:GetDescendants()) do
+							if bp:IsA("BasePart") then
+								local relLook = qRoot.CFrame:ToObjectSpace(bp.CFrame).LookVector
+								if math.abs(relLook:Dot(Vector3.new(0, 1, 0))) < 0.7 then
+									table.insert(weaponTelemetry.brokenQuiverArrows, bp:GetFullName())
+									break
+								end
+							end
+						end
+					end
+				end
+			end
+		end
 		if desc:IsA("Model") and desc.PrimaryPart then
 			local po = desc.PrimaryPart.PivotOffset
 			if po.LookVector:Dot(Vector3.new(0, 0, -1)) < 0.99 or po.UpVector:Dot(Vector3.new(0, 1, 0)) < 0.99 then
