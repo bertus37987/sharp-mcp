@@ -844,6 +844,10 @@ return HttpService:JSONEncode({{
         float_tolerance_studs: float = 0.5,
         max_iterations: int = 8,
     ) -> str:
+        if not math.isfinite(tolerance_studs):
+            raise ValueError("tolerance_studs must be finite")
+        if not math.isfinite(min_spacing_studs):
+            raise ValueError("min_spacing_studs must be finite")
         if not math.isfinite(float_tolerance_studs):
             raise ValueError("float_tolerance_studs must be finite")
         float_tolerance_studs = max(0.0, min(float(float_tolerance_studs), 512.0))
@@ -1018,6 +1022,21 @@ local function _auditFloatingAssets(assets)
 				end
 			end
 		end
+		local lowestCorner = asset.cf.Position
+		for i = 1, 3 do
+			local sgn = if axes[i].Y >= 0 then -1 else 1
+			lowestCorner = lowestCorner + axes[i] * (halfSizes[i] * sgn)
+		end
+		local cornerOrigin = Vector3.new(lowestCorner.X, top, lowestCorner.Z)
+		local cornerDirection = Vector3.new(0, lowestCorner.Y - 512 - cornerOrigin.Y, 0)
+		local cornerHit = Workspace:Raycast(cornerOrigin, cornerDirection, params)
+		if cornerHit then
+			local cornerGap = lowestCorner.Y - cornerHit.Position.Y
+			if gap == nil or cornerGap < gap then
+				gap = cornerGap
+				nearestHit = cornerHit
+			end
+		end
 		if not nearestHit or (gap and math.abs(gap) > FLOAT_TOLERANCE) then
 			table.insert(floating, {{
 				name = asset.name,
@@ -1119,7 +1138,11 @@ local ok, resOrErr = xpcall(function()
 				else
 					local horizontal = Vector3.new(away.X, 0, away.Z)
 					local horizontalMagnitude = horizontal.Magnitude
-					shift = horizontal / horizontalMagnitude * ((penetration + 0.25) / horizontalMagnitude)
+					if horizontalMagnitude < 1e-4 then
+						shift = Vector3.new(penetration + 0.25, 0, 0)
+					else
+						shift = horizontal / horizontalMagnitude * ((penetration + 0.25) / horizontalMagnitude)
+					end
 				end
 				_translateAsset(target, shift)
 				moved[target.inst] = true

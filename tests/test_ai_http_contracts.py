@@ -306,3 +306,42 @@ class TestAIHttpContracts(unittest.IsolatedAsyncioTestCase):
                     result = await self.art.generate_ai_art(auto_slice=False, output_dir=td)
                     self.assertFalse(result["ok"])
                     self.assertIn("base64", result["error"])
+
+    async def test_edge_cases_uppercase_finish_multiline_b64_and_non_dict_status(self):
+        # 1. OpenRouter uppercase finish_reason="STOP" succeeds
+        or_upper = {"choices": [{"message": {"role": "assistant", "content": '{"verdict":"SHIP"}'}, "finish_reason": "STOP"}]}
+        self.session.post.return_value = _Response(or_upper)
+        vis = await self.qa._call_openrouter_vision(api_key=KEY, model="google/gemini-2.5-flash", image_paths=[], prompt_text="inspect")
+        self.assertTrue(vis["ok"])
+
+        # 2. Direct imgs[0]["url"] + wrapped multiline base64 decodes cleanly
+        buf = io.BytesIO()
+        Image.new("RGB", (2, 2)).save(buf, format="PNG")
+        png = buf.getvalue()
+        enc = base64.b64encode(png).decode()
+        wrapped_enc = enc[:8] + "\n" + enc[8:]
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "sharp_mcp.domain_engines.art_creation_engine.resolve_provider_and_model", return_value=_route("openrouter")
+        ):
+            self.session.post.return_value = _Response({
+                "choices": [{"message": {"role": "assistant", "images": [{"url": "data:image/png;base64," + wrapped_enc}]}, "finish_reason": "stop"}]
+            })
+            res = await self.art.generate_ai_art(auto_slice=False, output_dir=td)
+            self.assertTrue(res["ok"])
+            self.assertEqual(Path(res["raw_image_path"]).read_bytes(), png)
+
+        # 3. Non-dict Gemini file status JSON payload fails gracefully without AttributeError
+        with tempfile.TemporaryDirectory() as td, mock.patch("asyncio.sleep", new_callable=mock.AsyncMock):
+            path = Path(td) / "big.mp4"
+            with path.open("wb") as stream:
+                stream.truncate(11 * 1024 * 1024)
+            self.session.post.side_effect = [
+                _Response(headers={"x-goog-upload-url": "https://upload.example/session"}),
+                _Response({"file": {"name": "files/123", "uri": GEMINI + "/v1beta/files/123", "state": "PROCESSING"}}),
+            ]
+            self.session.get.return_value = _Response("[]")
+            bad = await self.qa._upload_and_analyze_gemini_file(
+                api_key=KEY, model="gemini-2.5-flash", file_path=path, mime_type="video/mp4", prompt_text="inspect"
+            )
+            self.assertFalse(bad["ok"])
+            self.assertIn("non-object", bad["error"])

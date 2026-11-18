@@ -1137,14 +1137,18 @@ class ArtCreationEngine:
                 for part in content.get("parts") or []:
                     inline = part.get("inlineData") or part.get("inline_data")
                     if isinstance(inline, dict) and inline.get("data"):
-                        img_bytes = base64.b64decode(inline["data"], validate=True)
+                        cleaned_b64 = "".join(str(inline["data"]).split())
+                        img_bytes = base64.b64decode(cleaned_b64, validate=True)
                         break
             else:
                 imgs = content.get("images") or []
-                if imgs:
-                    data_url = ((imgs[0].get("image_url") or {}).get("url") or "")
+                if not imgs and isinstance(content.get("content"), list):
+                    imgs = [item for item in content["content"] if isinstance(item, dict) and item.get("type") == "image_url"]
+                if imgs and isinstance(imgs[0], dict):
+                    data_url = ((imgs[0].get("image_url") or {}).get("url") or imgs[0].get("url") or "")
                     if data_url.startswith("data:image/") and ";base64," in data_url:
-                        img_bytes = base64.b64decode(data_url.split(",", 1)[1], validate=True)
+                        cleaned_b64 = "".join(data_url.split(",", 1)[1].split())
+                        img_bytes = base64.b64decode(cleaned_b64, validate=True)
         except AIRequestError as exc:
             return {"ok": False, "error": str(exc)}
         except ValueError:

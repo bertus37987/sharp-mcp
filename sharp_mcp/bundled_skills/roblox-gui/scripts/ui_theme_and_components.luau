@@ -1046,7 +1046,8 @@ function UIKit.AttachStackedStrokes(target: GuiObject, opts: StackedStrokeOption
 	outer.Transparency = if o.OuterTransparency ~= nil then o.OuterTransparency else 0
 	outer.LineJoinMode = lineJoin
 	pcall(function()
-		(outer :: any).BorderStrokePosition = Enum.BorderStrokePosition.Outer
+		local outerAny = outer :: any
+		outerAny.BorderStrokePosition = Enum.BorderStrokePosition.Outer
 	end)
 	outer.Parent = target
 
@@ -1061,9 +1062,10 @@ function UIKit.AttachStackedStrokes(target: GuiObject, opts: StackedStrokeOption
 		s.Color = innerColor
 		s.Thickness = innerThickness
 		s.Transparency = innerTrans
-		s.LineJoinMode = lineJoin;
+		s.LineJoinMode = lineJoin
 		-- Will fail cleanly on channels where BorderStrokePosition is disabled so we avoid overlapping Center strokes
-		(s :: any).BorderStrokePosition = Enum.BorderStrokePosition.Inner
+		local sAny = s :: any
+		sAny.BorderStrokePosition = Enum.BorderStrokePosition.Inner
 		s.Parent = target
 		return s
 	end)
@@ -1139,7 +1141,8 @@ local function tryAttachUIShadow(
 			s.Offset = UDim2.fromOffset(ox, oy)
 		end)
 		pcall(function()
-			(s :: any).ShowBehindParent = true
+			local sAny = s :: any
+			sAny.ShowBehindParent = true
 		end)
 		s.ZIndex = -1
 		s.Parent = target

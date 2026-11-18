@@ -88,6 +88,7 @@ function findSystemPython311() {
     ? [
         { cmd: "python", baseArgs: [] },
         { cmd: "python3", baseArgs: [] },
+        { cmd: "py", baseArgs: ["-3.14"] },
         { cmd: "py", baseArgs: ["-3.13"] },
         { cmd: "py", baseArgs: ["-3.12"] },
         { cmd: "py", baseArgs: ["-3.11"] },

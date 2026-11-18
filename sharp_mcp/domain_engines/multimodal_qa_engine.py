@@ -690,6 +690,8 @@ class MultimodalQAEngine:
                             raw = redact_error(await st_resp.text(), api_key)
                             return {"ok": False, "error": f"Gemini file status HTTP {st_resp.status}: {raw[:300]}"}
                         meta = await st_resp.json()
+                        if not isinstance(meta, dict):
+                            return {"ok": False, "error": "Gemini file status returned a non-object JSON payload."}
                         file_uri = meta.get("uri") or file_uri
                 if meta.get("state") != "ACTIVE":
                     return {"ok": False, "error": "Gemini media processing did not become ACTIVE before the polling limit."}

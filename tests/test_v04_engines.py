@@ -447,12 +447,15 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
             "Vector3.new(sample.X, top, sample.Z)", "Vector3.new(0, sample.Y - 512 - origin.Y, 0)",
             "Workspace:Raycast(origin, direction, params)", "gap == nil or sampleGap < gap",
             "gap = sampleGap", "nearestHit = hit", "if not nearestHit",
+            "local lowestCorner = asset.cf.Position",
+            "local cornerHit = Workspace:Raycast(cornerOrigin, cornerDirection, params)",
         ):
             self.assertIn(fragment, audit_luau)
 
         fix_luau = eng.compile_world_assembly_optimize_luau(action="fix_overlaps", tolerance_studs=0.2)
         self.assertIn("PivotTo", fix_luau)
         self.assertIn("SharpWorldAssembly", fix_luau)
+        self.assertIn("if horizontalMagnitude < 1e-4 then", fix_luau)
         for fragment in (
             "for iteration = 1, MAX_ITERATIONS do", "SharpLocked", "volumeA < volumeB",
             "moved[target.inst]", "moved[entry._asset.inst]", "if target == B then axis else -axis",
@@ -511,6 +514,21 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
                 for rule in ("WORLD-OVERLAP-001", "WORLD-FLOAT-001"):
                     self.assertEqual(rule in ids, count > 0)
 
+        # Nested tool/bridge envelopes from sharp_world_assembly_and_optimization must unwrap cleanly
+        wrapped = CriticalAuditEngine().audit_static(
+            world_stats={
+                "ok": True,
+                "bridgeResponse": {
+                    "decoded": {
+                        "result": {"remainingOverlapCount": 2, "remainingFloatingCount": 1, "allClean": False}
+                    }
+                },
+            }
+        )
+        wrapped_ids = {f["id"] for f in wrapped["findings"]}
+        self.assertIn("WORLD-OVERLAP-001", wrapped_ids)
+        self.assertIn("WORLD-FLOAT-001", wrapped_ids)
+
     def test_world_repair_parameter_bounds(self) -> None:
         eng = GameplaySystemsEngine(resolve_default_skills_dir(), resolve_default_archive_dir())
         for tolerance, iterations, expected_tolerance, expected_iterations in (
@@ -523,6 +541,10 @@ class TestMapOverlapAndMicroPlanner(unittest.TestCase):
         for tolerance in (math.nan, math.inf, -math.inf):
             with self.subTest(tolerance=tolerance), self.assertRaisesRegex(ValueError, "must be finite"):
                 eng.compile_world_assembly_optimize_luau(float_tolerance_studs=tolerance)
+            with self.subTest(overlap_tolerance=tolerance), self.assertRaisesRegex(ValueError, "must be finite"):
+                eng.compile_world_assembly_optimize_luau(tolerance_studs=tolerance)
+            with self.subTest(min_spacing=tolerance), self.assertRaisesRegex(ValueError, "must be finite"):
+                eng.compile_world_assembly_optimize_luau(min_spacing_studs=tolerance)
         for iterations in (math.nan, math.inf):
             with self.subTest(iterations=iterations), self.assertRaises((ValueError, OverflowError)):
                 eng.compile_world_assembly_optimize_luau(max_iterations=iterations)

@@ -1798,6 +1798,35 @@ class CriticalAuditEngine:
 
         return findings
 
+    @staticmethod
+    def _unwrap_world_stats(world_stats: Any) -> Optional[Dict[str, Any]]:
+        cur: Any = world_stats
+        metric_keys = {
+            "overlap_count", "overlapCount", "remainingOverlapCount",
+            "floating_count", "floatingCount", "remainingFloatingCount",
+            "part_count", "partCount", "spawn_location_count", "spawnLocationCount",
+            "placements", "allClean",
+        }
+        for _ in range(6):
+            if isinstance(cur, str):
+                try:
+                    cur = json.loads(cur)
+                except (ValueError, TypeError):
+                    return None
+            if not isinstance(cur, dict):
+                return None
+            if any(k in cur for k in metric_keys):
+                return cur
+            next_val = None
+            for wrapper_key in ("result", "decoded", "data", "bridgeResponse", "upstreamResponse", "world_stats"):
+                if cur.get(wrapper_key) is not None:
+                    next_val = cur.get(wrapper_key)
+                    break
+            if next_val is None:
+                return cur
+            cur = next_val
+        return cur if isinstance(cur, dict) else None
+
     def _audit_world(
         self,
         *,
@@ -1805,6 +1834,7 @@ class CriticalAuditEngine:
         plan_data: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         findings: List[Dict[str, Any]] = []
+        world_stats = self._unwrap_world_stats(world_stats)
         if not isinstance(world_stats, dict):
             return findings
 
@@ -1873,8 +1903,17 @@ class CriticalAuditEngine:
                 )
             )
 
-        overlap_count = world_stats.get("overlap_count", world_stats.get("overlapCount"))
-        floating_count = int(world_stats.get("floating_count", world_stats.get("floatingCount", 0)) or 0)
+        overlap_count = world_stats.get(
+            "overlap_count",
+            world_stats.get("overlapCount", world_stats.get("remainingOverlapCount")),
+        )
+        floating_count = int(
+            world_stats.get(
+                "floating_count",
+                world_stats.get("floatingCount", world_stats.get("remainingFloatingCount", 0)),
+            )
+            or 0
+        )
         placements = world_stats.get("placements")
         if isinstance(placements, list) and len(placements) >= 2:
             # Offline 3D AABB/box overlap verification between placed assets/buildings

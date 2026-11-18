@@ -49,14 +49,16 @@ def response_content(data: dict[str, Any], provider: str) -> dict[str, Any]:
         if not candidates:
             raise AIRequestError("Gemini returned no candidates.")
         candidate = candidates[0]
-        if candidate.get("finishReason") not in (None, "STOP"):
+        finish_reason = str(candidate.get("finishReason") or "").upper()
+        if finish_reason not in ("", "STOP"):
             raise AIRequestError("Gemini response was blocked or incomplete.")
         return candidate.get("content") or {}
     choices = data.get("choices") or []
     if not choices:
         raise AIRequestError("OpenRouter returned no choices.")
     choice = choices[0]
-    if choice.get("finish_reason") not in (None, "stop"):
+    finish_reason = str(choice.get("finish_reason") or "").lower()
+    if finish_reason not in ("", "stop"):
         raise AIRequestError("OpenRouter response was blocked or incomplete.")
     message = choice.get("message") or {}
     if message.get("refusal"):
