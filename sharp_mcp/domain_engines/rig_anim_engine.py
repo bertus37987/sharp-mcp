@@ -595,6 +595,8 @@ class RigAnimationEngine:
             "toon": "stylized_cartoony",
             "tactical": "tactical_military",
             "military": "tactical_military",
+            "tactical_shooter": "tactical_military",
+            "shooter": "tactical_military",
             "arcane": "floaty_arcane",
             "floaty": "floaty_arcane",
         }
@@ -1219,7 +1221,7 @@ class RigAnimationEngine:
         clip_spec: Dict[str, Any],
         *,
         style: str = "heavy_souls",
-        tempo_scale: float = 1.0,
+        tempo_scale: Optional[float] = None,
         fps: float = 30.0,
         auto_ground_feet: bool = True,
     ) -> Dict[str, Any]:
@@ -1237,7 +1239,7 @@ class RigAnimationEngine:
 
         style_key = self._resolve_style_key(style)
         profile = ANIMATION_STYLE_PROFILES[style_key]
-        eff_tempo = max(0.25, min(4.0, float(tempo_scale))) * float(profile["default_tempo_scale"])
+        eff_tempo = float(profile["default_tempo_scale"]) if tempo_scale is None else max(0.25, min(4.0, float(tempo_scale)))
         fps_val = max(12.0, min(120.0, float(clip_spec.get("fps", fps))))
 
         name = str(clip_spec.get("name", "CustomAnimation"))
@@ -1483,6 +1485,12 @@ class RigAnimationEngine:
             ("spell", "attack"),
             ("magic", "attack"),
             ("bow", "attack"),
+            ("recoil", "attack"),
+            ("railgun", "attack"),
+            ("shoot", "attack"),
+            ("fire", "attack"),
+            ("gun", "attack"),
+            ("aim", "attack"),
             ("attack", "attack"),
         ):
             if kw in low:

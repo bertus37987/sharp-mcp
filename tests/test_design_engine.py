@@ -880,6 +880,11 @@ class DesignEngineTests(unittest.TestCase):
         )
         self.assertNotIn("sAny.BorderStrokePosition = Enum.BorderStrokePosition.Inner\n", stacked_block)
 
+        # 1E: CreateRadialWheel active selection text contrast + crisp Heading hub font
+        wheel_block = self._extract_uikit_fn(src, "CreateRadialWheel")
+        self.assertIn("UIKit.PickReadableTextColor(bgColor)", wheel_block, f"{label}: CreateRadialWheel readable label contrast")
+        self.assertIn("hubLabel.FontFace = UIKit.Tokens.Fonts.Heading", wheel_block, f"{label}: CreateRadialWheel Heading hub font")
+
     def test_uikit_v05_layout_contrast_bookspread_and_stroke_fixes(self) -> None:
         bundled_uikit = SKILLS_DIR / "roblox-gui" / "scripts" / "ui_theme_and_components.luau"
         raw_src = bundled_uikit.read_text(encoding="utf-8")

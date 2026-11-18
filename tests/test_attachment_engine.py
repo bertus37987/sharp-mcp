@@ -736,6 +736,50 @@ class TestRigAnimationQualityAndPresets(unittest.TestCase):
             self.assertIn('local TARGET_PATH: string = "Workspace.TestWarrior"', probe_luau)
             self.assertNotIn('local TARGET_PATH: string = ""', probe_luau)
 
+    def test_tactical_shooter_alias_tempo_scale_and_railgun_kind(self) -> None:
+        keyposes = [
+            {"t": 0.0, "poses": {"LowerTorso": {"pos": [0, 0, 0], "rot": [0, 0, 0]}, "UpperTorso": {"rot": [0, 0, 0]}}},
+            {
+                "t": 0.45,
+                "hold": 0.15,
+                "poses": {
+                    "LowerTorso": {"pos": [0, -0.05, 0], "rot": [-6, 12, 0]},
+                    "UpperTorso": {"rot": [-16, -14, 0]},
+                    "RightUpperArm": {"rot": [-82, 0, 8]},
+                    "LeftUpperArm": {"rot": [-78, 12, -8]},
+                },
+            },
+            {
+                "t": 1.45,
+                "poses": {
+                    "LowerTorso": {"pos": [0, 0, 0], "rot": [0, 0, 0]},
+                    "UpperTorso": {"rot": [0, 0, 0]},
+                    "RightUpperArm": {"rot": [0, 0, 0]},
+                    "LeftUpperArm": {"rot": [0, 0, 0]},
+                },
+            },
+        ]
+        res_explicit = self.engine.compose_custom_clip(
+            {"name": "Vanguard_Railgun_Recoil", "keyposes": keyposes},
+            style="tactical_shooter",
+            tempo_scale=1.0,
+            fps=30.0,
+        )
+        self.assertTrue(res_explicit["ok"])
+        self.assertEqual(res_explicit["style"], "tactical_military")
+        self.assertAlmostEqual(res_explicit["duration_sec"], 1.45, places=3)
+        self.assertEqual(res_explicit["analysis"]["inferred_kind"], "attack")
+        self.assertEqual(res_explicit["tempo_scale"], 1.0)
+
+        res_default = self.engine.compose_custom_clip(
+            {"name": "Vanguard_Railgun_Recoil", "keyposes": keyposes},
+            style="tactical_shooter",
+            tempo_scale=None,
+            fps=30.0,
+        )
+        self.assertTrue(res_default["ok"])
+        self.assertAlmostEqual(res_default["duration_sec"], 1.45 * 0.85, places=3)
+
 
 class TestBlenderAttachCompilerAndHygiene(unittest.TestCase):
     def setUp(self) -> None:

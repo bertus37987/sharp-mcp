@@ -3837,10 +3837,10 @@ function UIKit.CreateRadialWheel(opts: RadialWheelOptions?)
 	hubLabel.TextSize = 12
 	hubLabel.TextWrapped = true
 	hubLabel.TextTruncate = Enum.TextTruncate.AtEnd
-	hubLabel.FontFace = UIKit.Tokens.Fonts.Title
+	hubLabel.FontFace = UIKit.Tokens.Fonts.Heading
 	hubLabel.ZIndex = baseZ + 5
 	hubLabel.Parent = hub
-	UIKit.AttachTextStroke(hubLabel, UIKit.Tokens.Colors.OutlineInk, 1.4, 0.1)
+	UIKit.AttachTextStroke(hubLabel, UIKit.Tokens.Colors.OutlineInk, 0.8, 0.35)
 
 	UIKit.AttachButtonJuice(hub, hub, function()
 		if o.OnCenterClick then
@@ -3865,7 +3865,14 @@ function UIKit.CreateRadialWheel(opts: RadialWheelOptions?)
 			local itemData = items[idx]
 			local active = (selectedIdx == idx)
 			local segColor = (itemData and itemData.Color) or UIKit.Tokens.Colors.Primary
-			seg.BackgroundColor3 = if active then segColor else UIKit.Tokens.Colors.BgPanel
+			local bgColor = if active then segColor else UIKit.Tokens.Colors.BgPanel
+			seg.BackgroundColor3 = bgColor
+			local lblObj = seg:FindFirstChild("Label")
+			if lblObj and lblObj:IsA("TextLabel") then
+				local readable = UIKit.PickReadableTextColor(bgColor)
+				lblObj.TextColor3 = readable
+				UIKit.AttachTextStroke(lblObj, UIKit.Tokens.Colors.OutlineInk, 1.0, 0.25, readable)
+			end
 			local outer = seg:FindFirstChild("OuterStroke")
 			if outer and outer:IsA("UIStroke") then
 				outer.Color = if active then UIKit.Tokens.Colors.Gold else UIKit.Tokens.Colors.OutlineInk

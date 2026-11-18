@@ -18,7 +18,7 @@ local MAX_VOXELS_PER_CALL = 4194304
 local DEFAULT_CHUNK_CELLS = 64
 local OCC_EPSILON = 1 / 256
 
-export type BiomeName = "Alpine" | "Meadow" | "Desert" | "Volcanic" | "Arctic" | "Coast"
+export type BiomeName = "Alpine" | "Meadow" | "Desert" | "Volcanic" | "Arctic" | "Coast" | "Canyon"
 
 export type FlattenZone = {
 	x: number,
@@ -109,11 +109,17 @@ export type BuildConfig = {
 	solidSlotResolver: ((mat: Enum.Material, wx: number, height: number, slope: number) -> number)?,
 }
 
+export type Vec3Coords = {
+	X: number,
+	Y: number,
+	Z: number,
+}
+
 export type BuildReport = {
 	apiUsed: string,
-	regionMin: Vector3,
-	regionMax: Vector3,
-	cellsSize: Vector3,
+	regionMin: Vec3Coords,
+	regionMax: Vec3Coords,
+	cellsSize: Vec3Coords,
 	chunksWritten: number,
 	voxelsProcessed: number,
 	solidVoxelsWritten: number,
@@ -169,6 +175,14 @@ TerrainBuilder.BIOME_PALETTES = {
 		mid = Enum.Material.Grass,
 		cliff = Enum.Material.Limestone,
 		high = Enum.Material.Rock,
+	},
+	Canyon = {
+		low = Enum.Material.Sandstone,
+		shore = Enum.Material.Sand,
+		underwater = Enum.Material.Slate,
+		mid = Enum.Material.Sandstone,
+		cliff = Enum.Material.Limestone,
+		high = Enum.Material.Slate,
 	},
 } :: { [BiomeName]: BiomePalette }
 
@@ -771,9 +785,9 @@ function TerrainBuilder.BuildRegion(config: BuildConfig): BuildReport
 
 	return {
 		apiUsed = apiUsed,
-		regionMin = regionMin,
-		regionMax = regionMax,
-		cellsSize = Vector3.new(cellsX, cellsY, cellsZ),
+		regionMin = { X = regionMin.X, Y = regionMin.Y, Z = regionMin.Z },
+		regionMax = { X = regionMax.X, Y = regionMax.Y, Z = regionMax.Z },
+		cellsSize = { X = cellsX, Y = cellsY, Z = cellsZ },
 		chunksWritten = chunksWritten,
 		voxelsProcessed = voxelsProcessed,
 		solidVoxelsWritten = solidVoxelsWritten,

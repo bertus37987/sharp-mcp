@@ -2097,6 +2097,95 @@ class TestMcpUnwrappingAndVersionV05(unittest.IsolatedAsyncioTestCase):
         readme = (SERVER_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("`sharp-mcp` v0.5.0", readme)
 
+    async def test_testauftrag2_bugfixes_aliases_files_and_auto_discovery(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sharp_ta2_fix_") as td:
+            app = SharpMcpApplication(project_dir=td, start_bridge=False, profile="full")
+            tools = app.mcp._tool_manager._tools
+
+            # 1. design_system_files non-empty + create_pbr_set manifest registration & asset_style
+            ds_out = _parse_mcp_tool_output(
+                tools["sharp_design_system"].fn(
+                    action="generate",
+                    game_title="Aether Mech",
+                    genre="scifi_holo",
+                    texture_style="pbr_metallic_roughness",
+                    asset_style="hard_surface_scifi_mecha",
+                    save_to_project=True,
+                )
+            )
+            self.assertTrue(ds_out["saved_to_project"])
+            self.assertTrue(ds_out["design_system_files"], "design_system_files should list saved files")
+
+            pbr_out = _parse_mcp_tool_output(
+                await tools["sharp_art_studio"].fn(
+                    action="create_pbr_set",
+                    game_title="Aether Mech",
+                    genre="scifi_holo",
+                    texture_style="pbr_metallic_roughness",
+                    asset_style="hard_surface_scifi_mecha",
+                    resolution=64,
+                    detail="complete",
+                )
+            )
+            self.assertTrue(pbr_out["ok"])
+            self.assertEqual(pbr_out["asset_style"], "hard_surface_scifi_mecha")
+            self.assertGreaterEqual(len(pbr_out.get("registered_asset_keys") or []), 5)
+
+            # 2. sharp_rig_and_animation clip_data alias + tactical_shooter alias + exact tempo_scale=1.0
+            anim_out = _parse_mcp_tool_output(
+                await tools["sharp_rig_and_animation"].fn(
+                    action="compose_custom",
+                    clip_name="Vanguard_Railgun_Recoil",
+                    style="tactical_shooter",
+                    tempo_scale=1.0,
+                    fps=30.0,
+                    clip_data={
+                        "keyposes": [
+                            {"t": 0.0, "poses": {"UpperTorso": {"rot": [0, 0, 0]}}},
+                            {"t": 0.45, "hold": 0.15, "poses": {"LowerTorso": {"pos": [0, -0.05, 0], "rot": [-6, 12, 0]}, "UpperTorso": {"rot": [-16, -14, 0]}, "RightUpperArm": {"rot": [-82, 0, 8]}, "LeftUpperArm": {"rot": [-78, 12, -8]}}},
+                            {"t": 1.45, "poses": {"LowerTorso": {"pos": [0, 0, 0], "rot": [0, 0, 0]}, "UpperTorso": {"rot": [0, 0, 0]}, "RightUpperArm": {"rot": [0, 0, 0]}, "LeftUpperArm": {"rot": [0, 0, 0]}}},
+                        ]
+                    },
+                    execute_in_studio=False,
+                )
+            )
+            self.assertTrue(anim_out["ok"])
+            self.assertEqual(anim_out["style"], "tactical_military")
+            self.assertAlmostEqual(anim_out["duration_sec"], 1.45, places=3)
+            self.assertEqual(anim_out["analysis"]["inferred_kind"], "attack")
+            self.assertEqual(anim_out["clip"].get("expected_kind"), "attack")
+
+            # 3. inspect_attachment_fit clears stale item_path when auto-discovered & promotes recommendedOffsets
+            with patch.object(
+                app,
+                "_dispatch_studio_job",
+                new=AsyncMock(return_value={
+                    "executionMode": "Upstream_StudioMCP_Subprocess",
+                    "upstreamResponse": {
+                        "ok": True,
+                        "decoded": {
+                            "result": json.dumps({
+                                "ok": True,
+                                "fit_passed": True,
+                                "minClearanceStuds": 0.25,
+                                "clearanceMarginStuds": 0.02,
+                                "recommendedOffsets": [],
+                                "penetrations": [],
+                                "posesTested": ["rest", "raised_arm"],
+                                "checkedPairs": 12,
+                            })
+                        },
+                    },
+                }),
+            ):
+                fit_auto = _parse_mcp_tool_output(
+                    await tools["sharp_equipment_attach"].fn(action="inspect_attachment_fit", rig_path="Workspace.Warrior")
+                )
+            self.assertTrue(fit_auto["ok"])
+            self.assertIsNone(fit_auto["item_path"])
+            self.assertEqual(fit_auto["clearanceMarginStuds"], 0.02)
+            self.assertEqual(fit_auto["recommendedOffsets"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

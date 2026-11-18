@@ -2038,7 +2038,7 @@ class CriticalAuditEngine:
         name_to_kind: Dict[str, str] = {}
 
         if isinstance(contracts_spec, dict):
-            raw_rem = contracts_spec.get("remotes")
+            raw_rem = contracts_spec.get("remotes") if contracts_spec.get("remotes") is not None else contracts_spec.get("Remotes")
             if isinstance(raw_rem, dict):
                 for k, v in raw_rem.items():
                     if isinstance(v, dict):

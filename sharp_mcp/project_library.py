@@ -360,7 +360,14 @@ class ProjectLibraryManager:
                 target_domain="design_system",
                 result_summary={"palette_id": design_system.get("seed"), "harmony": design_system.get("harmony")},
             )
-        return {"ok": True, "design_system": design_system, "snapshot": snap}
+        return {
+            "ok": True,
+            "design_system": design_system,
+            "snapshot": snap,
+            "state_path": str(self.state_path) if self.state_path.is_file() else None,
+            "plan_json_path": str(self.plan_json_path) if self.plan_json_path.is_file() else None,
+            "plan_md_path": str(self.plan_md_path) if self.plan_md_path.is_file() else None,
+        }
 
     def get_design_system(self) -> Optional[Dict[str, Any]]:
         """Retrieve stored ``design_system`` from project state or ``plan.json``."""

@@ -1046,9 +1046,27 @@ class TestSystemContractsAndCustomTerrainV05(unittest.TestCase):
         self.assertIn("--!strict", dirs)
         self.assertGreater(len(toks), 100)
         builder_path = self.skills / "roblox-terrain-atmosphere" / "scripts" / "terrain_chunked_builder.luau"
-        b_toks, b_dirs = tokenize_luau(builder_path.read_text(encoding="utf-8"))
+        b_src = builder_path.read_text(encoding="utf-8")
+        b_toks, b_dirs = tokenize_luau(b_src)
         self.assertIn("--!strict", b_dirs)
         self.assertGreater(len(b_toks), 100)
+        self.assertIn("Canyon =", b_src)
+        self.assertIn("regionMin = { X = regionMin.X, Y = regionMin.Y, Z = regionMin.Z }", b_src)
+
+        # Case-insensitive contracts_spec keys (PascalCase Remotes/Tags/Modules)
+        pascal_installer = self.luau_engine.compile_system_contracts_luau(
+            {"Remotes": {"FireRailgun": {"direction": "C2S"}}, "Tags": ["MechTarget"], "Modules": {"Weapons": ["Fire"]}}
+        )
+        self.assertIn('name = "FireRailgun"', pascal_installer)
+        self.assertIn('["MechTarget"] = "MechTarget"', pascal_installer)
+        pascal_check = self.audit.verify_system_contracts(
+            {
+                "StarterPlayerScripts/Test.client.luau": "--!strict\nlocal ReplicatedStorage = game:GetService('ReplicatedStorage')\nReplicatedStorage.Remotes.FireRailgun:FireServer()\n",
+                "ServerScriptService/Test.server.luau": "--!strict\nlocal ReplicatedStorage = game:GetService('ReplicatedStorage')\nReplicatedStorage.Remotes.FireRailgun.OnServerEvent:Connect(function(_player) end)\n",
+            },
+            contracts_spec={"Remotes": {"FireRailgun": {"direction": "C2S"}}},
+        )
+        self.assertTrue(pascal_check["passed"], f"PascalCase contracts_spec failed: {pascal_check}")
 
         env_luau = self.terrain_engine.compile_environment_apply_luau(
             preset_name="VolcanicAsh",

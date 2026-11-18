@@ -1138,13 +1138,14 @@ class SharpMcpApplication:
             action: str = "compile_animation",
             rig_path: str = "Workspace.Rig",
             clips_data: Optional[Dict[str, Any]] = None,
+            clip_data: Optional[Dict[str, Any]] = None,
             clip_name: str = "SharpAnimation",
             anim_format: str = "KeyframeSequence",
             register_preview_clip: bool = True,
             stage_in_animsaves: bool = True,
             output_rbxmx_path: Optional[str] = None,
             style: str = "heavy_souls",
-            tempo_scale: float = 1.0,
+            tempo_scale: Optional[float] = None,
             fps: float = 30.0,
             auto_ground_feet: bool = True,
             time_fraction: float = 0.5,
@@ -1161,7 +1162,8 @@ class SharpMcpApplication:
         ) -> Any:
             self.router.ensure_skill_context(["roblox-animation"])
             act = (action or "compile_animation").strip().lower()
-            default_clips = clips_data or {
+            resolved_clips_input = clips_data if clips_data is not None else clip_data
+            default_clips = resolved_clips_input or {
                 "name": clip_name,
                 "fps": fps,
                 "looped": False,
@@ -1267,18 +1269,19 @@ class SharpMcpApplication:
             if act in ("generate_preset", "generate_preset_clip"):
                 target_preset = "idle_breathing" if clip_name == "SharpAnimation" else clip_name
                 try:
+                    eff_tempo_preset = 1.0 if tempo_scale is None else tempo_scale
                     preset_res = self.rig_anim_engine.generate_procedural_preset(
                         preset_name=target_preset,
                         fps=fps,
                         style=style,
-                        tempo_scale=tempo_scale,
+                        tempo_scale=eff_tempo_preset,
                     )
                     return compact_json({"ok": True, "action": act, **preset_res})
                 except ValueError as exc:
                     return compact_json({"ok": False, "action": act, "error": str(exc)})
 
             if act == "compose_custom":
-                spec = dict(clips_data) if isinstance(clips_data, dict) else dict(default_clips)
+                spec = dict(resolved_clips_input) if isinstance(resolved_clips_input, dict) else dict(default_clips)
                 if "name" not in spec:
                     spec["name"] = clip_name
                 try:
@@ -1296,6 +1299,9 @@ class SharpMcpApplication:
                     for k, v in composed.items()
                     if k in ("name", "loop", "priority", "fps", "rootName", "parents", "frames", "markers")
                 }
+                inferred_kind = (composed.get("analysis") or {}).get("inferred_kind")
+                if inferred_kind and "expected_kind" not in clip_obj:
+                    clip_obj["expected_kind"] = spec.get("expected_kind") or spec.get("kind") or inferred_kind
                 luau = self.rig_anim_engine.compile_animation_from_clips_luau(
                     clips_data=clip_obj,
                     rig_path=rig_path,
@@ -1329,7 +1335,9 @@ class SharpMcpApplication:
 
             if act == "analyze_clip":
                 try:
-                    analysis = self.rig_anim_engine.analyze_clip(clips_data if isinstance(clips_data, dict) else default_clips)
+                    target_clip = resolved_clips_input if isinstance(resolved_clips_input, dict) else default_clips
+                    exp_kind = target_clip.get("expected_kind") or target_clip.get("kind") if isinstance(target_clip, dict) else None
+                    analysis = self.rig_anim_engine.analyze_clip(target_clip, expected_kind=exp_kind)
                     return compact_json({"ok": True, "action": act, **analysis})
                 except ValueError as exc:
                     return compact_json({"ok": False, "action": act, "error": str(exc)})
@@ -1617,7 +1625,7 @@ class SharpMcpApplication:
                         project_library=self.project_library,
                     )
                     return build_mcp_result(
-                        {"tool": "sharp_luau_scaffold", "action": act, **res},
+                        {"tool": "sharp_luau_scaffold", "action": act, "passed": bool(res.get("verdict") == "SHIP"), **res},
                         untrusted_source="live_contract_verify",
                     )
                 return compact_json({"ok": True, "tool": "sharp_luau_scaffold", "action": act, **exec_res})
@@ -2566,13 +2574,18 @@ class SharpMcpApplication:
                         "test_pose": test_pose,
                         **exec_res,
                     }
+                    decoded_fit = _extract_studio_decoded(exec_res)
+                    if isinstance(decoded_fit, dict) and ("itemPath" in decoded_fit or "fit_passed" in decoded_fit):
+                        payload["item_path"] = decoded_fit.get("itemPath")
                     _apply_studio_decoded(
                         payload,
                         exec_res,
                         (
                             "fit_passed",
                             "minClearanceStuds",
+                            "clearanceMarginStuds",
                             "penetrations",
+                            "recommendedOffsets",
                             "posesTested",
                             "checkedPairs",
                             "error",
@@ -3226,6 +3239,7 @@ class SharpMcpApplication:
                     game_title=game_title,
                     genre=genre,
                     texture_style=texture_style,
+                    asset_style=asset_style,
                     resolution=resolution,
                     project_library=self.project_library,
                 )

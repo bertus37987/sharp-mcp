@@ -1135,6 +1135,7 @@ class ArtCreationEngine:
         game_title: str = "Untitled Roblox Game",
         genre: str = "adventure",
         texture_style: Optional[str] = None,
+        asset_style: Optional[str] = None,
         resolution: int = 512,
         project_library: Optional[Any] = None,
     ) -> Dict[str, Any]:
@@ -1150,12 +1151,14 @@ class ArtCreationEngine:
                     game_title=game_title,
                     genre=genre,
                     texture_style=texture_style,
+                    asset_style=asset_style,
                 )
         else:
             ds = self.design_engine.generate_design_system(
                 game_title=game_title,
                 genre=genre,
                 texture_style=texture_style,
+                asset_style=asset_style,
             )
 
         pal = _palette_from_ds(ds)
@@ -1195,12 +1198,35 @@ class ArtCreationEngine:
         luau_src = _build_surface_appearance_luau(resolved_style, profile, res)
         luau_path.write_text(luau_src, encoding="utf-8")
 
+        resolved_asset_style = str(asset_style or ds.get("asset_style") or "").strip() or None
+        reg_keys: List[str] = []
+        if project_library is not None and hasattr(project_library, "register_asset"):
+            for tag_name, p_obj, cat in (
+                ("albedo", albedo_path, "texture"),
+                ("normal", normal_path, "texture"),
+                ("roughness", rough_path, "texture"),
+                ("metallic", metal_path, "texture"),
+                ("surface_appearance", luau_path, "script_module"),
+            ):
+                if p_obj.is_file():
+                    reg = project_library.register_asset(
+                        name=f"{ds.get('game_title', game_title)}_{resolved_style}_{tag_name}",
+                        category=cat,
+                        local_path=str(p_obj),
+                        description=f"Procedural PBR {tag_name} ({resolved_style}, {res}px)",
+                        tags=["pbr", resolved_style, tag_name],
+                        metadata={"texture_style": resolved_style, "resolution": res, "map": tag_name},
+                    )
+                    if isinstance(reg, dict) and reg.get("asset_key"):
+                        reg_keys.append(str(reg["asset_key"]))
+
         return {
             "ok": True,
             "mode": "create_pbr_texture_set",
             "game_title": ds.get("game_title"),
             "preset_id": ds.get("preset_id"),
             "texture_style": resolved_style,
+            "asset_style": resolved_asset_style,
             "texture_style_profile": dict(profile),
             "resolution": res,
             "palette": pal,
@@ -1217,6 +1243,7 @@ class ArtCreationEngine:
             "metallic_path": str(metal_path),
             "luau_module_path": str(luau_path),
             "luau_source": luau_src,
+            "registered_asset_keys": reg_keys,
             "stats": stats,
         }
 

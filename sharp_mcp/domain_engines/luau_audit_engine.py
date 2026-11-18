@@ -571,10 +571,16 @@ return HttpService:JSONEncode({{ ok = false, error = "Unknown action: " .. tostr
 
     @staticmethod
     def _normalize_contracts_spec(contracts_spec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        spec = dict(contracts_spec) if isinstance(contracts_spec, dict) else {}
-        root_prefix = str(spec.get("root_prefix") or spec.get("rootPrefix") or "").strip()
-        remotes_folder = str(spec.get("remotes_folder") or spec.get("remotesFolder") or "Remotes").strip() or "Remotes"
-        schema_version = str(spec.get("schema_version") or spec.get("schemaVersion") or "1.0.0").strip() or "1.0.0"
+        raw_spec = contracts_spec if isinstance(contracts_spec, dict) else {}
+        spec: Dict[str, Any] = {}
+        for sk, sv in raw_spec.items():
+            low_k = str(sk).strip().lower()
+            if low_k not in spec or spec[low_k] is None:
+                spec[low_k] = sv
+            spec.setdefault(str(sk), sv)
+        root_prefix = str(spec.get("root_prefix") or spec.get("rootprefix") or spec.get("rootPrefix") or "").strip()
+        remotes_folder = str(spec.get("remotes_folder") or spec.get("remotesfolder") or spec.get("remotesFolder") or "Remotes").strip() or "Remotes"
+        schema_version = str(spec.get("schema_version") or spec.get("schemaversion") or spec.get("schemaVersion") or "1.0.0").strip() or "1.0.0"
         ensure_remotes = bool(spec.get("ensure_remote_instances", True))
 
         # Remotes normalization
