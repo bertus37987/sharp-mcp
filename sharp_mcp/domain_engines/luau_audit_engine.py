@@ -333,12 +333,37 @@ local worldTelemetry = {{
 	partCount = 0,
 	meshOrUnionCount = 0,
 	preciseCollisionCount = 0,
+	nonBoxPropCollisionCount = 0,
 	unanchoredCount = 0,
 	spawnLocationCount = 0,
 	streamingEnabled = false,
+	useNewLuauTypeSolver = nil :: boolean?,
+	authorityMode = "unknown",
+	meshContentCount = 0,
+	meshIdStringCount = 0,
+	slimCandidateCount = 0,
+	nestedPersistentInAtomicCount = 0,
+	atomicModelCount = 0,
 }}
 pcall(function()
 	worldTelemetry.streamingEnabled = Workspace.StreamingEnabled
+end)
+pcall(function()
+	local am = (Workspace :: any).AuthorityMode
+	if am ~= nil then
+		worldTelemetry.authorityMode = tostring(am)
+	end
+end)
+pcall(function()
+	local wsVal = (Workspace :: any).UseNewLuauTypeSolver
+	if type(wsVal) == "boolean" then
+		worldTelemetry.useNewLuauTypeSolver = wsVal
+	else
+		local ses = game:GetService("ScriptEditorService") :: any
+		if type(ses.UseNewLuauTypeSolver) == "boolean" then
+			worldTelemetry.useNewLuauTypeSolver = ses.UseNewLuauTypeSolver
+		end
+	end
 end)
 for _, desc in ipairs(Workspace:GetDescendants()) do
 	if desc:IsA("BasePart") and not desc:IsA("Terrain") then
@@ -354,8 +379,74 @@ for _, desc in ipairs(Workspace:GetDescendants()) do
 			local okF, fid = pcall(function()
 				return tostring((desc :: any).CollisionFidelity)
 			end)
-			if okF and string.find(fid, "PreciseConvexDecomposition", 1, true) ~= nil then
-				worldTelemetry.preciseCollisionCount += 1
+			if okF then
+				if string.find(fid, "PreciseConvexDecomposition", 1, true) ~= nil then
+					worldTelemetry.preciseCollisionCount += 1
+				end
+				if desc.Size.Magnitude <= 6.0 and string.find(fid, "Box", 1, true) == nil then
+					worldTelemetry.nonBoxPropCollisionCount += 1
+				end
+			end
+			if desc:IsA("MeshPart") then
+				local okMc, mc = pcall(function()
+					return (desc :: any).MeshContent
+				end)
+				local okMi, mi = pcall(function()
+					return desc.MeshId
+				end)
+				if okMc and mc ~= nil and tostring(mc) ~= "" and tostring(mc) ~= "None" then
+					worldTelemetry.meshContentCount += 1
+				elseif okMi and type(mi) == "string" and mi ~= "" then
+					worldTelemetry.meshIdStringCount += 1
+				end
+			end
+		end
+	elseif desc:IsA("Model") then
+		local okMode, sMode = pcall(function()
+			return desc.ModelStreamingMode
+		end)
+		if okMode then
+			if sMode == Enum.ModelStreamingMode.Atomic then
+				worldTelemetry.atomicModelCount += 1
+			elseif sMode == Enum.ModelStreamingMode.Persistent then
+				local anc = desc.Parent
+				while anc and anc ~= Workspace do
+					if anc:IsA("Model") then
+						local okAnc, ancMode = pcall(function()
+							return anc.ModelStreamingMode
+						end)
+						if okAnc and ancMode == Enum.ModelStreamingMode.Atomic then
+							worldTelemetry.nestedPersistentInAtomicCount += 1
+							break
+						end
+					end
+					anc = anc.Parent
+				end
+			end
+		end
+		local okBox, _, bSize = pcall(function()
+			return desc:GetBoundingBox()
+		end)
+		if okBox and typeof(bSize) == "Vector3" then
+			local vol = bSize.X * bSize.Y * bSize.Z
+			if vol >= 64 then
+				local pCnt = 0
+				for _, child in ipairs(desc:GetDescendants()) do
+					if child:IsA("BasePart") then
+						pCnt += 1
+						if pCnt >= 4 then
+							break
+						end
+					end
+				end
+				if pCnt >= 4 then
+					local okLod, lodVal = pcall(function()
+						return (desc :: any).LevelOfDetail
+					end)
+					if okLod and string.find(tostring(lodVal), "SLIM", 1, true) == nil then
+						worldTelemetry.slimCandidateCount += 1
+					end
+				end
 			end
 		end
 	end

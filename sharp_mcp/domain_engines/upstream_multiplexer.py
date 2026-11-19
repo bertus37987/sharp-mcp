@@ -13,6 +13,7 @@ Provides:
 from __future__ import annotations
 
 import asyncio
+from contextlib import AsyncExitStack
 import json
 import mimetypes
 import os
@@ -20,7 +21,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import aiohttp
 from mcp import ClientSession, StdioServerParameters
@@ -82,6 +83,99 @@ def _luau_long_string(text: str) -> str:
         eq_count += 1
 
 
+class StudioMcpSessionPool:
+    """Lazy, lock-guarded persistent session pool for StudioMCP stdio subprocesses."""
+
+    def __init__(
+        self,
+        *,
+        idle_ttl_sec: float = 120.0,
+        client_factory: Optional[Callable[[StdioServerParameters], Any]] = None,
+        session_factory: Optional[Callable[[Any, Any], Any]] = None,
+    ) -> None:
+        self.idle_ttl_sec = max(1.0, float(idle_ttl_sec))
+        self._client_factory = client_factory
+        self._session_factory = session_factory
+        self._lock = asyncio.Lock()
+        self._stack: Optional[AsyncExitStack] = None
+        self._session: Optional[Any] = None
+        self._last_used: float = 0.0
+        self._last_params_key: Optional[tuple[str, tuple[str, ...]]] = None
+        self.connect_count: int = 0
+        self.call_count: int = 0
+
+    async def _close_locked(self) -> None:
+        stack = self._stack
+        self._stack = None
+        self._session = None
+        self._last_used = 0.0
+        self._last_params_key = None
+        if stack is not None:
+            try:
+                await stack.aclose()
+            except Exception:
+                pass
+
+    async def _ensure_connected_locked(self, params: StdioServerParameters) -> Any:
+        now = time.monotonic()
+        params_key = (params.command, tuple(params.args or ()))
+        if self._session is not None:
+            expired = (now - self._last_used) > self.idle_ttl_sec
+            changed = params_key != self._last_params_key
+            if not expired and not changed:
+                return self._session
+            await self._close_locked()
+
+        stack = AsyncExitStack()
+        c_fac = self._client_factory or stdio_client
+        s_fac = self._session_factory or ClientSession
+        try:
+            read_stream, write_stream = await stack.enter_async_context(c_fac(params))
+            session = await stack.enter_async_context(s_fac(read_stream, write_stream))
+            await session.initialize()
+            self._stack = stack
+            self._session = session
+            self._last_used = time.monotonic()
+            self._last_params_key = params_key
+            self.connect_count += 1
+            return session
+        except Exception:
+            try:
+                await stack.aclose()
+            except Exception:
+                pass
+            raise
+
+    async def call_tool(
+        self,
+        params: StdioServerParameters,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        *,
+        timeout_sec: float = 25.0,
+    ) -> Any:
+        """Execute ``tool_name`` over the pooled session, reconnecting once on transient transport failure."""
+        async with asyncio.timeout(timeout_sec):
+            async with self._lock:
+                for attempt in (0, 1):
+                    session = await self._ensure_connected_locked(params)
+                    try:
+                        result = await session.call_tool(tool_name, arguments)
+                        self._last_used = time.monotonic()
+                        self.call_count += 1
+                        return result
+                    except Exception:
+                        await self._close_locked()
+                        if attempt == 1:
+                            raise
+        raise RuntimeError("StudioMcpSessionPool exhausted retries unexpectedly.")
+
+    async def aclose(self) -> None:
+        """Close the pooled StudioMCP stdio session and subprocess cleanly."""
+        async with self._lock:
+            await self._close_locked()
+
+
 class UpstreamMultiplexer:
     def __init__(self, broker: BridgeBroker) -> None:
         self.broker = broker
@@ -98,9 +192,15 @@ class UpstreamMultiplexer:
             if mcp_bat_override
             else (self.roblox_dir / "mcp.bat" if sys.platform == "win32" else None)
         )
+        idle_ttl = float(os.environ.get("SHARP_STUDIOMCP_IDLE_TTL_SEC", "120") or 120.0)
+        self.session_pool = StudioMcpSessionPool(idle_ttl_sec=idle_ttl)
         self.plugins_dir = self.roblox_dir / "Plugins"
         self._cached_studio_id: Optional[str] = None
         self._cached_studio_ts: float = 0.0
+
+    async def aclose(self) -> None:
+        """Close pooled upstream connections."""
+        await self.session_pool.aclose()
 
     async def ensure_broker_started(self) -> Dict[str, Any]:
         if self._broker_started:
@@ -539,28 +639,29 @@ class UpstreamMultiplexer:
             args=["/c", f"cd /d {self.mcp_bat_path.parent} && .\\{self.mcp_bat_path.name}"],
         )
         try:
-            async with asyncio.timeout(timeout_sec):
-                async with stdio_client(params) as (read_stream, write_stream):
-                    async with ClientSession(read_stream, write_stream) as session:
-                        await session.initialize()
-                        result = await session.call_tool(tool_name, arguments)
-                        texts = [
-                            getattr(c, "text", str(c))
-                            for c in getattr(result, "content", [])
-                        ]
-                        out: Dict[str, Any] = {
-                            "ok": not getattr(result, "isError", False),
-                            "tool": tool_name,
-                            "content": texts,
-                        }
-                        if texts and isinstance(texts[0], str):
-                            try:
-                                parsed_json = json.loads(texts[0])
-                                out["decoded"] = parsed_json
-                                out["result"] = texts[0]
-                            except Exception:
-                                pass
-                        return out
+            result = await self.session_pool.call_tool(
+                params,
+                tool_name,
+                arguments,
+                timeout_sec=timeout_sec,
+            )
+            texts = [
+                getattr(c, "text", str(c))
+                for c in getattr(result, "content", [])
+            ]
+            out: Dict[str, Any] = {
+                "ok": not getattr(result, "isError", False),
+                "tool": tool_name,
+                "content": texts,
+            }
+            if texts and isinstance(texts[0], str):
+                try:
+                    parsed_json = json.loads(texts[0])
+                    out["decoded"] = parsed_json
+                    out["result"] = texts[0]
+                except Exception:
+                    pass
+            return out
         except Exception as exc:
             return {"ok": False, "optional": True, "tool": tool_name, "error": str(exc)}
 

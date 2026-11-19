@@ -1250,6 +1250,26 @@ local function scanBinders(container: Instance)
 				}})
 				table.insert(issues, "Dangling RigidConstraint at " .. desc:GetFullName())
 			end
+		elseif desc:IsA("AnimationConstraint") then
+			local p0 = if desc.Attachment0 and desc.Attachment0.Parent and desc.Attachment0.Parent:IsA("BasePart")
+				then desc.Attachment0.Parent else nil
+			local p1 = if desc.Attachment1 and desc.Attachment1.Parent and desc.Attachment1.Parent:IsA("BasePart")
+				then desc.Attachment1.Parent else nil
+			if desc.Enabled then
+				if p0 and not R15_CORE_PARTS[p0.Name] and p1 and R15_CORE_PARTS[p1.Name] then
+					recordBinder(p0, "AnimationConstraint", desc, p1)
+				else
+					recordBinder(p1, "AnimationConstraint", desc, p0)
+				end
+			end
+			if not p0 or not p1 then
+				table.insert(conflictingJoints, {{
+					kind = "dangling_animation_constraint",
+					path = desc:GetFullName(),
+					message = "AnimationConstraint missing Attachment0 or Attachment1 BasePart.",
+				}})
+				table.insert(issues, "Dangling AnimationConstraint at " .. desc:GetFullName())
+			end
 		elseif desc:IsA("Motor6D") then
 			if desc.Enabled then
 				recordBinder(desc.Part1, "Motor6D", desc, desc.Part0)
@@ -1628,7 +1648,7 @@ local function scanJointLinks(container: Instance)
 			elseif equipSeen[d.Part0] then
 				recordJointPair(d.Part0, d.Part1, false)
 			end
-		elseif d:IsA("RigidConstraint") and d.Enabled and d.Attachment0 and d.Attachment1 then
+		elseif (d:IsA("RigidConstraint") or d:IsA("AnimationConstraint")) and d.Enabled and d.Attachment0 and d.Attachment1 then
 			local p0 = d.Attachment0.Parent
 			local p1 = d.Attachment1.Parent
 			if p0 and p1 and p0:IsA("BasePart") and p1:IsA("BasePart") then
@@ -1936,11 +1956,15 @@ return HttpService:JSONEncode({{
         sidecar_path: Optional[str] = None,
         sidecar_data: Optional[Dict[str, Any]] = None,
         adaptive_scale: bool = True,
+        joint_mode: str = "auto",
     ) -> str:
         """Compile Edit-mode Luau for attaching, configuring, or verifying R15 equipment & IKControls."""
         norm_mode = _normalize_attach_mode(mode, "accessory_rigid")
         if norm_mode not in VALID_ATTACH_MODES:
             raise ValueError(f"Unsupported mode '{mode}'. Valid: {', '.join(VALID_ATTACH_MODES)}")
+        norm_joint_mode = (joint_mode or "auto").strip().lower()
+        if norm_joint_mode not in ("auto", "motor6d", "animation_constraint"):
+            raise ValueError(f"Unsupported joint_mode '{joint_mode}'. Valid: auto, motor6d, animation_constraint")
 
         if norm_mode == "verify":
             req_slots = [slot] if slot else None
@@ -2072,6 +2096,7 @@ local ITEM_ATT_NAME = {json.dumps(resolved["item_attachment"])}
 local REPLACE_EXISTING_WELDS = {"true" if replace_existing_welds else "false"}
 local CLONE_ITEM = {"true" if clone_item else "false"}
 local ADAPTIVE_SCALE = {"true" if adaptive_scale else "false"}
+local JOINT_MODE = {json.dumps(norm_joint_mode)}
 
 local LIMB_ATT_DEFAULT_CF = {limb_att_cf_expr}
 local ITEM_ATT_CF = {item_att_cf_expr}
@@ -2197,13 +2222,13 @@ local function cleanupCompetingJoints(rigModel: Instance, handle: BasePart, keep
 	local containers: {{ Instance }} = if handle:IsDescendantOf(rigModel) then {{ rigModel }} else {{ rigModel, handle }}
 	for _, container in ipairs(containers) do
 		for _, d in ipairs(container:GetDescendants()) do
-			if (d:IsA("Weld") or d:IsA("RigidConstraint") or d:IsA("Motor6D")) and d.Name ~= keepName then
+			if (d:IsA("Weld") or d:IsA("RigidConstraint") or d:IsA("AnimationConstraint") or d:IsA("Motor6D")) and d.Name ~= keepName then
 				if d:IsA("Weld") or d:IsA("Motor6D") then
 					if d.Part1 == handle or d.Name == "RightGrip" then
 						d:Destroy()
 						removed += 1
 					end
-				elseif d:IsA("RigidConstraint") then
+				elseif d:IsA("RigidConstraint") or d:IsA("AnimationConstraint") then
 					local a0 = d.Attachment0
 					local a1 = d.Attachment1
 					if (a0 and a0.Parent == handle) or (a1 and a1.Parent == handle) then
@@ -2277,7 +2302,7 @@ local function attachViaRigidConstraint(rigModel: Instance, limbPart: BasePart, 
 	}}
 end
 
-local function attachViaMotor6D(rigModel: Instance, limbPart: BasePart, limbAttName: string, limbDefaultCf: CFrame, itemInst: Instance, itemAttName: string, itemAttCf: CFrame): {{ [string]: any }}
+local function attachViaMotor6D(rigModel: Instance, limbPart: BasePart, limbAttName: string, limbDefaultCf: CFrame, itemInst: Instance, itemAttName: string, itemAttCf: CFrame, jointModeOpt: string?): {{ [string]: any }}
 	local handle = getPrimaryHandle(itemInst)
 	assert(handle ~= nil, "Weapon '" .. itemInst:GetFullName() .. "' contains no BasePart.")
 	configureEquipmentPhysics(itemInst)
@@ -2293,8 +2318,9 @@ local function attachViaMotor6D(rigModel: Instance, limbPart: BasePart, limbAttN
 		itemAtt.CFrame = itemAttCf
 	end
 
-	local motorName = "SharpWeaponMotor_" .. handle.Name
-	local removed = cleanupCompetingJoints(rigModel, handle, motorName)
+	local effectiveJointMode = jointModeOpt or JOINT_MODE
+	local hasAvatarAnimConstraints = rigModel:FindFirstChildWhichIsA("AnimationConstraint", true) ~= nil
+	local useAnimConstraint = (effectiveJointMode == "animation_constraint") or (effectiveJointMode == "auto" and hasAvatarAnimConstraints)
 
 	-- Exact C0/C1 matching RigidConstraint rest alignment:
 	-- Part1.CFrame = Part0.CFrame * C0 * Transform * C1:Inverse()
@@ -2310,6 +2336,38 @@ local function attachViaMotor6D(rigModel: Instance, limbPart: BasePart, limbAttN
 	if not itemInst:IsDescendantOf(rigModel) then
 		itemInst.Parent = rigModel
 	end
+
+	if useAnimConstraint then
+		local animJointName = "SharpWeaponAnimJoint_" .. handle.Name
+		local removed = cleanupCompetingJoints(rigModel, handle, animJointName)
+		local existingAnim = limbPart:FindFirstChild(animJointName)
+		local animJoint: AnimationConstraint
+		if existingAnim and existingAnim:IsA("AnimationConstraint") then
+			animJoint = existingAnim
+		else
+			animJoint = Instance.new("AnimationConstraint")
+			animJoint.Name = animJointName
+			animJoint.Parent = limbPart
+		end
+		animJoint.Attachment0 = limbAtt
+		animJoint.Attachment1 = itemAtt
+		animJoint.Enabled = true
+
+		return {{
+			jointType = "AnimationConstraint",
+			jointName = animJoint.Name,
+			motorName = animJoint.Name,
+			limbPart = limbPart.Name,
+			limbAttachment = limbAtt.Name,
+			itemAttachment = itemAtt.Name,
+			createdLimbAttachment = createdLimbAtt,
+			createdItemAttachment = createdItemAtt,
+			removedCompetingJoints = removed,
+		}}
+	end
+
+	local motorName = "SharpWeaponMotor_" .. handle.Name
+	local removed = cleanupCompetingJoints(rigModel, handle, motorName)
 
 	local existing = limbPart:FindFirstChild(motorName)
 	local motor: Motor6D

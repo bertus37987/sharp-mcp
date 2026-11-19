@@ -999,7 +999,7 @@ class TestUpstreamMultiplexerCriticalUnwrapAndCliServe(unittest.IsolatedAsyncioT
             )
             rig_tool = app.mcp._tool_manager._tools["sharp_rig_and_animation"].fn
 
-            play_res = json.loads(
+            play_res = _parse_mcp_tool_output(
                 asyncio.run(
                     rig_tool(
                         action="playback_test",
@@ -1017,7 +1017,7 @@ class TestUpstreamMultiplexerCriticalUnwrapAndCliServe(unittest.IsolatedAsyncioT
             self.assertIn("getOrLoadCachedTrack", play_res["compiledLuau"])
             self.assertNotIn("SharpAnimClipBuilder", play_res["compiledLuau"])
 
-            preset_res = json.loads(
+            preset_res = _parse_mcp_tool_output(
                 asyncio.run(
                     rig_tool(
                         action="generate_preset",
@@ -1030,7 +1030,7 @@ class TestUpstreamMultiplexerCriticalUnwrapAndCliServe(unittest.IsolatedAsyncioT
             self.assertEqual(preset_res["name"], "Sword_Slash_Single")
             self.assertEqual(len(preset_res["frames"]), 41)
 
-            analyze_res = json.loads(
+            analyze_res = _parse_mcp_tool_output(
                 asyncio.run(
                     rig_tool(
                         action="analyze_clip",
@@ -1042,7 +1042,7 @@ class TestUpstreamMultiplexerCriticalUnwrapAndCliServe(unittest.IsolatedAsyncioT
             self.assertTrue(analyze_res["ok"])
             self.assertEqual(analyze_res["quality_score"], 100)
 
-            bad_res = json.loads(
+            bad_res = _parse_mcp_tool_output(
                 asyncio.run(
                     rig_tool(
                         action="nonexistent_action_xyz",
@@ -1610,6 +1610,7 @@ class TestMcpStdioServerEndToEnd(unittest.IsolatedAsyncioTestCase):
                         res_uris,
                         {
                             "sharp://skills/catalog",
+                            "sharp://skills/cheatsheet",
                             "sharp://game-library/plan",
                             "sharp://game-library/manifest",
                             "sharp://game-library/registry-luau",

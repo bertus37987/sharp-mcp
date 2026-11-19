@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
 import json
+import secrets
 import threading
 import time
 from collections import OrderedDict
@@ -411,19 +414,44 @@ def frame_untrusted_place_content(
     }
 
 
+def _ensure_structured_dict(payload: Any) -> Dict[str, Any]:
+    """Normalize arbitrary tool payload into a JSON-safe object for MCP ``structuredContent``."""
+    serialized = compact_json(payload)
+    try:
+        decoded = json.loads(serialized) if isinstance(payload, str) else json.loads(compact_json(payload))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return {"ok": True, "result": str(payload)}
+    if isinstance(decoded, dict):
+        return decoded
+    return {"ok": True, "result": decoded}
+
+
 def build_mcp_result(
     payload: Any,
     *,
     untrusted_source: Optional[str] = None,
-) -> Any:
-    """Return compact JSON text, or ``CallToolResult`` with ``_meta`` if ``untrusted_source`` is set."""
+    is_error: Optional[bool] = None,
+) -> mcp_types.CallToolResult:
+    """Build an MCP ``CallToolResult`` with ``structuredContent``, ``isError``, and optional untrusted ``_meta``."""
+    structured = _ensure_structured_dict(payload)
+    if is_error is None:
+        inferred_err = structured.get("ok") is False
+    else:
+        inferred_err = bool(is_error)
+
     if untrusted_source:
         framed = frame_untrusted_place_content(payload, source_label=untrusted_source)
         return mcp_types.CallToolResult(
             content=[mcp_types.TextContent(type="text", text=framed["framed_text"])],
+            structuredContent=structured,
+            isError=inferred_err,
             _meta=framed["_meta"],
         )
-    return compact_json(payload)
+    return mcp_types.CallToolResult(
+        content=[mcp_types.TextContent(type="text", text=compact_json(payload))],
+        structuredContent=structured,
+        isError=inferred_err,
+    )
 
 
 def _resolve_json_path(obj: Any, json_path: str) -> Any:
@@ -459,6 +487,7 @@ class SnapshotViewStore:
         self._lock = threading.Lock()
         self._views: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
         self._counter = 0
+        self._cursor_secret: bytes = secrets.token_bytes(32)
 
     def _evict_if_needed(self) -> None:
         total_bytes = sum(v["byte_size"] for v in self._views.values())
@@ -477,10 +506,12 @@ class SnapshotViewStore:
         """Store ``payload`` in the LRU cache and return its ``view_id`` metadata."""
         serialized = compact_json(payload)
         raw_bytes = len(serialized.encode("utf-8"))
-        digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:8]
         with self._lock:
             self._counter += 1
-            view_id = f"view_{self._counter}_{digest}"
+            while True:
+                view_id = f"sv_{secrets.token_urlsafe(18)}"
+                if view_id not in self._views:
+                    break
             self._views[view_id] = {
                 "view_id": view_id,
                 "label": label,
@@ -553,14 +584,76 @@ class SnapshotViewStore:
             result["preview_head"] = serialized[:max_preview_chars]
         return result
 
+    def encode_cursor(
+        self,
+        view_id: str,
+        offset: int,
+        limit: int,
+        json_path: Optional[str] = None,
+    ) -> str:
+        """Encode and HMAC-sign an opaque pagination cursor token."""
+        body = compact_json(
+            {
+                "v": 1,
+                "view_id": view_id,
+                "offset": int(offset),
+                "limit": int(limit),
+                "json_path": json_path,
+            }
+        ).encode("utf-8")
+        body_b64 = base64.urlsafe_b64encode(body).decode("ascii").rstrip("=")
+        sig = hmac.new(self._cursor_secret, body_b64.encode("ascii"), hashlib.sha256).digest()
+        sig_b64 = base64.urlsafe_b64encode(sig).decode("ascii").rstrip("=")
+        return f"{body_b64}.{sig_b64}"
+
+    def decode_cursor(self, cursor: str) -> Dict[str, Any]:
+        """Verify and decode an HMAC-signed opaque pagination cursor token."""
+        if not isinstance(cursor, str) or "." not in cursor:
+            raise ValueError("Malformed cursor token.")
+        body_b64, sig_b64 = cursor.split(".", 1)
+        expected_sig = base64.urlsafe_b64encode(
+            hmac.new(self._cursor_secret, body_b64.encode("ascii"), hashlib.sha256).digest()
+        ).decode("ascii").rstrip("=")
+        if not hmac.compare_digest(sig_b64, expected_sig):
+            raise ValueError("Invalid cursor signature.")
+        pad = "=" * ((4 - len(body_b64) % 4) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(body_b64 + pad).decode("utf-8"))
+        if not isinstance(decoded, dict) or "view_id" not in decoded or "offset" not in decoded:
+            raise ValueError("Invalid cursor payload.")
+        return decoded
+
     def inspect(
         self,
         view_id: str,
         offset: int = 0,
         limit: int = 4000,
         json_path: Optional[str] = None,
+        cursor: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Return a paginated slice of a previously stored view, optionally filtered by ``json_path``."""
+        """Return a paginated slice of a previously stored view, optionally filtered by ``json_path`` or ``cursor``."""
+        if cursor is not None and str(cursor).strip():
+            try:
+                cur_data = self.decode_cursor(str(cursor).strip())
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "code": "INVALID_CURSOR",
+                    "view_id": view_id,
+                    "error": f"Invalid pagination cursor: {exc}",
+                }
+            if cur_data.get("view_id") != view_id:
+                return {
+                    "ok": False,
+                    "code": "INVALID_CURSOR",
+                    "view_id": view_id,
+                    "error": "Pagination cursor does not match target view_id.",
+                }
+            offset = int(cur_data.get("offset", 0))
+            if limit == 4000 and cur_data.get("limit") is not None:
+                limit = int(cur_data["limit"])
+            if json_path is None:
+                json_path = cur_data.get("json_path")
+
         with self._lock:
             entry = self._views.get(view_id)
             if entry is None:
@@ -594,6 +687,8 @@ class SnapshotViewStore:
         chunk = serialized[safe_offset : safe_offset + safe_limit]
         next_offset = safe_offset + len(chunk)
         has_more = next_offset < total_chars
+        cur_token = self.encode_cursor(view_id, safe_offset, safe_limit, json_path)
+        nxt_token = self.encode_cursor(view_id, next_offset, safe_limit, json_path) if has_more else None
         return {
             "ok": True,
             "view_id": view_id,
@@ -607,8 +702,26 @@ class SnapshotViewStore:
             "returned_chars": len(chunk),
             "has_more": has_more,
             "next_offset": next_offset if has_more else None,
+            "cursor": cur_token,
+            "nextCursor": nxt_token,
             "content": chunk,
         }
+
+    def get_view_payload(self, view_id: str) -> Optional[Dict[str, Any]]:
+        """Return retained view payload and metadata for MCP Resource reads."""
+        with self._lock:
+            entry = self._views.get(view_id)
+            if entry is None:
+                return None
+            self._views.move_to_end(view_id)
+            return {
+                "view_id": entry["view_id"],
+                "label": entry["label"],
+                "source_tool": entry["source_tool"],
+                "untrusted_source": entry["untrusted_source"],
+                "char_count": entry["char_count"],
+                "payload": entry["payload"],
+            }
 
     def list_views(self) -> List[Dict[str, Any]]:
         """List metadata for currently retained views (most recent last)."""

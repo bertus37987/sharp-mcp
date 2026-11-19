@@ -175,8 +175,9 @@ function WeaponToolAssembler.BindToCharacter(
 	character: Model,
 	weaponModel: Model,
 	spec: WeaponSpec,
-	equipped: boolean
-): Motor6D
+	equipped: boolean,
+	jointMode: ("auto" | "Motor6D" | "AnimationConstraint")?
+): Motor6D | AnimationConstraint
 	local handle = (weaponModel.PrimaryPart or weaponModel:FindFirstChild("Handle")) :: BasePart?
 	assert(handle ~= nil, "Weapon Model must have a PrimaryPart or Handle.")
 
@@ -188,25 +189,61 @@ function WeaponToolAssembler.BindToCharacter(
 
 	weaponModel.Parent = character
 	local motorName = "WeaponMotor_" .. spec.weaponId
-	local existingMotor = hostPart:FindFirstChild(motorName)
-	if existingMotor and existingMotor:IsA("Motor6D") then
-		existingMotor:Destroy()
-	end
+	local animJointName = "WeaponAnimConstraint_" .. spec.weaponId
+	local offsetCf = if equipped
+		then (spec.gripOffsetCFrame or CFrame.new(0, -0.15, 0) * CFrame.Angles(math.rad(-90), 0, 0))
+		else (spec.holsterOffsetCFrame or CFrame.new(-0.85, -0.6, 0.55) * CFrame.Angles(0, 0, math.rad(135)))
 
-	-- Remove any motor on the other socket part
+	-- Remove any competing Motor6D or AnimationConstraint bindings across sockets
 	for _, d in ipairs(character:GetDescendants()) do
-		if d:IsA("Motor6D") and d.Name == motorName then
+		if (d:IsA("Motor6D") and d.Name == motorName) or (d:IsA("AnimationConstraint") and d.Name == animJointName) then
 			d:Destroy()
 		end
+	end
+
+	local mode = jointMode or "auto"
+	local useAnimConstraint = (mode == "AnimationConstraint") or (mode == "auto" and character:FindFirstChildWhichIsA("AnimationConstraint", true) ~= nil)
+	if useAnimConstraint then
+		local hostAttName = "WeaponSocketAtt_" .. spec.weaponId
+		local hostAttInst = hostPart:FindFirstChild(hostAttName)
+		local hostAtt: Attachment
+		if hostAttInst and hostAttInst:IsA("Attachment") then
+			hostAtt = hostAttInst
+		else
+			hostAtt = Instance.new("Attachment")
+			hostAtt.Name = hostAttName
+			hostAtt.Parent = hostPart
+		end
+		hostAtt.CFrame = offsetCf
+
+		local handleAttName = "WeaponGripAtt_" .. spec.weaponId
+		local handleAttInst = handle:FindFirstChild(handleAttName)
+		local handleAtt: Attachment
+		if handleAttInst and handleAttInst:IsA("Attachment") then
+			handleAtt = handleAttInst
+		else
+			handleAtt = Instance.new("Attachment")
+			handleAtt.Name = handleAttName
+			handleAtt.CFrame = CFrame.identity
+			handleAtt.Parent = handle
+		end
+
+		local animJoint = Instance.new("AnimationConstraint")
+		animJoint.Name = animJointName
+		animJoint.Attachment0 = hostAtt
+		animJoint.Attachment1 = handleAtt
+		animJoint.Enabled = true
+		animJoint.Parent = hostPart
+
+		character:SetAttribute("EquippedWeaponId", if equipped then spec.weaponId else "")
+		return animJoint
 	end
 
 	local motor = Instance.new("Motor6D")
 	motor.Name = motorName
 	motor.Part0 = hostPart
 	motor.Part1 = handle
-	motor.C0 = if equipped
-		then (spec.gripOffsetCFrame or CFrame.new(0, -0.15, 0) * CFrame.Angles(math.rad(-90), 0, 0))
-		else (spec.holsterOffsetCFrame or CFrame.new(-0.85, -0.6, 0.55) * CFrame.Angles(0, 0, math.rad(135)))
+	motor.C0 = offsetCf
 	motor.C1 = CFrame.identity
 	motor.Parent = hostPart
 

@@ -147,8 +147,8 @@ def build_server_spec(
     """Build normalized command/args/env launch specification for Sharp MCP."""
     if launcher not in ("auto", "npx", "uvx", "python"):
         raise ValueError(f"Unsupported launcher '{launcher}'. Expected auto|npx|uvx|python.")
-    if profile not in ("full", "core", "blender"):
-        raise ValueError(f"Unsupported profile '{profile}'. Expected full|core|blender.")
+    if profile not in ("lean", "full", "core", "blender"):
+        raise ValueError(f"Unsupported profile '{profile}'. Expected lean|full|core|blender.")
 
     root = Path(package_root).expanduser().resolve() if package_root else _package_root()
     wrapper_mjs = root / "bin" / "sharp-mcp.mjs"

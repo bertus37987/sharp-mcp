@@ -1577,6 +1577,166 @@ class CriticalAuditEngine:
                 )
             )
 
+        # 10. ANIM-JOINT-001: Hardcoded Motor6D .C0/.C1 rig joint manipulation without AnimationConstraint parity
+        rig_joint_re = re.compile(
+            r"\b(?:RightShoulder|LeftShoulder|RightHip|LeftHip|RightElbow|LeftElbow|"
+            r"RightWrist|LeftWrist|RightKnee|LeftKnee|RightAnkle|LeftAnkle|Waist|Neck|Root|"
+            r"Right\s+Shoulder|Left\s+Shoulder)\b[^\n]*\.(?:C0|C1)\s*="
+        )
+        has_anim_constraint_fallback = "AnimationConstraint" in source or ":IsA(\"AnimationConstraint\")" in source or ":IsA('AnimationConstraint')" in source
+        if not has_anim_constraint_fallback:
+            for ln_no, raw_ln in enumerate(lines_raw, start=1):
+                if rig_joint_re.search(raw_ln) or (
+                    (".C0 =" in raw_ln or ".C1 =" in raw_ln or ".C0=" in raw_ln or ".C1=" in raw_ln)
+                    and "Motor6D" in source
+                    and any(j in raw_ln for j in ("Shoulder", "Hip", "Waist", "Neck", "Elbow", "Wrist", "Knee", "Ankle"))
+                ):
+                    findings.append(
+                        _make_finding(
+                            rule_id="ANIM-JOINT-001",
+                            severity="MAJOR",
+                            domain="animation",
+                            file=path,
+                            line=ln_no,
+                            evidence=line_snippet(ln_no),
+                            why_it_matters="AvatarJointUpgrade rigs replace character Motor6D joints with AnimationConstraint + Attachments; mutating joint .C0/.C1 unconditionally breaks on upgraded avatars.",
+                            fix="Branch cleanly between `Motor6D` and `AnimationConstraint` (check `IsA('AnimationConstraint')` and drive `Attachment0`/`Transform` or `IKControl`).",
+                        )
+                    )
+                    break
+
+        # 11. ANIM-JOINT-002: AnimationConstraint / RigidConstraint created without both Attachment0 and Attachment1
+        for m in re.finditer(r'Instance\.new\s*\(\s*["\'](AnimationConstraint|RigidConstraint)["\']\s*\)', source):
+            cls_name = m.group(1)
+            span_end = min(len(source), m.end() + 450)
+            block = source[m.start():span_end]
+            has_a0 = "Attachment0" in block
+            has_a1 = "Attachment1" in block
+            if not (has_a0 and has_a1):
+                ln_no = source[: m.start()].count("\n") + 1
+                findings.append(
+                    _make_finding(
+                        rule_id="ANIM-JOINT-002",
+                        severity="MINOR",
+                        domain="animation",
+                        file=path,
+                        line=ln_no,
+                        evidence=line_snippet(ln_no),
+                        why_it_matters=f"`{cls_name}` without both `Attachment0` and `Attachment1` configured remains inactive or detaches parts.",
+                        fix=f"Assign both `.Attachment0`, `.Attachment1`, and `.Enabled = true` immediately after `Instance.new('{cls_name}')`.",
+                    )
+                )
+
+        # 12. WORLD-INST-001 (static): Legacy MeshId string assignment without MeshContent / Content.fromUri
+        if "MeshContent" not in source and "Content.fromUri" not in source:
+            mesh_id_m = re.search(r"\b\w+\.MeshId\s*=", source)
+            if mesh_id_m:
+                ln_no = source[: mesh_id_m.start()].count("\n") + 1
+                findings.append(
+                    _make_finding(
+                        rule_id="WORLD-INST-001",
+                        severity="MINOR",
+                        domain="world",
+                        file=path,
+                        line=ln_no,
+                        evidence=line_snippet(ln_no),
+                        why_it_matters="Direct `.MeshId =` string mutation bypasses Roblox `MeshContent` / `Content.fromUri(...)` and fails Content-typed asset APIs.",
+                        fix="Use `meshPart.MeshContent = Content.fromUri(assetUri)` or `InsertService:CreateMeshPartAsync`.",
+                    )
+                )
+
+        # 13. LUAU-SOLVER-001 (static): New Luau Type Solver anti-patterns (--!nocheck / UseNewLuauTypeSolver=false / excessive :: any)
+        any_casts = len(re.findall(r"::\s*any\b", source))
+        if "--!nocheck" in directives or "UseNewLuauTypeSolver = false" in source or any_casts >= 6:
+            findings.append(
+                _make_finding(
+                    rule_id="LUAU-SOLVER-001",
+                    severity="MAJOR",
+                    domain="luau",
+                    file=path,
+                    line=1,
+                    evidence=(
+                        f"UseNewLuauTypeSolver=false or `--!nocheck` or {any_casts}x `:: any` escape hatches"
+                    ),
+                    why_it_matters="Disabling the New Luau Type Solver or flooding scripts with `:: any` bypasses non-strict/strict type inference checks across client-server contracts.",
+                    fix="Enable New Luau Type Solver under `--!strict` with explicit exported `export type` contracts instead of `:: any`.",
+                )
+            )
+
+        # 14. LUAU-PAR-001: Parallel Luau desynchronize / ConnectParallel mutating DataModel before task.synchronize()
+        dm_mut_re = re.compile(
+            r"(?:Instance\.new\s*\(|:Destroy\s*\(|:SetAttribute\s*\(|\.(?:Parent|CFrame|Position|Size|Transparency|Color|Anchored|Enabled)\s*=)"
+        )
+        for m in re.finditer(r"\btask\.desynchronize\s*\(\s*\)", source):
+            sync_idx = source.find("task.synchronize", m.end())
+            window = source[m.end() : (sync_idx if sync_idx != -1 else min(len(source), m.end() + 500))]
+            mut_m = dm_mut_re.search(window)
+            if mut_m:
+                ln_no = source[: m.end() + mut_m.start()].count("\n") + 1
+                findings.append(
+                    _make_finding(
+                        rule_id="LUAU-PAR-001",
+                        severity="MAJOR",
+                        domain="luau",
+                        file=path,
+                        line=ln_no,
+                        evidence=line_snippet(ln_no),
+                        why_it_matters="Writing DataModel properties or calling Instance.new/Destroy while desynchronized throws a thread-safety runtime error in Parallel Luau Actors.",
+                        fix="Perform read-only math/raycast work after `task.desynchronize()`, then call `task.synchronize()` before mutating Instances.",
+                    )
+                )
+                break
+        for m in re.finditer(r":ConnectParallel\s*\(", source):
+            sync_idx = source.find("task.synchronize", m.end())
+            end_idx = source.find("\nend)", m.end())
+            slice_end = sync_idx if (sync_idx != -1 and (end_idx == -1 or sync_idx < end_idx)) else (
+                end_idx if end_idx != -1 else min(len(source), m.end() + 450)
+            )
+            window = source[m.end() : slice_end]
+            mut_m = dm_mut_re.search(window)
+            if mut_m:
+                ln_no = source[: m.end() + mut_m.start()].count("\n") + 1
+                findings.append(
+                    _make_finding(
+                        rule_id="LUAU-PAR-001",
+                        severity="MAJOR",
+                        domain="luau",
+                        file=path,
+                        line=ln_no,
+                        evidence=line_snippet(ln_no),
+                        why_it_matters="`:ConnectParallel()` callbacks execute in the parallel phase where direct DataModel writes are illegal until `task.synchronize()`.",
+                        fix="Call `task.synchronize()` before creating or mutating Instances inside `:ConnectParallel()`.",
+                    )
+                )
+                break
+
+        # 15. PERF-PROF-001: Heavy RunService per-frame loop missing debug.profilebegin / debug.profileend
+        if "debug.profilebegin" not in source and "debug.profileend" not in source:
+            rs_m = re.search(
+                r"RunService\.(?:Heartbeat|PreSimulation|PostSimulation|PreRender|RenderStepped)\s*:(?:Connect|ConnectParallel)\s*\(",
+                source,
+            )
+            if rs_m:
+                tail = source[rs_m.end() : min(len(source), rs_m.end() + 1200)]
+                heavy_work = (
+                    len(tail.splitlines()) >= 8
+                    and any(kw in tail for kw in ("for ", "while ", ":Raycast(", "GetPartBounds", ":Shapecast(", ":GetDescendants("))
+                )
+                if heavy_work:
+                    ln_no = source[: rs_m.start()].count("\n") + 1
+                    findings.append(
+                        _make_finding(
+                            rule_id="PERF-PROF-001",
+                            severity="MINOR",
+                            domain="luau",
+                            file=path,
+                            line=ln_no,
+                            evidence=line_snippet(ln_no),
+                            why_it_matters="Per-frame RunService loops with iteration/spatial queries lack MicroProfiler scopes, making frame-budget regressions invisible.",
+                            fix="Wrap heavy RunService frame callbacks with `debug.profilebegin('ScopeName')` ... `debug.profileend()`.",
+                        )
+                    )
+
         return findings
 
     # ------------------------------------------------------------------
@@ -3169,6 +3329,13 @@ class CriticalAuditEngine:
             "overlap_count", "overlapCount", "remainingOverlapCount",
             "floating_count", "floatingCount", "remainingFloatingCount",
             "part_count", "partCount", "spawn_location_count", "spawnLocationCount",
+            "slim_candidate_count", "slimCandidateCount",
+            "nested_persistent_in_atomic_count", "nestedPersistentInAtomicCount",
+            "atomic_model_count", "atomicModelCount",
+            "mesh_id_string_count", "meshIdStringCount",
+            "mesh_content_count", "meshContentCount",
+            "use_new_luau_type_solver", "useNewLuauTypeSolver",
+            "authority_mode", "authorityMode",
             "placements", "allClean",
         }
         for _ in range(6):
@@ -3327,6 +3494,76 @@ class CriticalAuditEngine:
                     auto_fixable=True,
                 )
             )
+
+        slim_candidates = int(world_stats.get("slim_candidate_count", world_stats.get("slimCandidateCount", 0)) or 0)
+        if slim_candidates > 0:
+            findings.append(
+                _make_finding(
+                    rule_id="WORLD-SLIM-001",
+                    severity="MINOR",
+                    domain="world",
+                    evidence=f"{slim_candidates} composite static Model(s) >= 64 cubic studs lack Enum.ModelLevelOfDetail.SLIM",
+                    why_it_matters="Composite props rendered from distant BaseParts/MeshParts benefit from Roblox SLIM lightweight mesh LoD streaming to lower client GPU/memory cost.",
+                    fix="Set `model.LevelOfDetail = Enum.ModelLevelOfDetail.SLIM` on static composite models >= 64 cubic studs.",
+                    auto_fixable=True,
+                )
+            )
+
+        nested_persistent = int(
+            world_stats.get("nested_persistent_in_atomic_count", world_stats.get("nestedPersistentInAtomicCount", 0)) or 0
+        )
+        atomic_models = int(world_stats.get("atomic_model_count", world_stats.get("atomicModelCount", 0)) or 0)
+        if nested_persistent > 0:
+            findings.append(
+                _make_finding(
+                    rule_id="WORLD-STREAM-002",
+                    severity="MAJOR",
+                    domain="world",
+                    evidence=f"{nested_persistent} Model(s) set ModelStreamingMode.Persistent inside an Atomic ancestor",
+                    why_it_matters="Nesting Persistent Models inside Atomic Models invalidates streaming granularity and forces oversized atomic replication blocks.",
+                    fix="Promote persistent sub-models to top-level containers or keep nested models at Default/Atomic cleanly.",
+                    auto_fixable=True,
+                )
+            )
+        elif streaming_enabled and atomic_models > 120:
+            findings.append(
+                _make_finding(
+                    rule_id="WORLD-STREAM-002",
+                    severity="MAJOR",
+                    domain="world",
+                    evidence=f"{atomic_models} Atomic streaming Models active; risk of oversized streaming replication islands",
+                    why_it_matters="Overusing ModelStreamingMode.Atomic on hundreds of nested/large structures defeats distance-based streaming.",
+                    fix="Reserve Atomic for compact multi-part props and use Default or SLIM on sprawling assemblies.",
+                )
+            )
+
+        mesh_id_strings = int(world_stats.get("mesh_id_string_count", world_stats.get("meshIdStringCount", 0)) or 0)
+        mesh_contents = int(world_stats.get("mesh_content_count", world_stats.get("meshContentCount", 0)) or 0)
+        if mesh_id_strings > 0 and mesh_contents == 0:
+            findings.append(
+                _make_finding(
+                    rule_id="WORLD-INST-001",
+                    severity="MINOR",
+                    domain="world",
+                    evidence=f"{mesh_id_strings} MeshPart(s) rely solely on legacy MeshId strings without MeshContent",
+                    why_it_matters="Roblox Content-based MeshContent is required for modern EditableMesh/Content pipelines.",
+                    fix="Migrate runtime mesh construction to `Content.fromUri(...)` and `MeshContent`.",
+                )
+            )
+
+        use_new_solver = world_stats.get("use_new_luau_type_solver", world_stats.get("useNewLuauTypeSolver"))
+        if use_new_solver is False:
+            findings.append(
+                _make_finding(
+                    rule_id="LUAU-SOLVER-001",
+                    severity="MAJOR",
+                    domain="luau",
+                    evidence="Studio/Workspace reports UseNewLuauTypeSolver = false",
+                    why_it_matters="Legacy Luau solver misses modern strict inference, solver refinements, and AvatarJointUpgrade/SLIM API types.",
+                    fix="Enable the New Luau Type Solver beta/setting in Studio Workspace/ScriptEditorService.",
+                )
+            )
+
         return findings
 
     def _audit_plan_and_cross_checks(

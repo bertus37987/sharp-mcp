@@ -32,6 +32,14 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
 
+      - name: Optional luau-compile setup (Linux)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          curl -sSLf https://github.com/luau-lang/luau/releases/latest/download/luau-ubuntu.zip -o luau.zip
+          unzip -o luau.zip luau-compile -d /usr/local/bin && chmod +x /usr/local/bin/luau-compile
+          rm -f luau.zip
+
       - name: Lint with ruff
         run: ruff check sharp_mcp tests
 

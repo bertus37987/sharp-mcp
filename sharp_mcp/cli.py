@@ -543,9 +543,9 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--profile",
-        choices=("full", "core", "blender"),
+        choices=("lean", "full", "core", "blender"),
         default=os.environ.get("SHARP_PROFILE", "full"),
-        help="Tool profile to expose (default: full).",
+        help="Tool profile to expose: lean|full|core|blender (default: full).",
     )
     parser.add_argument(
         "--project-dir",
@@ -615,7 +615,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target client(s) to register (repeatable; default: all).",
     )
     p_reg.add_argument("--launcher", choices=("auto", "npx", "uvx", "python"), default="auto")
-    p_reg.add_argument("--profile", choices=("full", "core", "blender"), default="full")
+    p_reg.add_argument("--profile", choices=("lean", "full", "core", "blender"), default="full")
     p_reg.add_argument("--project", action="store_true", help="Write project-local config where supported (.mcp.json, opencode.json, .antigravity).")
     p_reg.add_argument("--project-dir", default=None, help="Project directory for project-scoped config & SHARP_PROJECT_DIR.")
     p_reg.add_argument("--home-dir", default=None, help="Override user home directory (for isolated testing).")
